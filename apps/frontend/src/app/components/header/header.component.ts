@@ -1,4 +1,5 @@
 import { Component, signal } from '@angular/core';
+import { SocialLoginComponent } from '../social-login/social-login.component';
 
 type DiscordStats = {
   total_members: number;
@@ -7,6 +8,8 @@ type DiscordStats = {
 
 @Component({
   selector: 'app-header',
+  standalone: true,
+  imports: [SocialLoginComponent],
   template: `
     <header
       class="overflow-hidden relative bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800"
@@ -28,12 +31,13 @@ type DiscordStats = {
             </span>
           </h1>
           <p
-            class="mx-auto mt-3 max-w-md text-xl text-gray-600 dark:text-gray-300 sm:text-2xl md:mt-5 md:max-w-3xl"
+            class="mx-auto mt-3 max-w-md text-base text-gray-600 dark:text-gray-300 sm:text-lg md:mt-5 md:max-w-3xl"
           >
-            Where code meets movement - Join a community of developers who
-            balance debugging with physical activities
+            Join a community of developers who balance debugging with physical
+            activities
           </p>
-          <div class="flex gap-x-6 justify-center mt-10">
+          <!-- The below div will be extracted with separate component and will be handled with the issue: https://github.com/devs-who-run/devswhomove/issues/6 -->
+          <!-- <div class="flex gap-x-6 justify-center mt-10">
             <div class="flex gap-4 mb-6">
               <div
                 class="px-6 py-4 bg-white rounded-lg shadow-sm dark:bg-gray-800"
@@ -86,8 +90,8 @@ type DiscordStats = {
                 </div>
               </div>
             </div>
-          </div>
-          <div class="flex gap-x-6 justify-center mt-4">
+          </div> -->
+          <!-- <div class="flex gap-x-6 justify-center mt-4 mb-6">
             <a
               href="https://discord.gg/gjPdvKjFx3"
               class="px-8 py-3 font-semibold text-white bg-blue-600 rounded-md transition-all transform hover:-translate-y-1 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 inline-flex items-center gap-2"
@@ -126,6 +130,14 @@ type DiscordStats = {
                 />
               </svg>
             </a>
+          </div> -->
+          <div class="mt-6 mb-4">
+            <h3
+              class="mb-4 text-xl font-semibold text-gray-800 dark:text-gray-200"
+            >
+              Become our member
+            </h3>
+            <app-social-login />
           </div>
         </div>
       </div>

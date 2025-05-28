@@ -1,1 +1,6 @@
-<router-outlet></router-outlet>
+<div
+  class="min-h-screen transition-colors duration-300 bg-white dark:bg-gray-900"
+  [class.dark]="themeService.isDarkMode()"
+>
+  <router-outlet></router-outlet>
+</div>
