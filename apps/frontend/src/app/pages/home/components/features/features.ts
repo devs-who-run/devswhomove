@@ -1,10 +1,5 @@
-import { Component } from '@angular/core';
-
-type Feature = {
-  title: string;
-  description: string;
-  icon: string;
-};
+import { Component, input } from '@angular/core';
+import { Feature } from '../../types';
 
 @Component({
   selector: 'app-features',
@@ -23,7 +18,7 @@ type Feature = {
           role="list"
           aria-label="Community features"
         >
-          @for (feature of features; track feature.title) {
+          @for (feature of features(); track feature.title) {
           <div
             class="p-6 bg-white rounded-lg shadow-lg transition-all duration-300 transform dark:bg-gray-900 hover:-translate-y-1"
             role="listitem"
@@ -45,26 +40,5 @@ type Feature = {
   `,
 })
 export class FeaturesComponent {
-  features: Feature[] = [
-    {
-      title: 'Weekly Challenges',
-      description: 'Participate in coding challenges and running goals.',
-      icon: '🎯',
-    },
-    {
-      title: 'Virtual Events',
-      description: 'Join online meetups and virtual running sessions.',
-      icon: '🌐',
-    },
-    {
-      title: 'Tech Talks',
-      description: 'Learn from experienced developers and runners.',
-      icon: '🎤',
-    },
-    {
-      title: 'Progress Tracking',
-      description: 'Track your running and coding achievements.',
-      icon: '📊',
-    },
-  ];
+  features = input<Feature[]>();
 }

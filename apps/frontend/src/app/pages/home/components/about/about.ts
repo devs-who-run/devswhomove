@@ -1,10 +1,5 @@
-import { Component } from '@angular/core';
-
-type AboutDetail = {
-  icon: string;
-  title: string;
-  description: string;
-};
+import { Component, input } from '@angular/core';
+import { AboutDetail } from '../../types';
 
 @Component({
   selector: 'app-about',
@@ -27,7 +22,7 @@ type AboutDetail = {
 
         <div class="mt-20">
           <div class="grid grid-cols-1 gap-12 lg:grid-cols-3">
-            @for (about of aboutDetails; track about.title) {
+            @for (about of aboutDetails(); track about.title) {
             <div
               class="relative p-8 bg-white rounded-2xl shadow-lg transition-all duration-300 transform dark:bg-gray-800 hover:-translate-y-1"
             >
@@ -52,24 +47,5 @@ type AboutDetail = {
   `,
 })
 export class AboutComponent {
-  aboutDetails: AboutDetail[] = [
-    {
-      icon: '🏃‍♂️',
-      title: 'Run Together',
-      description:
-        'Join virtual running sessions and local meetups with fellow developers.',
-    },
-    {
-      icon: '💻',
-      title: 'Code Together',
-      description:
-        'Collaborate on open-source projects and share technical knowledge.',
-    },
-    {
-      icon: '🎯',
-      title: 'Grow Together',
-      description:
-        'Set goals, track progress, and celebrate achievements together.',
-    },
-  ];
+  aboutDetails = input<AboutDetail[]>();
 }

@@ -1,5 +1,5 @@
 import { Component, signal } from '@angular/core';
-import { SocialLoginComponent } from '../social-login/social-login.component';
+import { SocialLoginComponent } from '../social-login/social-login';
 
 type DiscordStats = {
   total_members: number;
@@ -8,7 +8,6 @@ type DiscordStats = {
 
 @Component({
   selector: 'app-header',
-  standalone: true,
   imports: [SocialLoginComponent],
   template: `
     <header

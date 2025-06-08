@@ -1,11 +1,12 @@
-import { Component } from '@angular/core';
-import { HeaderComponent } from '../../components/header/header.component';
-import { AboutComponent } from '../../components/about/about.component';
-import { TestimonialsComponent } from '../../components/testimonials/testimonials.component';
-import { FeaturesComponent } from '../../components/features/features.component';
-import { FooterComponent } from '../../components/footer/footer.component';
-import { ThemeButtonComponent } from '../../components/theme-button/theme-button.component';
-import { CtaComponent } from '../../components/cta/cta.component';
+import { Component, signal } from '@angular/core';
+import { HeaderComponent } from './components/header/header';
+import { CtaComponent } from './components/cta/cta';
+import { AboutComponent } from './components/about/about';
+import { TestimonialsComponent } from './components/testimonials/testimonials';
+import { FeaturesComponent } from './components/features/features';
+import { FooterComponent } from './components/footer/footer';
+import { ThemeButtonComponent } from './components/theme-button/theme-button';
+import { testimonials, aboutDetails, features } from './home-constants';
 
 @Component({
   selector: 'app-home',
@@ -19,13 +20,17 @@ import { CtaComponent } from '../../components/cta/cta.component';
     ThemeButtonComponent,
   ],
   template: `
-    <app-theme-button></app-theme-button>
-    <app-header></app-header>
-    <app-about></app-about>
-    <app-features></app-features>
-    <app-testimonials></app-testimonials>
-    <app-cta></app-cta>
-    <app-footer></app-footer>
+    <app-theme-button />
+    <app-header />
+    <app-about [aboutDetails]="aboutDetails()" />
+    <app-features [features]="features()" />
+    <app-testimonials [testimonials]="testimonials()" />
+    <app-cta />
+    <app-footer />
   `,
 })
-export class HomeComponent {}
+export default class HomeComponent {
+  testimonials = signal(testimonials);
+  aboutDetails = signal(aboutDetails);
+  features = signal(features);
+}

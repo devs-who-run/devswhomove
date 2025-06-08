@@ -1,11 +1,11 @@
 import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { ThemeService } from './services/theme.service';
+import { ThemeService } from './core/services/theme.service';
 
 @Component({
   imports: [RouterModule],
   selector: 'app-root',
-  templateUrl: './app.component.html',
+  templateUrl: './app.html',
 })
 export class AppComponent {
   title = 'Devs Who Run';

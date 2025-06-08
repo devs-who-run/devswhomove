@@ -1,10 +1,10 @@
-import { TestBed } from '@angular/core/testing';
 import { AppComponent } from './app.component';
+import { TestBed } from '@angular/core/testing';
 import { RouterModule } from '@angular/router';
-import { ThemeService } from './services/theme.service';
+import { ThemeService } from './core/services/theme.service';
 import { PLATFORM_ID } from '@angular/core';
 
-describe('AppComponent', () => {
+describe('App', () => {
   beforeEach(async () => {
     const mockMatchMedia = (query: string) => {
       return {

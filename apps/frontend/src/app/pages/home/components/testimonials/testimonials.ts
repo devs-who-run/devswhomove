@@ -1,11 +1,5 @@
-import { Component } from '@angular/core';
-
-type Testimonial = {
-  quote: string;
-  author: string;
-  role: string;
-  avatar: string;
-};
+import { Component, input } from '@angular/core';
+import { Testimonial } from '../../types';
 
 @Component({
   selector: 'app-testimonials',
@@ -18,7 +12,7 @@ type Testimonial = {
           What Our Members Say
         </h2>
         <div class="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
-          @for (testimonial of testimonials; track testimonial.author) {
+          @for (testimonial of testimonials(); track testimonial.author) {
           <div class="p-8 bg-gray-50 rounded-xl shadow-lg dark:bg-gray-800">
             <p class="mb-6 italic text-gray-600 dark:text-gray-300">
               "{{ testimonial.quote }}"
@@ -47,27 +41,5 @@ type Testimonial = {
   `,
 })
 export class TestimonialsComponent {
-  testimonials: Testimonial[] = [
-    {
-      quote:
-        'This community helped me maintain a healthy work-life balance while improving both my coding skills and running performance.',
-      author: 'Santosh Yadav',
-      role: 'Senior Software Engineer',
-      avatar: 'https://avatars.githubusercontent.com/u/11923975?v=4',
-    },
-    {
-      quote:
-        'Found an amazing group of like-minded developers who share my passion for running and clean code.',
-      author: 'Sashikumar Yadav',
-      role: 'Senior Software Engineer',
-      avatar: 'https://avatars.githubusercontent.com/u/21971232?v=4',
-    },
-    {
-      quote:
-        'The weekly challenges keep me motivated to code better and run faster. Best community ever!',
-      author: 'Codiini',
-      role: 'Senior Developer',
-      avatar: 'https://avatars.githubusercontent.com/u/57962747?v=4',
-    },
-  ];
+  testimonials = input<Testimonial[]>();
 }
