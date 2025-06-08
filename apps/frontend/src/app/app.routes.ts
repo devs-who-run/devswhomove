@@ -1,6 +1,7 @@
 import { Route } from '@angular/router';
-
+import { createEventRoutes } from '@devswhorun/create-event';
 export const appRoutes: Route[] = [
+  ...createEventRoutes,
   {
     path: '',
     loadComponent: () =>
