@@ -94,6 +94,27 @@
       "subject": "feat: add ssr to the app (#10)"
     },
     "targetVersion": "latest",
-    "confirmedPackageUpdates": true
+    "confirmedPackageUpdates": true,
+    "runningMigrations": [
+      "update-angular-cli-version-20-0-0"
+    ],
+    "completedMigrations": {
+      "update-angular-cli-version-20-0-0": {
+        "type": "successful",
+        "name": "update-angular-cli-version-20-0-0",
+        "changedFiles": [
+          {
+            "path": "package.json",
+            "type": "UPDATE"
+          },
+          {
+            "path": "tsconfig.base.json",
+            "type": "UPDATE"
+          }
+        ],
+        "ref": "daf1084a9d4cda73e8b3cdc3cc913b99adcfbde8",
+        "nextSteps": []
+      }
+    }
   }
 }
