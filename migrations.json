@@ -95,9 +95,6 @@
     },
     "targetVersion": "latest",
     "confirmedPackageUpdates": true,
-    "runningMigrations": [
-      "update-angular-cli-version-20-0-0"
-    ],
     "completedMigrations": {
       "update-angular-cli-version-20-0-0": {
         "type": "successful",
@@ -112,9 +109,30 @@
             "type": "UPDATE"
           }
         ],
-        "ref": "daf1084a9d4cda73e8b3cdc3cc913b99adcfbde8",
+        "ref": "15425a7deb0e274ac25f242a9c768a693d546c8c",
+        "nextSteps": []
+      },
+      "migrate-provide-server-rendering-import": {
+        "type": "skipped"
+      },
+      "replace-provide-server-routing": {
+        "type": "skipped"
+      },
+      "set-generator-defaults-for-previous-style-guide": {
+        "type": "successful",
+        "name": "set-generator-defaults-for-previous-style-guide",
+        "changedFiles": [
+          {
+            "path": "nx.json",
+            "type": "UPDATE"
+          }
+        ],
+        "ref": "58223f0478dedcc5f256e36818c4d333fab9b4d3",
         "nextSteps": []
       }
-    }
+    },
+    "runningMigrations": [
+      "set-generator-defaults-for-previous-style-guide"
+    ]
   }
 }
