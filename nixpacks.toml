@@ -1,0 +1,13 @@
+[phases.setup]
+nixPkgs = ['nodejs', 'yarn']
+
+[phases.install]
+cmds = ['yarn install --frozen-lockfile']
+
+[phases.build]
+cmds = [
+  'yarn nx run devswhorun-api:build:production',
+]
+
+[start]
+cmd = 'node dist/backend/devswhorun-api/main.js'
