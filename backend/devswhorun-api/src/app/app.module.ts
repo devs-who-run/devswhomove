@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AuthController } from './controllers/auth.controller';
 import { AppwriteService } from './services/appwrite.service';
 import appwriteConfig from './config/appwrite.config';
+import { EventsController } from './controllers/events.controller';
 
 @Module({
   imports: [
@@ -14,7 +15,7 @@ import appwriteConfig from './config/appwrite.config';
       envFilePath: '.env',
     }),
   ],
-  controllers: [AppController, AuthController],
+  controllers: [AppController, AuthController, EventsController],
   providers: [AppService, AppwriteService],
 })
 export class AppModule {}
