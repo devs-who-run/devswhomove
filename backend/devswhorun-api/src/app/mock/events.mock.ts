@@ -9,7 +9,8 @@ export const mockEvents: Event[] = [
     location: 'London, UK',
     name: 'Advanced Angular Patterns',
     sport: 'Running',
-    description: 'Deep dive into advanced Angular patterns including state management, reactive programming, and performance optimization techniques.',
+    description:
+      'Deep dive into advanced Angular patterns including state management, reactive programming, and performance optimization techniques.',
     time: '09:00',
     capacity: 50,
     createdAt: new Date('2025-01-15T10:00:00Z'),
@@ -23,7 +24,8 @@ export const mockEvents: Event[] = [
     location: 'Amsterdam, Netherlands',
     name: 'React 19 New Features',
     sport: 'Running',
-    description: 'Explore the latest features in React 19 including concurrent features, server components, and the new compiler.',
+    description:
+      'Explore the latest features in React 19 including concurrent features, server components, and the new compiler.',
     time: '14:30',
     capacity: 200,
     createdAt: new Date('2025-01-16T09:30:00Z'),
@@ -37,7 +39,8 @@ export const mockEvents: Event[] = [
     location: 'San Francisco, CA',
     name: 'Building Scalable APIs with NestJS',
     sport: 'Running',
-    description: 'Learn how to build enterprise-grade APIs using NestJS framework with TypeScript, GraphQL, and microservices architecture.',
+    description:
+      'Learn how to build enterprise-grade APIs using NestJS framework with TypeScript, GraphQL, and microservices architecture.',
     time: '18:00',
     capacity: 80,
     createdAt: new Date('2025-01-17T11:15:00Z'),
@@ -51,7 +54,8 @@ export const mockEvents: Event[] = [
     location: 'Berlin, Germany',
     name: 'Docker & Kubernetes for Developers',
     sport: 'Running',
-    description: 'Hands-on workshop covering containerization with Docker and orchestration with Kubernetes for modern application deployment.',
+    description:
+      'Hands-on workshop covering containerization with Docker and orchestration with Kubernetes for modern application deployment.',
     time: '10:00',
     capacity: 30,
     createdAt: new Date('2025-01-18T08:45:00Z'),
@@ -65,7 +69,8 @@ export const mockEvents: Event[] = [
     location: 'Amsterdam, Netherlands',
     name: 'The Future of JavaScript',
     sport: 'Running',
-    description: 'Discover upcoming JavaScript features, new frameworks, and the evolution of the JavaScript ecosystem.',
+    description:
+      'Discover upcoming JavaScript features, new frameworks, and the evolution of the JavaScript ecosystem.',
     time: '11:00',
     capacity: 300,
     createdAt: new Date('2025-01-19T13:20:00Z'),
@@ -79,7 +84,8 @@ export const mockEvents: Event[] = [
     location: 'Amsterdam, Netherlands',
     name: 'Vue 3 Composition API Deep Dive',
     sport: 'Running',
-    description: 'Master the Vue 3 Composition API with practical examples and best practices for building maintainable applications.',
+    description:
+      'Master the Vue 3 Composition API with practical examples and best practices for building maintainable applications.',
     time: '19:30',
     capacity: 60,
     createdAt: new Date('2025-01-20T16:10:00Z'),
@@ -93,7 +99,8 @@ export const mockEvents: Event[] = [
     location: 'New York, NY',
     name: 'TypeScript 5.0 and Beyond',
     sport: 'Running',
-    description: 'Explore the latest TypeScript features, compiler improvements, and advanced type system capabilities.',
+    description:
+      'Explore the latest TypeScript features, compiler improvements, and advanced type system capabilities.',
     time: '13:15',
     capacity: 150,
     createdAt: new Date('2025-01-21T12:30:00Z'),
@@ -107,7 +114,8 @@ export const mockEvents: Event[] = [
     location: 'Austin, TX',
     name: 'GraphQL Federation at Scale',
     sport: 'Running',
-    description: 'Learn how to implement GraphQL federation for microservices architecture with Apollo Federation and schema stitching.',
+    description:
+      'Learn how to implement GraphQL federation for microservices architecture with Apollo Federation and schema stitching.',
     time: '09:30',
     capacity: 40,
     createdAt: new Date('2025-01-22T14:45:00Z'),
@@ -121,7 +129,8 @@ export const mockEvents: Event[] = [
     location: 'Lisbon, Portugal',
     name: 'Web Performance Optimization',
     sport: 'Running',
-    description: 'Comprehensive guide to web performance optimization including Core Web Vitals, lazy loading, and modern optimization techniques.',
+    description:
+      'Comprehensive guide to web performance optimization including Core Web Vitals, lazy loading, and modern optimization techniques.',
     time: '15:45',
     capacity: 250,
     createdAt: new Date('2025-01-23T09:15:00Z'),
@@ -135,7 +144,8 @@ export const mockEvents: Event[] = [
     location: 'Warsaw, Poland',
     name: 'Cross-Platform Mobile Development',
     sport: 'Running',
-    description: 'Build native mobile apps using React Native with Expo, navigation, state management, and native module integration.',
+    description:
+      'Build native mobile apps using React Native with Expo, navigation, state management, and native module integration.',
     time: '17:00',
     capacity: 70,
     createdAt: new Date('2025-01-24T11:00:00Z'),
@@ -149,7 +159,8 @@ export const mockEvents: Event[] = [
     location: 'Seattle, WA',
     name: 'AWS Lambda & Serverless Architecture',
     sport: 'Running',
-    description: 'Build and deploy serverless applications using AWS Lambda, API Gateway, and other serverless technologies.',
+    description:
+      'Build and deploy serverless applications using AWS Lambda, API Gateway, and other serverless technologies.',
     time: '08:30',
     capacity: 35,
     createdAt: new Date('2025-01-25T15:30:00Z'),
@@ -163,7 +174,8 @@ export const mockEvents: Event[] = [
     location: 'Toronto, Canada',
     name: 'Machine Learning for Web Developers',
     sport: 'Running',
-    description: 'Introduction to machine learning concepts and practical implementation using TensorFlow.js and modern ML libraries.',
+    description:
+      'Introduction to machine learning concepts and practical implementation using TensorFlow.js and modern ML libraries.',
     time: '12:00',
     capacity: 180,
     createdAt: new Date('2025-01-26T10:45:00Z'),
