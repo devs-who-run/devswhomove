@@ -30,6 +30,14 @@ To see all available targets to run for a project, run:
 npx nx show project frontend
 ```
 
+# Terminal 1: Start backend
+
+npx nx serve devswhorun-api
+
+# Terminal 2: Start frontend
+
+npx nx serve devswhorun-frontend
+
 These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
 
 [More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)

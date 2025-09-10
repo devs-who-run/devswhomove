@@ -2,7 +2,7 @@ import { Component, signal } from '@angular/core';
 import { AboutComponent } from './components/about/about';
 import { TestimonialsComponent } from './components/testimonials/testimonials';
 import { FeaturesComponent } from './components/features/features';
-import { NavigationComponent } from '../../shared/components/navigation/navigation.component';
+import { NavigationComponent } from '../../shared/components/navigation.component';
 import { testimonials, aboutDetails, features } from './landing-constants';
 
 @Component({

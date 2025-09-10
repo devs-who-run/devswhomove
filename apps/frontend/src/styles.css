@@ -1,3 +1,59 @@
 /* You can add global styles to this file, and also import other style files */
 @import 'tailwindcss';
 @custom-variant dark (&:where(.dark, .dark *));
+
+.primary-btn {
+  @apply px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-medium rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 w-full sm:w-auto;
+}
+
+.glass-card {
+  @apply bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 dark:border-gray-700/20 hover:shadow-2xl transition-all duration-300 hover:scale-[1.02];
+}
+
+.icon-container {
+  @apply p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex-shrink-0;
+}
+
+.field-label {
+  @apply text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide;
+}
+
+.field-value {
+  @apply mt-1 text-sm font-semibold text-gray-900 dark:text-white;
+}
+
+.field-value-truncate {
+  @apply mt-1 text-sm font-semibold text-gray-900 dark:text-white truncate;
+}
+
+.description-text {
+  @apply mt-1 text-sm text-gray-700 dark:text-gray-300 line-clamp-2;
+}
+
+.meta-text {
+  @apply text-xs text-gray-500 dark:text-gray-400;
+}
+
+.card-title {
+  @apply text-base sm:text-lg font-bold text-gray-900 dark:text-white truncate;
+}
+
+.responsive-grid {
+  @apply grid grid-cols-1 sm:grid-cols-2 gap-4;
+}
+
+.responsive-flex {
+  @apply flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0;
+}
+
+.field-container {
+  @apply flex items-start space-x-3;
+}
+
+.field-content {
+  @apply flex-1 min-w-0;
+}
+
+.event-badge {
+  @apply px-2 sm:px-3 py-1 text-xs font-semibold rounded-full flex-shrink-0 self-start sm:self-center;
+}
