@@ -9,7 +9,6 @@ import { AuthApiService } from '../services/auth-api';
   template: `
     @let user = this.authApi.currentUser(); @if (user) {
     <nav class="border-b border-gray-400 dark:border-gray-500">
-
       <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center h-16">
           <div class="flex items-center">
