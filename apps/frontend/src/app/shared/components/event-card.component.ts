@@ -3,7 +3,6 @@ import { DatePipe } from '@angular/common';
 import { SvgIconDirective } from '../directives/svg/svg-icon';
 import { ICON_NAME } from '../directives/svg';
 
-
 export interface Event {
   id: string;
   conference: string;
@@ -24,27 +23,18 @@ export interface Event {
   standalone: true,
   imports: [DatePipe, SvgIconDirective],
   template: `
-    <div
-      class="glass-card p-4 sm:p-6 w-full max-w-md mx-auto lg:max-w-none"
-    >
-      <div
-        class="responsive-flex mb-4"
-      >
+    <div class="glass-card p-4 sm:p-6 w-full max-w-md mx-auto lg:max-w-none">
+      <div class="responsive-flex mb-4">
         <div class="flex items-center space-x-3 min-w-0 flex-1">
-          <div
-            class="icon-container"
-          >
+          <div class="icon-container">
             <span
               appSvgIcon
               [iconName]="iconName.conference"
               [iconClass]="'w-4 h-4 sm:w-5 sm:h-5 text-white'"
             ></span>
-
           </div>
           <div class="min-w-0 flex-1">
-            <h3
-              class="card-title"
-            >
+            <h3 class="card-title">
               {{ event().conference }}
             </h3>
           </div>
@@ -78,7 +68,9 @@ export interface Event {
           <div class="field-container">
             <div class="field-content">
               <p class="field-label">Date</p>
-              <p class="field-value">{{ event().date | date : 'mediumDate' }}</p>
+              <p class="field-value">
+                {{ event().date | date : 'mediumDate' }}
+              </p>
             </div>
           </div>
 
@@ -100,8 +92,12 @@ export interface Event {
         <div class="field-container">
           <div class="flex-1">
             <p class="field-label">Capacity</p>
-            <div class="mt-1 flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-              <span class="field-value flex-shrink-0">{{ event().capacity }} people</span>
+            <div
+              class="mt-1 flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2"
+            >
+              <span class="field-value flex-shrink-0"
+                >{{ event().capacity }} people</span
+              >
             </div>
           </div>
         </div>
@@ -118,11 +114,7 @@ export interface Event {
           >
             Created {{ event().createdAt | date : 'short' }}
           </p>
-          <button
-            class="primary-btn"
-          >
-            View Details
-          </button>
+          <button class="primary-btn">View Details</button>
         </div>
       </div>
     </div>
