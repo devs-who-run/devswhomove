@@ -6,39 +6,31 @@ import { ICON_NAME } from '../../../shared/directives/svg';
   selector: 'app-footer',
   imports: [SvgIconDirective],
   template: `
-    <footer class="py-12 text-gray-300 bg-gray-900">
-      <div class="px-4 mx-auto max-w-7xl sm:px-6 lg:px-8">
+    <footer class="footer-bg">
+      <div class="section-container">
         <div class="grid grid-cols-1 gap-8 md:grid-cols-3">
           <div>
-            <h3 class="mb-4 text-xl font-bold text-white">Devs Who Run</h3>
-            <p class="text-gray-400">
+            <h3 class="text-footer-title">Devs Who Run</h3>
+            <p class="text-footer-description">
               Balancing code and cardio, one step at a time.
             </p>
           </div>
           <div>
-            <h3 class="mb-4 text-xl font-bold text-white">Quick Links</h3>
+            <h3 class="text-footer-title">Quick Links</h3>
             <ul class="space-y-2">
               <li>
-                <a href="#about" class="transition-colors hover:text-white"
-                  >About</a
-                >
+                <a href="#about" class="footer-link">About</a>
               </li>
               <li>
-                <a href="#features" class="transition-colors hover:text-white"
-                  >Features</a
-                >
+                <a href="#features" class="footer-link">Features</a>
               </li>
               <li>
-                <a
-                  href="#testimonials"
-                  class="transition-colors hover:text-white"
-                  >Testimonials</a
-                >
+                <a href="#testimonials" class="footer-link">Testimonials</a>
               </li>
             </ul>
           </div>
           <div>
-            <h3 class="mb-4 text-xl font-bold text-white">Connect</h3>
+            <h3 class="text-footer-title">Connect</h3>
             <ul class="space-y-2">
               <li>
                 <a
@@ -79,7 +71,7 @@ import { ICON_NAME } from '../../../shared/directives/svg';
             Made with passion for running by
             <a
               href="https://github.com/santoshyadavdev"
-              class="text-blue-400 transition-colors hover:text-white"
+              class="profile-link"
               target="_blank"
               rel="noopener noreferrer"
               >Santosh Yadav</a
