@@ -1,21 +1,20 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
-import { AuthApiService } from '../../services/auth-api';
+import { AuthApiService } from '../services/auth-api';
 
 @Component({
   selector: 'app-navigation',
   imports: [CommonModule, RouterModule],
   template: `
     @let user = this.authApi.currentUser(); @if (user) {
-    <nav
-      class="overflow-hidden relative bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700"
+    <nav class="border-b border-gray-400 dark:border-gray-500"
     >
-      <div class="absolute inset-0">
+      <!-- <div class="absolute inset-0">
         <div
           class="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 dark:from-blue-500/20 dark:to-purple-500/20"
         ></div>
-      </div>
+      </div> -->
 
       <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center h-16">

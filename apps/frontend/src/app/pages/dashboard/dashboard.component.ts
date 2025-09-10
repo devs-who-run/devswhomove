@@ -1,9 +1,11 @@
-import { Component } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, inject } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
+import { EventApiService } from '../../shared/services/event-api';
+import { EventCardComponent } from '../../shared/components/event-card.component';
 
 @Component({
   selector: 'app-dashboard',
-  imports: [CommonModule],
+  imports: [EventCardComponent],
   template: `
     <main class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
       <div class="text-center mb-12">
@@ -13,7 +15,25 @@ import { CommonModule } from '@angular/common';
           Welcome to DevsWhoRun! 🏃‍♂️
         </h1>
       </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        @if(events.isLoading()) {
+          <!-- We can replace this with skeleton loader -->
+          <div>Loading...</div>
+        } @else if(events.error()) {
+          <div>Error loading events</div>
+        } @else {
+          @for(event of events.value(); track event.id) {
+            <app-event-card [event]="event" />
+          }
+        }
+      </div>
     </main>
   `,
 })
-export class DashboardComponent {}
+export class DashboardComponent {
+  private readonly eventApiService = inject(EventApiService);
+  events = rxResource({
+    loader: () => this.eventApiService.getEvents(),
+    defaultValue: [],
+  });
+}

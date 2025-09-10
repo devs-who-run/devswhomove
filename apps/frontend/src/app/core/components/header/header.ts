@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { SocialLoginComponent } from '../../../pages/landing/components/social-login/social-login';
 import { AuthApiService } from '../../../shared/services/auth-api';
-import { NavigationComponent } from '../../../shared/components/navigation/navigation.component';
+import { NavigationComponent } from '../../../shared/components/navigation.component';
 
 type DiscordStats = {
   total_members: number;
