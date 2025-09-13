@@ -6,10 +6,65 @@
   "sourceRoot": "apps/frontend/src",
   "tags": [],
   "targets": {
+    "build": {
+      "executor": "@angular-devkit/build-angular:application",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/apps/frontend",
+        "index": "apps/frontend/src/index.html",
+        "browser": "apps/frontend/src/main.ts",
+        "polyfills": ["zone.js"],
+        "tsConfig": "apps/frontend/tsconfig.app.json",
+        "assets": [
+          {
+            "glob": "**/*",
+            "input": "apps/frontend/public"
+          }
+        ],
+        "styles": ["apps/frontend/src/styles.css"],
+        "scripts": []
+      },
+      "configurations": {
+        "production": {
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "500kb",
+              "maximumError": "1mb"
+            },
+            {
+              "type": "anyComponentStyle",
+              "maximumWarning": "4kb",
+              "maximumError": "8kb"
+            }
+          ],
+          "outputHashing": "all"
+        },
+        "development": {
+          "optimization": false,
+          "extractLicenses": false,
+          "sourceMap": true
+        }
+      },
+      "defaultConfiguration": "production"
+    },
+    "serve": {
+      "continuous": true,
+      "executor": "@angular-devkit/build-angular:dev-server",
+      "configurations": {
+        "production": {
+          "buildTarget": "devswhorun-ui:build:production"
+        },
+        "development": {
+          "buildTarget": "devswhorun-ui:build:development"
+        }
+      },
+      "defaultConfiguration": "development"
+    },
     "extract-i18n": {
       "executor": "@angular-devkit/build-angular:extract-i18n",
       "options": {
-        "buildTarget": "devswhorun-frontend:build"
+        "buildTarget": "devswhorun-ui:build"
       }
     },
     "lint": {
@@ -19,53 +74,11 @@
       "continuous": true,
       "executor": "@nx/web:file-server",
       "options": {
-        "buildTarget": "devswhorun-frontend:build",
+        "buildTarget": "devswhorun-ui:build",
         "port": 4200,
+        "staticFilePath": "dist/apps/frontend/browser",
         "spa": true
       }
-    },
-    "server": {
-      "dependsOn": ["build"],
-      "executor": "@nx/angular:webpack-server",
-      "options": {
-        "outputPath": "dist/apps/frontend/server",
-        "main": "apps/frontend/src/server.ts",
-        "tsConfig": "apps/frontend/tsconfig.server.json"
-      },
-      "configurations": {},
-      "defaultConfiguration": "production"
-    },
-    "serve-ssr": {
-      "continuous": true,
-      "executor": "@angular-devkit/build-angular:ssr-dev-server",
-      "configurations": {
-        "development": {
-          "browserTarget": "devswhorun-frontend:build:development",
-          "serverTarget": "devswhorun-frontend:server:development"
-        },
-        "production": {
-          "browserTarget": "devswhorun-frontend:build:production",
-          "serverTarget": "devswhorun-frontend:server:production"
-        }
-      },
-      "defaultConfiguration": "development"
-    },
-    "prerender": {
-      "executor": "@angular-devkit/build-angular:prerender",
-      "options": {
-        "routes": ["/"]
-      },
-      "configurations": {
-        "development": {
-          "browserTarget": "devswhorun-frontend:build:development",
-          "serverTarget": "devswhorun-frontend:server:development"
-        },
-        "production": {
-          "browserTarget": "devswhorun-frontend:build:production",
-          "serverTarget": "devswhorun-frontend:server:production"
-        }
-      },
-      "defaultConfiguration": "production"
     }
   }
 }
