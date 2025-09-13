@@ -1,4 +1,4 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, signal, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
@@ -8,11 +8,13 @@ import { UserProfile, AuthResponse } from '../types';
   providedIn: 'root',
 })
 export class AuthApiService {
+  private http = inject(HttpClient);
+
   private readonly apiUrl = 'http://localhost:3001/auth';
 
   public currentUser = signal<UserProfile | null>(null);
 
-  constructor(private http: HttpClient) {
+  constructor() {
     this.loadStoredSession();
   }
 
