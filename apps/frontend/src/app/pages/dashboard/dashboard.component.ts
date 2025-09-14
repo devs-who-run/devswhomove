@@ -31,7 +31,7 @@ import { EventCardComponent } from '../../shared/components/event-card.component
 export class DashboardComponent {
   private readonly eventApiService = inject(EventApiService);
   events = rxResource({
-    loader: () => this.eventApiService.getEvents(),
+    stream: () => this.eventApiService.getEvents(),
     defaultValue: [],
   });
 }
