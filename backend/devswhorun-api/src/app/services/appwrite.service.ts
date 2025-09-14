@@ -34,9 +34,9 @@ export class AppwriteService {
   async createGitHubOAuthUrl(
     successUrl: string,
     failureUrl: string
-  ): Promise<string | void> {
+  ): Promise<string> {
     try {
-      const sessionUrl = this.account.createOAuth2Token({
+      const sessionUrl = await this.account.createOAuth2Token({
         provider: OAuthProvider.Github,
         success: successUrl,
         failure: failureUrl,
