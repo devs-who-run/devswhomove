@@ -1,11 +1,11 @@
 import { Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { Router, RouterModule } from '@angular/router';
 import { AuthApiService } from '../services/auth-api';
 
 @Component({
   selector: 'app-navigation',
-  imports: [CommonModule, RouterModule],
+  imports: [RouterModule],
   template: `
     @let user = this.authApi.currentUser(); @if (user) {
     <nav class="border-b border-gray-400 dark:border-gray-500">

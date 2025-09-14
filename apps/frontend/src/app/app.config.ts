@@ -6,6 +6,7 @@ import {
   provideClientHydration,
   withEventReplay,
 } from '@angular/platform-browser';
+import { BASE_API_URL, getBaseApiUrl } from './shared/context/base-api-url';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -13,5 +14,9 @@ export const appConfig: ApplicationConfig = {
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(appRoutes),
     provideHttpClient(withFetch()),
+    {
+      provide: BASE_API_URL,
+      useFactory: getBaseApiUrl,
+    },
   ],
 };
