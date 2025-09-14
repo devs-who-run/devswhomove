@@ -31,6 +31,10 @@ export class AuthController {
         failureUrl
       );
 
+      this.logger.log('OAuth URL generated:', oauthUrl);
+      if (!oauthUrl) {
+        throw new InternalServerErrorException('Failed to generate OAuth URL');
+      }
       return {
         success: true,
         message: 'GitHub OAuth URL created successfully',

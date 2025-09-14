@@ -42,6 +42,9 @@ export class AppwriteService {
         failure: failureUrl,
       });
 
+      this.logger.log(successUrl, 'THIS IS SUCCESS URL');
+      this.logger.log(failureUrl, 'THIS IS FAILURE URL');
+      this.logger.log(sessionUrl, 'THIS IS SESSION URL');
       if (!sessionUrl) {
         throw new Error('Failed to generate OAuth URL');
       }
