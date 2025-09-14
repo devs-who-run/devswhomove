@@ -32,7 +32,6 @@ export class AuthController {
         failureUrl
       );
 
-      this.logger.log('OAuth URL generated:', oauthUrl);
       if (!oauthUrl) {
         throw new InternalServerErrorException('Failed to generate OAuth URL');
       }
@@ -42,8 +41,6 @@ export class AuthController {
         data: { oauthUrl },
       };
     } catch (error) {
-      this.logger.log(error instanceof Error ? error.message : error);
-      this.logger.log(oauthUrl, 'THIS IS ERROR');
       this.logger.error('Failed to initiate GitHub login', error);
       throw new InternalServerErrorException('Failed to initiate GitHub login');
     }
