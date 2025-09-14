@@ -23,10 +23,11 @@ export class AuthController {
   async initiateGitHubLogin(
     @Body() createOAuthUrlDto: CreateOAuthUrlDto
   ): Promise<AuthResponseDto> {
+    let oauthUrl: string | void;
     try {
       const { successUrl, failureUrl } = createOAuthUrlDto;
 
-      const oauthUrl = await this.appwriteService.createGitHubOAuthUrl(
+      oauthUrl = await this.appwriteService.createGitHubOAuthUrl(
         successUrl,
         failureUrl
       );
@@ -41,6 +42,8 @@ export class AuthController {
         data: { oauthUrl },
       };
     } catch (error) {
+      this.logger.log(error instanceof Error ? error.message : error);
+      this.logger.log(oauthUrl, 'THIS IS ERROR');
       this.logger.error('Failed to initiate GitHub login', error);
       throw new InternalServerErrorException('Failed to initiate GitHub login');
     }
