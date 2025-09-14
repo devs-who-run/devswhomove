@@ -3,14 +3,16 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { UserProfile, AuthResponse } from '../types';
+import { BASE_API_URL } from '../context/base-api-url';
 
 @Injectable({
   providedIn: 'root',
 })
 export class AuthApiService {
   private http = inject(HttpClient);
+  private baseUrl = inject(BASE_API_URL);
 
-  private readonly apiUrl = 'http://localhost:3001/auth';
+  private readonly apiUrl = `${this.baseUrl}/auth`;
 
   public currentUser = signal<UserProfile | null>(null);
 
