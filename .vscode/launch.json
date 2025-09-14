@@ -20,7 +20,9 @@
       },
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"],
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
       "sourceMaps": true
     },
     {
@@ -33,7 +35,9 @@
         "${workspaceFolder}/dist/backend/devswhorun-api/**/*.js"
       ],
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"],
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
       "sourceMaps": true
     }
   ]
