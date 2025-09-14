@@ -4,6 +4,7 @@ import { RouterModule } from '@angular/router';
 import { ThemeService } from './core/services/theme.service';
 import { PLATFORM_ID } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
+import { BASE_API_URL } from './shared/context/base-api-url';
 
 describe('App', () => {
   beforeEach(async () => {
@@ -26,6 +27,7 @@ describe('App', () => {
         ThemeService,
         { provide: PLATFORM_ID, useValue: 'browser' },
         provideHttpClient(),
+        { provide: BASE_API_URL, useValue: 'http://localhost:3001' },
       ],
     }).compileComponents();
   });
