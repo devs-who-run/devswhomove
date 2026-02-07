@@ -46,6 +46,11 @@ export class CreateEventDto {
   @IsNumber()
   @IsNotEmpty()
   capacity: number;
+
+  @ApiProperty({ description: 'Name of the user who created the event' })
+  @IsString()
+  @IsNotEmpty()
+  createdBy: string;
 }
 
 export class EventResponseDto {
@@ -80,10 +85,13 @@ export class EventResponseDto {
   capacity: number;
 
   @ApiProperty()
-  createdAt: Date;
+  createdBy: string;
 
   @ApiProperty()
-  updatedAt: Date;
+  createdAt?: Date;
+
+  @ApiProperty()
+  updatedAt?: Date;
 }
 
 export class Event {
@@ -97,6 +105,7 @@ export class Event {
   description: string;
   time: string;
   capacity: number;
-  createdAt: Date;
-  updatedAt: Date;
+  createdBy: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }

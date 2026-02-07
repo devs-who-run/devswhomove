@@ -6,4 +6,6 @@ export default registerAs('appwrite', () => ({
   endpoint: process.env.APPWRITE_ENDPOINT,
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:4200',
   apiKey: process.env.APPWRITE_API_KEY,
+  databaseId: process.env.APPWRITE_DATABASE_ID,
+  eventsCollectionId: process.env.APPWRITE_EVENTS_COLLECTION_ID,
 }));

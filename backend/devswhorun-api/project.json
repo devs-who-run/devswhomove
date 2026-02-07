@@ -28,7 +28,8 @@
       },
       "configurations": {
         "development": {
-          "buildTarget": "devswhorun-api:build:development"
+          "buildTarget": "devswhorun-api:build:development",
+          "inspect": true
         },
         "production": {
           "buildTarget": "devswhorun-api:build:production"

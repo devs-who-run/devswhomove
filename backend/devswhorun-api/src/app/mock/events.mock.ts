@@ -15,6 +15,7 @@ export const mockEvents: Event[] = [
     capacity: 50,
     createdAt: new Date('2025-01-15T10:00:00Z'),
     updatedAt: new Date('2025-01-15T10:00:00Z'),
+    createdBy: 'Sky',
   },
   {
     id: '2',
@@ -30,6 +31,7 @@ export const mockEvents: Event[] = [
     capacity: 200,
     createdAt: new Date('2025-01-16T09:30:00Z'),
     updatedAt: new Date('2025-01-16T09:30:00Z'),
+    createdBy: 'Sky',
   },
   {
     id: '3',
@@ -45,6 +47,7 @@ export const mockEvents: Event[] = [
     capacity: 80,
     createdAt: new Date('2025-01-17T11:15:00Z'),
     updatedAt: new Date('2025-01-17T11:15:00Z'),
+    createdBy: 'Santosh Yadav',
   },
   {
     id: '4',
@@ -60,6 +63,7 @@ export const mockEvents: Event[] = [
     capacity: 30,
     createdAt: new Date('2025-01-18T08:45:00Z'),
     updatedAt: new Date('2025-01-18T08:45:00Z'),
+    createdBy: 'Santosh Yadav',
   },
   {
     id: '5',
@@ -75,6 +79,7 @@ export const mockEvents: Event[] = [
     capacity: 300,
     createdAt: new Date('2025-01-19T13:20:00Z'),
     updatedAt: new Date('2025-01-19T13:20:00Z'),
+    createdBy: 'Santosh Yadav',
   },
   {
     id: '6',
@@ -90,6 +95,7 @@ export const mockEvents: Event[] = [
     capacity: 60,
     createdAt: new Date('2025-01-20T16:10:00Z'),
     updatedAt: new Date('2025-01-20T16:10:00Z'),
+    createdBy: 'Sky',
   },
   {
     id: '7',
@@ -105,6 +111,7 @@ export const mockEvents: Event[] = [
     capacity: 150,
     createdAt: new Date('2025-01-21T12:30:00Z'),
     updatedAt: new Date('2025-01-21T12:30:00Z'),
+    createdBy: 'Sky',
   },
   {
     id: '8',
@@ -120,6 +127,7 @@ export const mockEvents: Event[] = [
     capacity: 40,
     createdAt: new Date('2025-01-22T14:45:00Z'),
     updatedAt: new Date('2025-01-22T14:45:00Z'),
+    createdBy: 'Sky',
   },
   {
     id: '9',
@@ -135,6 +143,7 @@ export const mockEvents: Event[] = [
     capacity: 250,
     createdAt: new Date('2025-01-23T09:15:00Z'),
     updatedAt: new Date('2025-01-23T09:15:00Z'),
+    createdBy: 'Sky',
   },
   {
     id: '10',
@@ -150,6 +159,7 @@ export const mockEvents: Event[] = [
     capacity: 70,
     createdAt: new Date('2025-01-24T11:00:00Z'),
     updatedAt: new Date('2025-01-24T11:00:00Z'),
+    createdBy: 'Sky',
   },
   {
     id: '11',
@@ -165,6 +175,7 @@ export const mockEvents: Event[] = [
     capacity: 35,
     createdAt: new Date('2025-01-25T15:30:00Z'),
     updatedAt: new Date('2025-01-25T15:30:00Z'),
+    createdBy: 'Sky',
   },
   {
     id: '12',
@@ -180,5 +191,6 @@ export const mockEvents: Event[] = [
     capacity: 180,
     createdAt: new Date('2025-01-26T10:45:00Z'),
     updatedAt: new Date('2025-01-26T10:45:00Z'),
+    createdBy: 'Sky',
   },
 ];
