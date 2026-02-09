@@ -1,12 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Client, Account, OAuthProvider, Users } from 'node-appwrite';
+import {
+  Client,
+  Account,
+  OAuthProvider,
+  Databases,
+  Models,
+} from 'node-appwrite';
 
 @Injectable()
 export class AppwriteService {
   private readonly logger = new Logger(AppwriteService.name);
   private client: Client;
   private account: Account;
+  private databases: Databases;
 
   constructor(private configService: ConfigService) {
     this.initializeClient();
@@ -28,6 +35,7 @@ export class AppwriteService {
     }
 
     this.account = new Account(this.client);
+    this.databases = new Databases(this.client);
     this.logger.log('Appwrite client initialized successfully');
   }
 
@@ -52,7 +60,7 @@ export class AppwriteService {
     }
   }
 
-  async getCurrentUser(sessionSecret?: string): Promise<any> {
+  async getCurrentUser(sessionSecret?: string): Promise<Models.User> {
     try {
       if (!sessionSecret) {
         throw new Error('Session secret is required');
@@ -80,7 +88,7 @@ export class AppwriteService {
   async createSessionFromCallback(
     userId: string,
     secret: string
-  ): Promise<{ session: any; user: any }> {
+  ): Promise<{ session: Models.Session; user: Models.User }> {
     try {
       const session = await this.account.createSession(userId, secret);
 
@@ -118,7 +126,7 @@ export class AppwriteService {
     }
   }
 
-  async getSessions(sessionId: string): Promise<any> {
+  async getSessions(sessionId: string): Promise<Models.SessionList> {
     try {
       const endpoint = this.configService.get<string>('appwrite.endpoint');
       const projectId = this.configService.get<string>('appwrite.projectId');
@@ -135,5 +143,21 @@ export class AppwriteService {
       this.logger.error('Failed to get sessions', error);
       throw error;
     }
+  }
+
+  getDatabases(): Databases {
+    return this.databases;
+  }
+
+  getDatabaseId(): string {
+    return (
+      this.configService.get<string>('appwrite.databaseId') || 'devswhorun'
+    );
+  }
+
+  getEventsCollectionId(): string {
+    return (
+      this.configService.get<string>('appwrite.eventsCollectionId') || 'events'
+    );
   }
 }

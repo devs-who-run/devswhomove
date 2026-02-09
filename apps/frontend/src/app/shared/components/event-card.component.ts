@@ -114,7 +114,7 @@ export interface Event {
           >
             Created {{ event().createdAt | date : 'short' }}
           </p>
-          <button class="primary-btn">View Details</button>
+          <button class="primary-btn cursor-pointer">View Details</button>
         </div>
       </div>
     </div>

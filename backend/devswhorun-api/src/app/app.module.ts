@@ -4,6 +4,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthController } from './controllers/auth.controller';
 import { AppwriteService } from './services/appwrite.service';
+import { EventService } from './services/event.service';
+import { SeedService } from './services/seed.service';
 import appwriteConfig from './config/appwrite.config';
 import { EventsController } from './controllers/events.controller';
 
@@ -16,6 +18,6 @@ import { EventsController } from './controllers/events.controller';
     }),
   ],
   controllers: [AppController, AuthController, EventsController],
-  providers: [AppService, AppwriteService],
+  providers: [AppService, AppwriteService, EventService, SeedService],
 })
 export class AppModule {}

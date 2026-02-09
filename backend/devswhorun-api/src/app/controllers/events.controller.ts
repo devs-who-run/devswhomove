@@ -6,17 +6,18 @@ import {
   Get,
   Param,
   NotFoundException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { CreateEventDto, EventResponseDto, Event } from '../dto/events.dto';
-import { mockEvents } from '../mock/events.mock';
-import { randomUUID } from 'crypto';
+import { EventService } from '../services/event.service';
 
 @ApiTags('events')
 @Controller('events')
 export class EventsController {
   private readonly logger = new Logger(EventsController.name);
-  private events: Event[] = [...mockEvents];
+
+  constructor(private readonly eventService: EventService) {}
 
   @Get('all')
   @ApiOperation({ summary: 'Get all events' })
@@ -26,25 +27,12 @@ export class EventsController {
     type: [EventResponseDto],
   })
   async getAllEvents(): Promise<Event[]> {
-    return this.events;
-  }
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get event by ID' })
-  @ApiParam({ name: 'id', description: 'Event ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Event found',
-    type: EventResponseDto,
-  })
-  @ApiResponse({ status: 404, description: 'Event not found' })
-  async getEventById(@Param('id') id: string): Promise<Event> {
-    const event = this.events.find((e) => e.id === id);
-    if (!event) {
-      throw new NotFoundException('Event not found');
+    try {
+      return await this.eventService.getEvents();
+    } catch (error) {
+      this.logger.error('Failed to get all events', error);
+      throw new InternalServerErrorException('Failed to retrieve events');
     }
-
-    return event;
   }
 
   @Post('add')
@@ -56,28 +44,12 @@ export class EventsController {
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   async createEvent(@Body() createEventDto: CreateEventDto): Promise<Event> {
-    const id = randomUUID();
-    const now = new Date();
-
-    const newEvent: Event = {
-      id,
-      conference: createEventDto.conference,
-      eventType: createEventDto.eventType,
-      date: createEventDto.date,
-      location: createEventDto.location,
-      name: createEventDto.name,
-      sport: createEventDto.sport,
-      description: createEventDto.description,
-      time: createEventDto.time,
-      capacity: createEventDto.capacity,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    // currently stores events in memory
-    this.events.push(newEvent);
-
-    return newEvent;
+    try {
+      return await this.eventService.createEvent(createEventDto);
+    } catch (error) {
+      this.logger.error('Failed to create event', error);
+      throw new InternalServerErrorException('Failed to create event');
+    }
   }
 
   @Get('conference/:conference')
@@ -91,11 +63,15 @@ export class EventsController {
   async getEventsByConference(
     @Param('conference') conference: string
   ): Promise<Event[]> {
-    const events = this.events.filter((e) =>
-      e.conference.toLowerCase().includes(conference.toLowerCase())
-    );
-
-    return events;
+    try {
+      return await this.eventService.getEventsByConference(conference);
+    } catch (error) {
+      this.logger.error(
+        `Failed to get events by conference: ${conference}`,
+        error
+      );
+      throw new InternalServerErrorException('Failed to retrieve events');
+    }
   }
 
   @Get('type/:eventType')
@@ -112,10 +88,32 @@ export class EventsController {
   async getEventsByType(
     @Param('eventType') eventType: string
   ): Promise<Event[]> {
-    const events = this.events.filter(
-      (e) => e.eventType.toLowerCase() === eventType.toLowerCase()
-    );
+    try {
+      return await this.eventService.getEventsByType(eventType);
+    } catch (error) {
+      this.logger.error(`Failed to get events by type: ${eventType}`, error);
+      throw new InternalServerErrorException('Failed to retrieve events');
+    }
+  }
 
-    return events;
+  @Get(':id')
+  @ApiOperation({ summary: 'Get event by ID' })
+  @ApiParam({ name: 'id', description: 'Event ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Event found',
+    type: EventResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async getEventById(@Param('id') id: string): Promise<Event> {
+    try {
+      return await this.eventService.getEventById(id);
+    } catch (error) {
+      this.logger.error(`Failed to get event with ID: ${id}`, error);
+      if (error?.code === 404 || error?.type === 'document_not_found') {
+        throw new NotFoundException('Event not found');
+      }
+      throw new InternalServerErrorException('Failed to retrieve event');
+    }
   }
 }
