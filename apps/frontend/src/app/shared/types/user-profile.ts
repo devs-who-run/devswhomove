@@ -4,4 +4,6 @@ export interface UserProfile {
   email: string;
   avatar?: string;
   provider: string;
+  country?: string;
+  city?: string;
 }

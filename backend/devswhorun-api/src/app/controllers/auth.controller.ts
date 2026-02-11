@@ -7,6 +7,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { AppwriteService } from '../services/appwrite.service';
+import { UserProfileService } from '../services/user-profile.service';
 import {
   CreateOAuthUrlDto,
   AuthResponseDto,
@@ -17,7 +18,10 @@ import {
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
 
-  constructor(private readonly appwriteService: AppwriteService) {}
+  constructor(
+    private readonly appwriteService: AppwriteService,
+    private readonly userProfileService: UserProfileService
+  ) {}
 
   @Post('github/login')
   async initiateGitHubLogin(
@@ -62,6 +66,12 @@ export class AuthController {
         secret
       );
 
+      const profile = await this.userProfileService.findOrCreateProfile(
+        result.user.$id,
+        result.user.name,
+        result.user.email
+      );
+
       return {
         success: true,
         message: 'Session created successfully',
@@ -69,10 +79,12 @@ export class AuthController {
           secretToken: result.session.secret,
           user: {
             id: result.user.$id,
-            name: result.user.name,
+            name: profile.name,
             email: result.user.email,
             avatar: result.user.prefs?.avatar || null,
             provider: result.user.prefs?.provider || 'github',
+            country: profile.country || '',
+            city: profile.city || '',
           },
         },
       };
@@ -94,16 +106,21 @@ export class AuthController {
       }
 
       const user = await this.appwriteService.getCurrentUser(secretToken);
+      const profile = await this.userProfileService.getProfileByAuthUserId(
+        user.$id
+      );
 
       return {
         success: true,
         message: 'User profile retrieved successfully',
         data: {
           id: user.$id,
-          name: user.name,
+          name: profile?.name || user.name,
           email: user.email,
           avatar: user.prefs?.avatar || null,
           provider: user.prefs?.provider || 'github',
+          country: profile?.country || '',
+          city: profile?.city || '',
         },
       };
     } catch (error) {
@@ -150,14 +167,21 @@ export class AuthController {
       }
 
       const user = await this.appwriteService.getCurrentUser(secretToken);
+      const profile = await this.userProfileService.getProfileByAuthUserId(
+        user.$id
+      );
 
       return {
         success: true,
         message: 'Session is valid',
         data: {
           id: user.$id,
-          name: user.name,
+          name: profile?.name || user.name,
           email: user.email,
+          avatar: user.prefs?.avatar || null,
+          provider: user.prefs?.provider || 'github',
+          country: profile?.country || '',
+          city: profile?.city || '',
           isAuthenticated: true,
         },
       };

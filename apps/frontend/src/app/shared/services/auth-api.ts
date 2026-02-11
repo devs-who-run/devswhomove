@@ -105,13 +105,16 @@ export class AuthApiService {
       .pipe(
         tap(({ success, data }) => {
           if (success) {
-            const { id, name, email, avatar, provider } = data as UserProfile;
+            const { id, name, email, avatar, provider, country, city } =
+              data as UserProfile;
             const userProfile: UserProfile = {
               id,
               name,
               email,
               avatar,
               provider,
+              country: country || '',
+              city: city || '',
             };
             this.currentUser.set(userProfile);
           } else {

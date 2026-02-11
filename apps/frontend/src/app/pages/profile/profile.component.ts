@@ -1,13 +1,26 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
+import { form, FormField, required, submit } from '@angular/forms/signals';
+import { firstValueFrom } from 'rxjs';
 import { AuthApiService } from '../../shared/services/auth-api';
+import {
+  UserProfileApiService,
+  UpdateUserProfileRequest,
+} from '../../shared/services/user-profile-api';
+
+interface ProfileFormData {
+  name: string;
+  country: string;
+  city: string;
+}
 
 @Component({
   selector: 'app-profile',
-  imports: [],
+  imports: [FormField],
   template: `
     @let user = this.authApi.currentUser(); @if (user) {
     <main class="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Personal Info Card -->
         <div
           class="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20 dark:border-gray-700/20"
         >
@@ -34,11 +47,53 @@ import { AuthApiService } from '../../shared/services/auth-api';
             </h2>
           </div>
 
+          @if (isEditing()) {
+          <form novalidate (submit)="onSubmit($event)">
+            <div class="space-y-6">
+              <div class="flex items-start space-x-4">
+                <div class="flex-1">
+                  <p
+                    class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
+                  >
+                    Full Name
+                  </p>
+                  <input
+                    type="text"
+                    [formField]="profileForm.name"
+                    class="mt-1 w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  @if (profileForm.name().touched() &&
+                  profileForm.name().invalid()) {
+                  <div class="mt-1">
+                    @for (error of profileForm.name().errors(); track error) {
+                    <p class="text-sm text-red-500 dark:text-red-400">
+                      {{ error.message }}
+                    </p>
+                    }
+                  </div>
+                  }
+                </div>
+              </div>
+
+              <div class="flex items-start space-x-4">
+                <div class="flex-1">
+                  <p
+                    class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
+                  >
+                    Email Address
+                  </p>
+                  <p
+                    class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"
+                  >
+                    {{ user.email }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </form>
+          } @else {
           <div class="space-y-6">
             <div class="flex items-start space-x-4">
-              <div
-                class="flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full mt-2"
-              ></div>
               <div class="flex-1">
                 <p
                   class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
@@ -54,9 +109,6 @@ import { AuthApiService } from '../../shared/services/auth-api';
             </div>
 
             <div class="flex items-start space-x-4">
-              <div
-                class="flex-shrink-0 w-2 h-2 bg-green-500 rounded-full mt-2"
-              ></div>
               <div class="flex-1">
                 <p
                   class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
@@ -71,81 +123,147 @@ import { AuthApiService } from '../../shared/services/auth-api';
               </div>
             </div>
           </div>
+          }
         </div>
 
+        <!-- Address Details Card -->
         <div
           class="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20 dark:border-gray-700/20"
         >
-          <div class="flex items-center mb-6">
-            <div
-              class="p-3 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl"
-            >
-              <svg
-                class="w-6 h-6 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+          <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center">
+              <div
+                class="p-3 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl"
               >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-                />
-              </svg>
+                <svg
+                  class="w-6 h-6 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                  />
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+              </div>
+              <h2 class="ml-4 text-2xl font-bold text-gray-900 dark:text-white">
+                Address Details
+              </h2>
             </div>
-            <h2 class="ml-4 text-2xl font-bold text-gray-900 dark:text-white">
-              Account Details
-            </h2>
+            @if (!isEditing()) {
+            <button
+              (click)="startEditing()"
+              class="cursor-pointer px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+            >
+              Edit
+            </button>
+            }
           </div>
 
-          <div class="space-y-6">
-            <div class="flex items-start space-x-4">
-              <div
-                class="flex-shrink-0 w-2 h-2 bg-purple-500 rounded-full mt-2"
-              ></div>
-              <div class="flex-1">
-                <p
-                  class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
-                >
-                  Authentication Provider
-                </p>
-                <div class="mt-1 flex items-center space-x-2">
-                  <svg
-                    class="w-5 h-5 text-gray-900 dark:text-white"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
+          @if (isEditing()) {
+          <form novalidate (submit)="onSubmit($event)">
+            <div class="space-y-6">
+              <div class="flex items-start space-x-4">
+                <div class="flex-1">
+                  <p
+                    class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
                   >
-                    <path
-                      d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
-                    />
-                  </svg>
-                  <span
-                    class="text-lg font-semibold text-gray-900 dark:text-white capitalize"
-                    >{{ user.provider }}</span
-                  >
+                    Country
+                  </p>
+                  <input
+                    type="text"
+                    [formField]="profileForm.country"
+                    placeholder="Enter your country"
+                    class="mt-1 w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
                 </div>
               </div>
-            </div>
 
+              <div class="flex items-start space-x-4">
+                <div class="flex-1">
+                  <p
+                    class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
+                  >
+                    City
+                  </p>
+                  <input
+                    type="text"
+                    [formField]="profileForm.city"
+                    placeholder="Enter your city"
+                    class="mt-1 w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div class="flex space-x-3 pt-2">
+                <button
+                  type="submit"
+                  [disabled]="profileForm().submitting()"
+                  class="cursor-pointer flex-1 px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {{
+                    profileForm().submitting() ? 'Saving...' : 'Save Changes'
+                  }}
+                </button>
+                <button
+                  type="button"
+                  (click)="cancelEditing()"
+                  [disabled]="profileForm().submitting()"
+                  class="cursor-pointer flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              @if (saveError()) {
+              <p class="text-sm text-red-500 dark:text-red-400">
+                {{ saveError() }}
+              </p>
+              }
+            </div>
+          </form>
+          } @else {
+          <div class="space-y-6">
             <div class="flex items-start space-x-4">
-              <div
-                class="flex-shrink-0 w-2 h-2 bg-indigo-500 rounded-full mt-2"
-              ></div>
               <div class="flex-1">
                 <p
                   class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
                 >
-                  User ID
+                  Country
                 </p>
                 <p
-                  class="mt-1 text-sm font-mono bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded-lg text-gray-900 dark:text-white break-all"
+                  class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"
                 >
-                  {{ user.id }}
+                  {{ user.country || 'Not set' }}
+                </p>
+              </div>
+            </div>
+
+            <div class="flex items-start space-x-4">
+              <div class="flex-1">
+                <p
+                  class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide"
+                >
+                  City
+                </p>
+                <p
+                  class="mt-1 text-lg font-semibold text-gray-900 dark:text-white"
+                >
+                  {{ user.city || 'Not set' }}
                 </p>
               </div>
             </div>
           </div>
+          }
         </div>
       </div>
     </main>
@@ -154,4 +272,76 @@ import { AuthApiService } from '../../shared/services/auth-api';
 })
 export class ProfileComponent {
   protected readonly authApi = inject(AuthApiService);
+  private readonly userProfileApi = inject(UserProfileApiService);
+
+  isEditing = signal(false);
+  saveError = signal('');
+
+  profileModel = signal<ProfileFormData>({
+    name: '',
+    country: '',
+    city: '',
+  });
+
+  profileForm = form(this.profileModel, (p) => {
+    required(p.name, { message: 'Name is required' });
+  });
+
+  startEditing(): void {
+    const user = this.authApi.currentUser();
+    if (user) {
+      this.profileModel.set({
+        name: user.name || '',
+        country: user.country || '',
+        city: user.city || '',
+      });
+      this.saveError.set('');
+      this.isEditing.set(true);
+    }
+  }
+
+  cancelEditing(): void {
+    this.isEditing.set(false);
+    this.saveError.set('');
+  }
+
+  onSubmit(event: Event): void {
+    event.preventDefault();
+    submit(this.profileForm, async () => {
+      await this.saveProfile();
+    });
+  }
+
+  private async saveProfile(): Promise<void> {
+    const user = this.authApi.currentUser();
+    if (!user) return;
+
+    this.saveError.set('');
+
+    const updateData: UpdateUserProfileRequest = {
+      name: this.profileForm.name().value(),
+      country: this.profileForm.country().value(),
+      city: this.profileForm.city().value(),
+    };
+
+    try {
+      const profile = await firstValueFrom(
+        this.userProfileApi.updateProfile(user.id, updateData)
+      );
+      this.authApi.currentUser.set({
+        ...user,
+        name: profile.name,
+        country: profile.country,
+        city: profile.city,
+      });
+      localStorage.setItem(
+        'devswhorun_user',
+        JSON.stringify(this.authApi.currentUser())
+      );
+      this.isEditing.set(false);
+    } catch (err) {
+      console.error('Failed to update profile:', err);
+      this.saveError.set('Failed to save changes. Please try again.');
+    }
+  }
 }
