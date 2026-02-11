@@ -1,11 +1,9 @@
 import { Route } from '@angular/router';
-import { createEventRoutes } from '@devswhorun/create-event';
 import { authGuard, guestGuard } from './guards/auth.guard';
 import { AuthErrorComponent } from './pages/auth/auth-error/auth-error.component';
 import { AuthSuccessComponent } from './pages/auth/auth-success/auth-success.component';
 
 export const appRoutes: Route[] = [
-  ...createEventRoutes,
   {
     path: '',
     loadComponent: () => import('./pages/landing/landing.component'),
