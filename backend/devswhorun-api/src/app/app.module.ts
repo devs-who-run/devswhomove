@@ -8,6 +8,8 @@ import { EventService } from './services/event.service';
 import { SeedService } from './services/seed.service';
 import appwriteConfig from './config/appwrite.config';
 import { EventsController } from './controllers/events.controller';
+import { UserProfileController } from './controllers/user-profile.controller';
+import { UserProfileService } from './services/user-profile.service';
 
 @Module({
   imports: [
@@ -17,7 +19,18 @@ import { EventsController } from './controllers/events.controller';
       envFilePath: '.env',
     }),
   ],
-  controllers: [AppController, AuthController, EventsController],
-  providers: [AppService, AppwriteService, EventService, SeedService],
+  controllers: [
+    AppController,
+    AuthController,
+    EventsController,
+    UserProfileController,
+  ],
+  providers: [
+    AppService,
+    AppwriteService,
+    EventService,
+    SeedService,
+    UserProfileService,
+  ],
 })
 export class AppModule {}

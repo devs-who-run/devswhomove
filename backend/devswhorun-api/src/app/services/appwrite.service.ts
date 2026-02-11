@@ -160,4 +160,10 @@ export class AppwriteService {
       this.configService.get<string>('appwrite.eventsCollectionId') || 'events'
     );
   }
+
+  getUsersCollectionId(): string {
+    return (
+      this.configService.get<string>('appwrite.usersCollectionId') || 'users'
+    );
+  }
 }
