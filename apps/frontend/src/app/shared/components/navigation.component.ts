@@ -17,11 +17,11 @@ import { AuthApiService } from '../services/auth-api';
             </a>
           </div>
 
-          <div class="flex items-center space-x-4">
+          <div class="flex items-center">
             <div class="flex items-center space-x-2 sm:space-x-3">
-              <div
+              <a
                 routerLink="/profile"
-                class="flex cursor-pointer items-center space-x-2 px-2 sm:px-4 py-2 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-sm"
+                class="flex items-center space-x-2 px-2 sm:px-4 py-2 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-sm"
               >
                 @if (user.avatar) {
                 <img
@@ -39,7 +39,7 @@ import { AuthApiService } from '../services/auth-api';
                 <span class="user-name">
                   {{ user.name }}
                 </span>
-              </div>
+              </a>
 
               <button
                 (click)="logout()"

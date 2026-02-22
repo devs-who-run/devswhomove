@@ -20,7 +20,7 @@ import { EventCardSkeletonComponent } from '../../shared/components/event-card-s
         </h1>
         <a
           routerLink="/event/create"
-          class="primary-btn cursor-pointer whitespace-nowrap self-start sm:self-auto"
+          class="primary-btn cursor-pointer whitespace-nowrap w-auto"
         >
           + Create Event
         </a>
