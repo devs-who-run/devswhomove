@@ -1,0 +1,330 @@
+<div
+  class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 py-6 sm:py-12 px-3 sm:px-6 lg:px-8"
+>
+  <div class="max-w-4xl mx-auto">
+    <!-- Header -->
+    <div class="text-center mb-6 sm:mb-8">
+      <h1
+        class="text-2xl sm:text-3xl md:text-4xl font-extrabold text-gray-900 dark:text-white mb-2"
+      >
+        Create New Event
+      </h1>
+      <p
+        class="text-sm sm:text-base md:text-lg text-gray-600 dark:text-gray-300"
+      >
+        Fill in the details to create a new event
+      </p>
+    </div>
+
+    <div class="form-card p-4 sm:p-6 md:p-8">
+      <form (ngSubmit)="onSubmit($event)">
+        @if (submitError()) {
+        <div
+          class="mb-4 sm:mb-6 p-3 sm:p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg"
+        >
+          <p class="text-xs sm:text-sm text-red-600 dark:text-red-400">
+            {{ submitError() }}
+          </p>
+        </div>
+        }
+
+        <div class="mb-4 sm:mb-6">
+          <label
+            for="name"
+            class="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 sm:mb-2"
+          >
+            Event Name <span class="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            id="name"
+            [formField]="eventForm.name"
+            class="w-full px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            placeholder="Morning Marathon 2024"
+          />
+          @if (eventForm.name().touched() && eventForm.name().invalid()) { @for
+          (error of eventForm.name().errors(); track error.kind) {
+          <p
+            class="mt-1.5 sm:mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400"
+          >
+            {{ error.message }}
+          </p>
+          } }
+        </div>
+
+        <div class="mb-4 sm:mb-6">
+          <label
+            for="conference"
+            class="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 sm:mb-2"
+          >
+            Conference Name <span class="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            id="conference"
+            [formField]="eventForm.conference"
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            placeholder="ng-conf 2024"
+          />
+          @if (eventForm.conference().touched() &&
+          eventForm.conference().invalid()) { @for (error of
+          eventForm.conference().errors(); track error.kind) {
+          <p
+            class="mt-1.5 sm:mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400"
+          >
+            {{ error.message }}
+          </p>
+          } }
+        </div>
+
+        <div
+          class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6"
+        >
+          <div>
+            <label
+              for="eventType"
+              class="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 sm:mb-2"
+            >
+              Event Type <span class="text-red-500">*</span>
+            </label>
+            <select
+              id="eventType"
+              [formField]="eventForm.eventType"
+              class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            >
+              <option value="">Select event type</option>
+              @for (option of eventTypeOptions; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+              }
+            </select>
+            @if (eventForm.eventType().touched() &&
+            eventForm.eventType().invalid()) { @for (error of
+            eventForm.eventType().errors(); track error.kind) {
+            <p
+              class="mt-1.5 sm:mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400"
+            >
+              {{ error.message }}
+            </p>
+            } }
+          </div>
+
+          <div>
+            <label
+              for="sport"
+              class="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 sm:mb-2"
+            >
+              Sport <span class="text-red-500">*</span>
+            </label>
+            <select
+              id="sport"
+              [formField]="eventForm.sport"
+              class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            >
+              <option value="">Select sport</option>
+              @for (option of sportOptions; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+              }
+            </select>
+            @if (eventForm.sport().touched() && eventForm.sport().invalid()) {
+            @for (error of eventForm.sport().errors(); track error.kind) {
+            <p
+              class="mt-1.5 sm:mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400"
+            >
+              {{ error.message }}
+            </p>
+            } }
+          </div>
+        </div>
+
+        <div
+          class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6"
+        >
+          <div>
+            <label
+              for="date"
+              class="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 sm:mb-2"
+            >
+              Event Date <span class="text-red-500">*</span>
+            </label>
+            <input
+              type="date"
+              id="date"
+              [formField]="eventForm.date"
+              class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+            @if (eventForm.date().touched() && eventForm.date().invalid()) {
+            @for (error of eventForm.date().errors(); track error.kind) {
+            <p
+              class="mt-1.5 sm:mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400"
+            >
+              {{ error.message }}
+            </p>
+            } }
+          </div>
+
+          <div>
+            <label
+              for="time"
+              class="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 sm:mb-2"
+            >
+              Event Time <span class="text-red-500">*</span>
+            </label>
+            <input
+              type="time"
+              id="time"
+              [formField]="eventForm.time"
+              class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+            @if (eventForm.time().touched() && eventForm.time().invalid()) {
+            @for (error of eventForm.time().errors(); track error.kind) {
+            <p
+              class="mt-1.5 sm:mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400"
+            >
+              {{ error.message }}
+            </p>
+            } }
+          </div>
+        </div>
+        <div class="mb-4 sm:mb-6">
+          <label
+            for="location"
+            class="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 sm:mb-2"
+          >
+            Location <span class="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            id="location"
+            [formField]="eventForm.location"
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            placeholder="Central Park, New York"
+          />
+          @if (eventForm.location().touched() && eventForm.location().invalid())
+          { @for (error of eventForm.location().errors(); track error.kind) {
+          <p
+            class="mt-1.5 sm:mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400"
+          >
+            {{ error.message }}
+          </p>
+          } }
+        </div>
+
+        <div class="mb-4 sm:mb-6">
+          <label
+            for="capacity"
+            class="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 sm:mb-2"
+          >
+            Capacity <span class="text-red-500">*</span>
+          </label>
+          <input
+            type="number"
+            id="capacity"
+            [formField]="eventForm.capacity"
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            placeholder="Maximum number of participants"
+          />
+          @if (eventForm.capacity().touched() && eventForm.capacity().invalid())
+          { @for (error of eventForm.capacity().errors(); track error.kind) {
+          <p
+            class="mt-1.5 sm:mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400"
+          >
+            {{ error.message }}
+          </p>
+          } }
+        </div>
+
+        <div class="mb-4 sm:mb-6">
+          <label
+            for="description"
+            class="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 sm:mb-2"
+          >
+            Description <span class="text-red-500">*</span>
+          </label>
+          <textarea
+            id="description"
+            [formField]="eventForm.description"
+            rows="3"
+            class="w-full px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+            placeholder="Describe your event..."
+          ></textarea>
+          @if (eventForm.description().touched() &&
+          eventForm.description().invalid()) { @for (error of
+          eventForm.description().errors(); track error.kind) {
+          <p
+            class="mt-1.5 sm:mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400"
+          >
+            {{ error.message }}
+          </p>
+          } }
+        </div>
+
+        <div class="mb-6 sm:mb-8">
+          <label
+            for="createdBy"
+            class="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 sm:mb-2"
+          >
+            Your Name <span class="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            id="createdBy"
+            [formField]="eventForm.createdBy"
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            placeholder="Event organizer name"
+          />
+          @if (eventForm.createdBy().touched() &&
+          eventForm.createdBy().invalid()) { @for (error of
+          eventForm.createdBy().errors(); track error.kind) {
+          <p
+            class="mt-1.5 sm:mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400"
+          >
+            {{ error.message }}
+          </p>
+          } }
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-end">
+          <button
+            type="button"
+            (click)="onCancel()"
+            class="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 text-sm font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+            [disabled]="eventForm().submitting()"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="w-full sm:w-auto primary-btn cursor-pointer"
+            [disabled]="eventForm().submitting()"
+          >
+            @if (eventForm().submitting()) {
+            <span class="flex items-center justify-center">
+              <svg
+                class="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              Creating...
+            </span>
+            } @else { Create Event }
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

@@ -23,10 +23,14 @@ export interface Event {
   standalone: true,
   imports: [DatePipe, SvgIconDirective],
   template: `
-    <div class="glass-card p-4 sm:p-6 w-full max-w-md mx-auto lg:max-w-none">
-      <div class="responsive-flex mb-4">
-        <div class="flex items-center space-x-3 min-w-0 flex-1">
-          <div class="icon-container">
+    <div class="glass-card p-3 sm:p-4 md:p-6 w-full">
+      <div
+        class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3 sm:mb-4"
+      >
+        <div class="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          <div
+            class="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center"
+          >
             <span
               appSvgIcon
               [iconName]="iconName.conference"
@@ -34,87 +38,121 @@ export interface Event {
             ></span>
           </div>
           <div class="min-w-0 flex-1">
-            <h3 class="card-title">
+            <h3
+              class="text-base sm:text-lg font-bold text-gray-900 dark:text-white truncate"
+            >
               {{ event().conference }}
             </h3>
           </div>
         </div>
         <span
-          class="event-badge"
+          class="inline-flex items-center px-2.5 py-1 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap self-start"
           [class]="getEventTypeClass(event().eventType)"
         >
           {{ event().eventType }}
         </span>
       </div>
 
-      <div class="space-y-4">
-        <div class="responsive-grid">
-          <div class="field-container">
-            <div class="field-content">
-              <p class="field-label">Sport</p>
-              <p class="field-value-truncate">{{ event().sport }}</p>
-            </div>
-          </div>
-
-          <div class="field-container">
-            <div class="field-content">
-              <p class="field-label">Location</p>
-              <p class="field-value-truncate">{{ event().location }}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="responsive-grid">
-          <div class="field-container">
-            <div class="field-content">
-              <p class="field-label">Date</p>
-              <p class="field-value">
-                {{ event().date | date : 'mediumDate' }}
-              </p>
-            </div>
-          </div>
-
-          <div class="field-container">
-            <div class="field-content">
-              <p class="field-label">Time</p>
-              <p class="field-value">{{ event().time }}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="field-container">
-          <div class="flex-1">
-            <p class="field-label">Description</p>
-            <p class="description-text">{{ event().description }}</p>
-          </div>
-        </div>
-
-        <div class="field-container">
-          <div class="flex-1">
-            <p class="field-label">Capacity</p>
-            <div
-              class="mt-1 flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2"
+      <div class="space-y-3 sm:space-y-4">
+        <div class="grid grid-cols-2 gap-3 sm:gap-4">
+          <div>
+            <p
+              class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1"
             >
-              <span class="field-value flex-shrink-0"
-                >{{ event().capacity }} people</span
-              >
-            </div>
+              Sport
+            </p>
+            <p
+              class="text-sm sm:text-base font-semibold text-gray-900 dark:text-white truncate"
+            >
+              {{ event().sport }}
+            </p>
           </div>
+
+          <div>
+            <p
+              class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1"
+            >
+              Location
+            </p>
+            <p
+              class="text-sm sm:text-base font-semibold text-gray-900 dark:text-white truncate"
+            >
+              {{ event().location }}
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 sm:gap-4">
+          <div>
+            <p
+              class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1"
+            >
+              Date
+            </p>
+            <p
+              class="text-sm sm:text-base font-semibold text-gray-900 dark:text-white"
+            >
+              {{ event().date | date : 'mediumDate' }}
+            </p>
+          </div>
+
+          <div>
+            <p
+              class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1"
+            >
+              Time
+            </p>
+            <p
+              class="text-sm sm:text-base font-semibold text-gray-900 dark:text-white"
+            >
+              {{ event().time }}
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <p
+            class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1"
+          >
+            Description
+          </p>
+          <p
+            class="text-sm sm:text-base text-gray-700 dark:text-gray-300 line-clamp-2"
+          >
+            {{ event().description }}
+          </p>
+        </div>
+
+        <div>
+          <p
+            class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1"
+          >
+            Capacity
+          </p>
+          <p
+            class="text-sm sm:text-base font-semibold text-gray-900 dark:text-white"
+          >
+            {{ event().capacity }} people
+          </p>
         </div>
       </div>
 
       <div
-        class="mt-4 sm:mt-6 pt-4 border-t border-gray-200 dark:border-gray-700"
+        class="mt-3 sm:mt-4 md:mt-6 pt-3 sm:pt-4 border-t border-gray-200 dark:border-gray-700"
       >
         <div
-          class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0"
+          class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
         >
           <p
             class="text-xs text-gray-500 dark:text-gray-400 order-2 sm:order-1"
           >
             Created {{ event().createdAt | date : 'short' }}
           </p>
-          <button class="primary-btn cursor-pointer">View Details</button>
+          <button
+            class="w-full sm:w-auto primary-btn cursor-pointer text-sm sm:text-base order-1 sm:order-2"
+          >
+            View Details
+          </button>
         </div>
       </div>
     </div>

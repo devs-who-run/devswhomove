@@ -33,6 +33,14 @@ export const appRoutes: Route[] = [
       ),
     canActivate: [authGuard],
   },
+  {
+    path: 'create-event',
+    loadComponent: () =>
+      import('./pages/create-event/create-event.component').then(
+        (m) => m.CreateEventComponent
+      ),
+    canActivate: [authGuard],
+  },
   { path: 'landing', redirectTo: '', pathMatch: 'full' },
   { path: '**', redirectTo: '' },
 ];
