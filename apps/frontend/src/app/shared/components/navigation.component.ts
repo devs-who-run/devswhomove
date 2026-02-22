@@ -19,7 +19,10 @@ import { AuthApiService } from '../services/auth-api';
 
           <div class="flex items-center space-x-4">
             <div class="flex items-center space-x-2 sm:space-x-3">
-              <div routerLink="/profile" class="flex cursor-pointer items-center space-x-2 px-2 sm:px-4 py-2 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-sm">
+              <div
+                routerLink="/profile"
+                class="flex cursor-pointer items-center space-x-2 px-2 sm:px-4 py-2 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-sm"
+              >
                 @if (user.avatar) {
                 <img
                   [src]="user.avatar"
@@ -38,7 +41,12 @@ import { AuthApiService } from '../services/auth-api';
                 </span>
               </div>
 
-              <button (click)="logout()" class="logout-btn text-xs sm:text-sm px-2 sm:px-4">Logout</button>
+              <button
+                (click)="logout()"
+                class="logout-btn text-xs sm:text-sm px-2 sm:px-4"
+              >
+                Logout
+              </button>
             </div>
           </div>
         </div>
