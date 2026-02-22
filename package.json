@@ -7,7 +7,17 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "nx": "nx"
+    "nx": "nx",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,js,json,css,scss,md,html}": [
+      "yarn nx format:write --files"
+    ],
+    "*.{ts,js}": [
+      "yarn nx affected --target=lint --fix --files",
+      "yarn nx affected --target=test --files"
+    ]
   },
   "private": true,
   "dependencies": {
@@ -84,11 +94,13 @@
     "eslint": "^9.28.0",
     "eslint-config-prettier": "^10.0.0",
     "eslint-plugin-playwright": "^1.6.2",
+    "husky": "^9.1.7",
     "jest": "30.0.5",
     "jest-environment-node": "^29.7.0",
     "jest-util": "30.0.5",
     "jiti": "2.4.2",
     "jsdom": "~22.1.0",
+    "lint-staged": "^16.2.7",
     "nx": "22.5.0",
     "prettier": "^2.6.2",
     "ts-jest": "29.4.1",
