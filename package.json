@@ -11,13 +11,8 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "*.{ts,js,json,css,scss,md,html}": [
-      "yarn nx format:write --files"
-    ],
-    "*.{ts,js}": [
-      "yarn nx affected --target=lint --fix --files",
-      "yarn nx affected --target=test --files"
-    ]
+    "*.{ts,js,json,css,scss,md,html}": "prettier --write",
+    "*.{ts,js}": "eslint --fix"
   },
   "private": true,
   "dependencies": {
