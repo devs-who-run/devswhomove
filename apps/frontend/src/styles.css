@@ -2,299 +2,301 @@
 @import 'tailwindcss';
 @custom-variant dark (&:where(.dark, .dark *));
 
-.primary-btn {
-  @apply px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-medium rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 w-full sm:w-auto;
-}
-
-.glass-card {
-  @apply bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 dark:border-gray-700/20 hover:shadow-2xl transition-all duration-300 hover:scale-[1.02];
-}
-
-.icon-container {
-  @apply p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex-shrink-0;
-}
-
-.field-label {
-  @apply text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide;
-}
-
-.field-value {
-  @apply mt-1 text-sm font-semibold text-gray-900 dark:text-white;
-}
-
-.field-value-truncate {
-  @apply mt-1 text-sm font-semibold text-gray-900 dark:text-white truncate;
-}
-
-.description-text {
-  @apply mt-1 text-sm text-gray-700 dark:text-gray-300 line-clamp-2;
-}
-
-.meta-text {
-  @apply text-xs text-gray-500 dark:text-gray-400;
-}
-
-.card-title {
-  @apply text-base sm:text-lg font-bold text-gray-900 dark:text-white truncate;
-}
-
-.responsive-grid {
-  @apply grid grid-cols-1 sm:grid-cols-2 gap-4;
-}
-
-.responsive-flex {
-  @apply flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0;
-}
-
-.field-container {
-  @apply flex items-start space-x-3;
-}
-
-.field-content {
-  @apply flex-1 min-w-0;
-}
-
-.event-badge {
-  @apply px-2 sm:px-3 py-1 text-xs font-semibold rounded-full flex-shrink-0 self-start sm:self-center;
-}
-
-/* Section Headers */
-.section-header {
-  @apply text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white sm:text-4xl;
-}
-
-.section-subheader {
-  @apply text-xl text-gray-600 dark:text-gray-300;
-}
-
-/* Brand/Logo Text */
-.brand-text {
-  @apply text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400;
-}
-
-.brand-text-hover {
-  @apply text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 hover:from-blue-700 hover:to-indigo-700 dark:hover:from-blue-300 dark:hover:to-indigo-300 transition-all;
-}
-
-/* Card Variants */
-.feature-card {
-  @apply p-6 bg-white rounded-lg shadow-lg transition-all duration-300 transform dark:bg-gray-900 hover:-translate-y-1;
-}
-
-.about-card {
-  @apply relative p-8 bg-white rounded-2xl shadow-lg transition-all duration-300 transform dark:bg-gray-800 hover:-translate-y-1;
-}
-
-.testimonial-card {
-  @apply p-8 bg-gray-50 rounded-xl shadow-lg dark:bg-gray-800;
-}
-
-/* Navigation & User Profile */
-.nav-container {
-  @apply relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
-}
-
-.nav-bar {
-  @apply flex justify-between items-center h-16;
-}
-
-.user-profile-container {
-  @apply flex cursor-pointer items-center space-x-3 px-4 py-2 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-sm;
-}
-
-.avatar-fallback {
-  @apply w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-sm;
-}
-
-.avatar-text {
-  @apply text-sm font-bold text-white;
-}
-
-.user-name {
-  @apply hidden md:block text-sm font-semibold text-gray-900 dark:text-white;
-}
-
-/* Buttons */
-.social-btn-google {
-  @apply flex items-center justify-center gap-2 px-6 py-3 font-semibold text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm transition-all hover:-translate-y-1 hover:shadow-md hover:bg-gray-50 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700;
-}
-
-.social-btn-github {
-  @apply flex items-center justify-center gap-2 px-6 py-3 font-semibold text-white bg-gray-800 rounded-md shadow-sm transition-all hover:-translate-y-1 hover:shadow-md hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed;
-}
-
-.logout-btn {
-  @apply px-4 cursor-pointer py-2 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-all transform hover:-translate-y-0.5 backdrop-blur-sm;
-}
-
-.theme-toggle-btn {
-  @apply fixed z-50 bg-gray-200 rounded-full transition-colors duration-300 w-12 h-12 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500;
-}
-
-/* Links */
-.footer-link {
-  @apply transition-colors hover:text-white;
-}
-
-.footer-link-with-icon {
-  @apply inline-flex gap-1 items-center transition-colors hover:text-white;
-}
-
-.profile-link {
-  @apply text-blue-400 transition-colors hover:text-white;
-}
-
-/* Layout Containers */
-.page-container {
-  @apply max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8;
-}
-
-.section-container {
-  @apply px-4 mx-auto max-w-7xl sm:px-6 lg:px-8;
-}
-
-.centered-content {
-  @apply text-center;
-}
-
-.grid-responsive-3 {
-  @apply grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3;
-}
-
-.grid-responsive-4 {
-  @apply grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4;
-}
-
-/* Background Sections */
-.section-bg-white {
-  @apply py-20 bg-white dark:bg-gray-900;
-}
-
-.section-bg-gray {
-  @apply py-20 bg-gray-50 dark:bg-gray-800;
-}
-
-.header-bg {
-  @apply overflow-hidden relative bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800;
-}
-
-.footer-bg {
-  @apply py-12 text-gray-300 bg-gray-900;
-}
-
-/* Profile Page Specific */
-.profile-grid {
-  @apply grid grid-cols-1 lg:grid-cols-2 gap-8;
-}
-
-.profile-section-header {
-  @apply flex items-center mb-6;
-}
-
-.profile-section-title {
-  @apply ml-4 text-2xl font-bold text-gray-900 dark:text-white;
-}
-
-.profile-field-container {
-  @apply flex items-start space-x-4;
-}
-
-.profile-field-dot {
-  @apply flex-shrink-0 w-2 h-2 rounded-full mt-2;
-}
-
-.profile-field-dot-blue {
-  @apply flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full mt-2;
-}
-
-.profile-field-dot-green {
-  @apply flex-shrink-0 w-2 h-2 bg-green-500 rounded-full mt-2;
-}
-
-.profile-field-dot-purple {
-  @apply flex-shrink-0 w-2 h-2 bg-purple-500 rounded-full mt-2;
-}
-
-.profile-field-dot-indigo {
-  @apply flex-shrink-0 w-2 h-2 bg-indigo-500 rounded-full mt-2;
-}
-
-.profile-field-content {
-  @apply flex-1;
-}
-
-.profile-field-value-large {
-  @apply mt-1 text-lg font-semibold text-gray-900 dark:text-white;
-}
-
-.profile-field-value-code {
-  @apply mt-1 text-sm font-mono bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded-lg text-gray-900 dark:text-white break-all;
-}
-
-/* Icon Containers */
-.icon-container-blue {
-  @apply p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl;
-}
-
-.icon-container-purple {
-  @apply p-3 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl;
-}
-
-/* Decorative Elements */
-.decorative-circle {
-  @apply absolute -top-4 -right-4 w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full opacity-10;
-}
-
-/* Avatar */
-.avatar-ring {
-  @apply w-8 h-8 rounded-full ring-2 ring-blue-500/20;
-}
-
-.avatar-large {
-  @apply w-12 h-12 rounded-full;
-}
-
-/* Text Styles */
-.text-brand-large {
-  @apply text-xl font-extrabold tracking-tight;
-}
-
-.text-hero {
-  @apply mb-8 text-5xl font-extrabold tracking-tight text-gray-900 md:text-7xl dark:text-white;
-}
-
-.text-hero-subtitle {
-  @apply mx-auto mt-3 max-w-md text-base text-gray-600 dark:text-gray-300 sm:text-lg md:mt-5 md:max-w-3xl;
-}
-
-.text-section-title {
-  @apply mb-4 text-xl font-semibold text-gray-800 dark:text-gray-200;
-}
-
-.text-footer-title {
-  @apply mb-4 text-xl font-bold text-white;
-}
-
-.text-footer-description {
-  @apply text-gray-400;
-}
-
-.text-feature-title {
-  @apply mb-2 text-xl font-bold text-gray-900 dark:text-white;
-}
-
-.text-feature-description {
-  @apply text-gray-600 dark:text-gray-300;
-}
-
-.text-testimonial-quote {
-  @apply mb-6 italic text-gray-600 dark:text-gray-300;
-}
-
-.text-testimonial-author {
-  @apply font-semibold text-gray-900 dark:text-white;
-}
-
-.text-testimonial-role {
-  @apply text-gray-500 dark:text-gray-400;
-}
+@layer components {
+  .primary-btn {
+    @apply px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-medium rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 w-full sm:w-auto;
+  }
+
+  .glass-card {
+    @apply bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 dark:border-gray-700/20 hover:shadow-2xl transition-all duration-300 hover:scale-[1.02];
+  }
+
+  .icon-container {
+    @apply p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex-shrink-0;
+  }
+
+  .field-label {
+    @apply text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide;
+  }
+
+  .field-value {
+    @apply mt-1 text-sm font-semibold text-gray-900 dark:text-white;
+  }
+
+  .field-value-truncate {
+    @apply mt-1 text-sm font-semibold text-gray-900 dark:text-white truncate;
+  }
+
+  .description-text {
+    @apply mt-1 text-sm text-gray-700 dark:text-gray-300 line-clamp-2;
+  }
+
+  .meta-text {
+    @apply text-xs text-gray-500 dark:text-gray-400;
+  }
+
+  .card-title {
+    @apply text-base sm:text-lg font-bold text-gray-900 dark:text-white truncate;
+  }
+
+  .responsive-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 gap-4;
+  }
+
+  .responsive-flex {
+    @apply flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0;
+  }
+
+  .field-container {
+    @apply flex items-start space-x-3;
+  }
+
+  .field-content {
+    @apply flex-1 min-w-0;
+  }
+
+  .event-badge {
+    @apply px-2 sm:px-3 py-1 text-xs font-semibold rounded-full flex-shrink-0 self-start sm:self-center;
+  }
+
+  /* Section Headers */
+  .section-header {
+    @apply text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white sm:text-4xl;
+  }
+
+  .section-subheader {
+    @apply text-xl text-gray-600 dark:text-gray-300;
+  }
+
+  /* Brand/Logo Text */
+  .brand-text {
+    @apply text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400;
+  }
+
+  .brand-text-hover {
+    @apply text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 hover:from-blue-700 hover:to-indigo-700 dark:hover:from-blue-300 dark:hover:to-indigo-300 transition-all;
+  }
+
+  /* Card Variants */
+  .feature-card {
+    @apply p-6 bg-white rounded-lg shadow-lg transition-all duration-300 transform dark:bg-gray-900 hover:-translate-y-1;
+  }
+
+  .about-card {
+    @apply relative p-8 bg-white rounded-2xl shadow-lg transition-all duration-300 transform dark:bg-gray-800 hover:-translate-y-1;
+  }
+
+  .testimonial-card {
+    @apply p-8 bg-gray-50 rounded-xl shadow-lg dark:bg-gray-800;
+  }
+
+  /* Navigation & User Profile */
+  .nav-container {
+    @apply relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .nav-bar {
+    @apply flex justify-between items-center min-h-16 py-2 gap-2;
+  }
+
+  .user-profile-container {
+    @apply flex cursor-pointer items-center space-x-3 px-4 py-2 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-sm;
+  }
+
+  .avatar-fallback {
+    @apply w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-sm;
+  }
+
+  .avatar-text {
+    @apply text-sm font-bold text-white;
+  }
+
+  .user-name {
+    @apply hidden md:block text-sm font-semibold text-gray-900 dark:text-white;
+  }
+
+  /* Buttons */
+  .social-btn-google {
+    @apply flex items-center justify-center gap-2 px-6 py-3 font-semibold text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm transition-all hover:-translate-y-1 hover:shadow-md hover:bg-gray-50 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700;
+  }
+
+  .social-btn-github {
+    @apply flex items-center justify-center gap-2 px-6 py-3 font-semibold text-white bg-gray-800 rounded-md shadow-sm transition-all hover:-translate-y-1 hover:shadow-md hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .logout-btn {
+    @apply px-4 cursor-pointer py-2 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-all transform hover:-translate-y-0.5 backdrop-blur-sm;
+  }
+
+  .theme-toggle-btn {
+    @apply fixed z-50 bg-gray-200 rounded-full transition-colors duration-300 w-12 h-12 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500;
+  }
+
+  /* Links */
+  .footer-link {
+    @apply transition-colors hover:text-white;
+  }
+
+  .footer-link-with-icon {
+    @apply inline-flex gap-1 items-center transition-colors hover:text-white;
+  }
+
+  .profile-link {
+    @apply text-blue-400 transition-colors hover:text-white;
+  }
+
+  /* Layout Containers */
+  .page-container {
+    @apply max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8;
+  }
+
+  .section-container {
+    @apply px-4 mx-auto max-w-7xl sm:px-6 lg:px-8;
+  }
+
+  .centered-content {
+    @apply text-center;
+  }
+
+  .grid-responsive-3 {
+    @apply grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3;
+  }
+
+  .grid-responsive-4 {
+    @apply grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4;
+  }
+
+  /* Background Sections */
+  .section-bg-white {
+    @apply py-20 bg-white dark:bg-gray-900;
+  }
+
+  .section-bg-gray {
+    @apply py-20 bg-gray-50 dark:bg-gray-800;
+  }
+
+  .header-bg {
+    @apply overflow-hidden relative bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800;
+  }
+
+  .footer-bg {
+    @apply py-12 text-gray-300 bg-gray-900;
+  }
+
+  /* Profile Page Specific */
+  .profile-grid {
+    @apply grid grid-cols-1 lg:grid-cols-2 gap-8;
+  }
+
+  .profile-section-header {
+    @apply flex items-center mb-6;
+  }
+
+  .profile-section-title {
+    @apply ml-4 text-2xl font-bold text-gray-900 dark:text-white;
+  }
+
+  .profile-field-container {
+    @apply flex items-start space-x-4;
+  }
+
+  .profile-field-dot {
+    @apply flex-shrink-0 w-2 h-2 rounded-full mt-2;
+  }
+
+  .profile-field-dot-blue {
+    @apply flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full mt-2;
+  }
+
+  .profile-field-dot-green {
+    @apply flex-shrink-0 w-2 h-2 bg-green-500 rounded-full mt-2;
+  }
+
+  .profile-field-dot-purple {
+    @apply flex-shrink-0 w-2 h-2 bg-purple-500 rounded-full mt-2;
+  }
+
+  .profile-field-dot-indigo {
+    @apply flex-shrink-0 w-2 h-2 bg-indigo-500 rounded-full mt-2;
+  }
+
+  .profile-field-content {
+    @apply flex-1;
+  }
+
+  .profile-field-value-large {
+    @apply mt-1 text-lg font-semibold text-gray-900 dark:text-white;
+  }
+
+  .profile-field-value-code {
+    @apply mt-1 text-sm font-mono bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded-lg text-gray-900 dark:text-white break-all;
+  }
+
+  /* Icon Containers */
+  .icon-container-blue {
+    @apply p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl;
+  }
+
+  .icon-container-purple {
+    @apply p-3 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl;
+  }
+
+  /* Decorative Elements */
+  .decorative-circle {
+    @apply absolute -top-4 -right-4 w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full opacity-10;
+  }
+
+  /* Avatar */
+  .avatar-ring {
+    @apply w-8 h-8 rounded-full ring-2 ring-blue-500/20;
+  }
+
+  .avatar-large {
+    @apply w-12 h-12 rounded-full;
+  }
+
+  /* Text Styles */
+  .text-brand-large {
+    @apply text-xl font-extrabold tracking-tight;
+  }
+
+  .text-hero {
+    @apply mb-8 text-5xl font-extrabold tracking-tight text-gray-900 md:text-7xl dark:text-white;
+  }
+
+  .text-hero-subtitle {
+    @apply mx-auto mt-3 max-w-md text-base text-gray-600 dark:text-gray-300 sm:text-lg md:mt-5 md:max-w-3xl;
+  }
+
+  .text-section-title {
+    @apply mb-4 text-xl font-semibold text-gray-800 dark:text-gray-200;
+  }
+
+  .text-footer-title {
+    @apply mb-4 text-xl font-bold text-white;
+  }
+
+  .text-footer-description {
+    @apply text-gray-400;
+  }
+
+  .text-feature-title {
+    @apply mb-2 text-xl font-bold text-gray-900 dark:text-white;
+  }
+
+  .text-feature-description {
+    @apply text-gray-600 dark:text-gray-300;
+  }
+
+  .text-testimonial-quote {
+    @apply mb-6 italic text-gray-600 dark:text-gray-300;
+  }
+
+  .text-testimonial-author {
+    @apply font-semibold text-gray-900 dark:text-white;
+  }
+
+  .text-testimonial-role {
+    @apply text-gray-500 dark:text-gray-400;
+  }
+} /* end @layer components */
