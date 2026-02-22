@@ -33,8 +33,9 @@ export class UserProfileController {
   @ApiResponse({ status: 404, description: 'User profile not found' })
   async getProfile(@Param('authUserId') authUserId: string) {
     try {
-      const profile =
-        await this.userProfileService.getProfileByAuthUserId(authUserId);
+      const profile = await this.userProfileService.getProfileByAuthUserId(
+        authUserId
+      );
       if (!profile) {
         throw new NotFoundException('User profile not found');
       }
@@ -65,10 +66,7 @@ export class UserProfileController {
     @Body() updateDto: UpdateUserProfileDto
   ) {
     try {
-      return await this.userProfileService.updateProfile(
-        authUserId,
-        updateDto
-      );
+      return await this.userProfileService.updateProfile(authUserId, updateDto);
     } catch (error) {
       if (error?.message?.includes('not found')) {
         throw new NotFoundException('User profile not found');
