@@ -95,7 +95,7 @@
 }
 
 .nav-bar {
-  @apply flex justify-between items-center h-16;
+  @apply flex justify-between items-center min-h-16 py-2 gap-2;
 }
 
 .user-profile-container {

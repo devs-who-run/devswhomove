@@ -10,15 +10,15 @@ import { EventCardSkeletonComponent } from '../../shared/components/event-card-s
   imports: [EventCardComponent, EventCardSkeletonComponent, RouterLink],
   template: `
     <main class="page-container">
-      <div class="flex items-center justify-between mb-12">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-8 sm:mb-12 gap-4">
         <h1
-          class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400"
+          class="text-3xl sm:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400"
         >
           Welcome to DevsWhoRun! 🏃‍♂️
         </h1>
         <a
           routerLink="/event/create"
-          class="primary-btn cursor-pointer whitespace-nowrap"
+          class="primary-btn cursor-pointer whitespace-nowrap self-start sm:self-auto"
         >
           + Create Event
         </a>
