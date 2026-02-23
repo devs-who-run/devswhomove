@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Databases, ID, Query } from 'node-appwrite';
 import { AppwriteService } from './appwrite.service';
-import { CreateEventDto, Event } from '../dto/events.dto';
+import { CreateEventDto, UpdateEventDto, Event } from '../dto/events.dto';
 
 @Injectable()
 export class EventService {
@@ -86,9 +86,7 @@ export class EventService {
 
   async updateEvent(
     eventId: string,
-    updateData:
-      | Partial<CreateEventDto>
-      | { confirmedCount?: number; waitlistCount?: number }
+    updateData: UpdateEventDto
   ): Promise<Event> {
     try {
       const databaseId = this.appwriteService.getDatabaseId();

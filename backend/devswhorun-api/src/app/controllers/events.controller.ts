@@ -11,7 +11,12 @@ import {
   Delete,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
-import { CreateEventDto, EventResponseDto, Event } from '../dto/events.dto';
+import {
+  CreateEventDto,
+  UpdateEventDto,
+  EventResponseDto,
+  Event,
+} from '../dto/events.dto';
 import { EventService } from '../services/event.service';
 
 @ApiTags('events')
@@ -130,7 +135,7 @@ export class EventsController {
   @ApiResponse({ status: 404, description: 'Event not found' })
   async updateEvent(
     @Param('id') id: string,
-    @Body() updateEventDto: Partial<CreateEventDto>
+    @Body() updateEventDto: UpdateEventDto
   ): Promise<Event> {
     try {
       return await this.eventService.updateEvent(id, updateEventDto);

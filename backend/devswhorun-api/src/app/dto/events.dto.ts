@@ -58,6 +58,62 @@ export class CreateEventDto {
   createdByUserId: string;
 }
 
+export class UpdateEventDto {
+  @ApiProperty({ description: 'Conference name', required: false })
+  @IsString()
+  conference?: string;
+
+  @ApiProperty({ description: 'Event type', required: false })
+  @IsString()
+  eventType?: string;
+
+  @ApiProperty({ description: 'Event date', required: false })
+  @IsDateString()
+  date?: string;
+
+  @ApiProperty({ description: 'Event location', required: false })
+  @IsString()
+  location?: string;
+
+  @ApiProperty({ description: 'Event name', required: false })
+  @IsString()
+  name?: string;
+
+  @ApiProperty({ description: 'Sport name', required: false })
+  @IsString()
+  sport?: string;
+
+  @ApiProperty({ description: 'Event description', required: false })
+  @IsString()
+  description?: string;
+
+  @ApiProperty({ description: 'Event time', required: false })
+  @IsString()
+  time?: string;
+
+  @ApiProperty({ description: 'Event capacity', required: false })
+  @IsNumber()
+  capacity?: number;
+
+  @ApiProperty({
+    description: 'Name of the user who created the event',
+    required: false,
+  })
+  @IsString()
+  createdBy?: string;
+
+  @ApiProperty({
+    description: 'Confirmed registrations count',
+    required: false,
+  })
+  @IsNumber()
+  confirmedCount?: number;
+
+  @ApiProperty({ description: 'Waitlist registrations count', required: false })
+  @IsNumber()
+  waitlistCount?: number;
+}
+
 export class EventResponseDto {
   @ApiProperty()
   id: string;
