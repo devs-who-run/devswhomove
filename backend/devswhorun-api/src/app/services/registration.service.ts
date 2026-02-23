@@ -71,13 +71,71 @@ export class RegistrationService {
         registrationData
       );
 
+      // Post-hoc validation: re-count actual confirmed registrations to detect race conditions
+      const actualConfirmedRegistrations = await this.databases.listDocuments(
+        databaseId,
+        collectionId,
+        [
+          Query.equal('eventId', eventId),
+          Query.equal('status', RegistrationStatus.CONFIRMED),
+        ]
+      );
+
+      const actualConfirmedCount =
+        actualConfirmedRegistrations.documents.length;
+
+      // If we exceeded capacity due to concurrent requests, demote this registration to waitlist
+      if (
+        status === RegistrationStatus.CONFIRMED &&
+        actualConfirmedCount > capacity
+      ) {
+        this.logger.warn(
+          `Race condition detected: ${actualConfirmedCount} confirmed registrations exceed capacity ${capacity} for event ${eventId}. Demoting registration ${document.$id} to waitlist.`
+        );
+
+        // Calculate new waitlist position
+        const waitlistRegistrations = await this.databases.listDocuments(
+          databaseId,
+          collectionId,
+          [
+            Query.equal('eventId', eventId),
+            Query.equal('status', RegistrationStatus.WAITLIST),
+          ]
+        );
+        const newWaitlistPosition = waitlistRegistrations.documents.length + 1;
+
+        // Atomically demote this registration to waitlist
+        const updatedDocument = await this.databases.updateDocument(
+          databaseId,
+          collectionId,
+          document.$id,
+          {
+            status: RegistrationStatus.WAITLIST,
+            waitlistPosition: newWaitlistPosition,
+          }
+        );
+
+        // Update event counts with retry logic
+        await this.updateEventCountsWithRetry(eventId, {
+          confirmedCount: capacity, // Set to exact capacity
+          waitlistCount: newWaitlistPosition,
+        });
+
+        this.logger.log(
+          `User ${userId} registered for event ${eventId} with status: ${RegistrationStatus.WAITLIST} (demoted from confirmed due to race condition)`
+        );
+
+        return this.mapAppwriteDocumentToRegistration(updatedDocument);
+      }
+
+      // Normal path: update event counts with retry logic
       if (status === RegistrationStatus.CONFIRMED) {
-        await this.eventService.updateEvent(eventId, {
+        await this.updateEventCountsWithRetry(eventId, {
           confirmedCount: confirmedCount + 1,
         });
       } else {
         const waitlistCount = event.waitlistCount || 0;
-        await this.eventService.updateEvent(eventId, {
+        await this.updateEventCountsWithRetry(eventId, {
           waitlistCount: waitlistCount + 1,
         });
       }
@@ -91,6 +149,43 @@ export class RegistrationService {
       this.logger.error('Failed to register for event', error);
       throw error;
     }
+  }
+
+  private async updateEventCountsWithRetry(
+    eventId: string,
+    counts: { confirmedCount?: number; waitlistCount?: number },
+    maxRetries = 3
+  ): Promise<void> {
+    let lastError: Error;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.eventService.updateEvent(eventId, counts);
+        return; // Success
+      } catch (error) {
+        lastError = error;
+        this.logger.warn(
+          `Failed to update event counts for ${eventId} (attempt ${attempt}/${maxRetries})`,
+          error
+        );
+
+        if (attempt < maxRetries) {
+          // Exponential backoff: 100ms, 200ms, 400ms
+          await new Promise((resolve) =>
+            setTimeout(resolve, 100 * Math.pow(2, attempt - 1))
+          );
+        }
+      }
+    }
+
+    // If all retries failed, log critical error but don't throw to avoid leaving registration in inconsistent state
+    this.logger.error(
+      `CRITICAL: Failed to update event counts for ${eventId} after ${maxRetries} attempts. Event counts may be inconsistent.`,
+      lastError
+    );
+
+    // Re-throw to signal the failure
+    throw lastError;
   }
 
   async unregisterFromEvent(eventId: string, userId: string): Promise<void> {
@@ -123,10 +218,13 @@ export class RegistrationService {
         const waitlistCount = Math.max(0, (event.waitlistCount || 0) - 1);
         await this.eventService.updateEvent(eventId, { waitlistCount });
 
-        await this.adjustWaitlistPositions(
-          eventId,
-          registration.waitlistPosition
-        );
+        // Only adjust waitlist positions if waitlistPosition is a valid number
+        if (typeof registration.waitlistPosition === 'number') {
+          await this.adjustWaitlistPositions(
+            eventId,
+            registration.waitlistPosition
+          );
+        }
       }
 
       this.logger.log(`User ${userId} unregistered from event ${eventId}`);
@@ -203,6 +301,7 @@ export class RegistrationService {
           Query.equal('eventId', eventId),
           Query.equal('status', RegistrationStatus.WAITLIST),
           Query.greaterThan('waitlistPosition', removedPosition),
+          Query.limit(5000),
         ]
       );
 
@@ -234,7 +333,11 @@ export class RegistrationService {
       const response = await this.databases.listDocuments(
         databaseId,
         collectionId,
-        [Query.equal('eventId', eventId), Query.orderDesc('$createdAt')]
+        [
+          Query.equal('eventId', eventId),
+          Query.orderDesc('$createdAt'),
+          Query.limit(5000),
+        ]
       );
 
       return response.documents.map((doc) =>
@@ -261,6 +364,7 @@ export class RegistrationService {
           Query.equal('eventId', eventId),
           Query.equal('status', RegistrationStatus.CONFIRMED),
           Query.orderDesc('$createdAt'),
+          Query.limit(5000),
         ]
       );
 
@@ -288,6 +392,7 @@ export class RegistrationService {
           Query.equal('eventId', eventId),
           Query.equal('status', RegistrationStatus.WAITLIST),
           Query.orderAsc('waitlistPosition'),
+          Query.limit(5000),
         ]
       );
 
@@ -311,7 +416,11 @@ export class RegistrationService {
       const response = await this.databases.listDocuments(
         databaseId,
         collectionId,
-        [Query.equal('userId', userId), Query.orderDesc('$createdAt')]
+        [
+          Query.equal('userId', userId),
+          Query.orderDesc('$createdAt'),
+          Query.limit(5000),
+        ]
       );
 
       return response.documents.map((doc) =>
