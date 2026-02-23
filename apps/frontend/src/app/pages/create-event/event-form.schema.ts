@@ -17,6 +17,7 @@ export type EventForm = {
   capacity: number;
   description: string;
   createdBy: string;
+  createdByUserId: string;
 };
 
 export const eventTypeOptions = [

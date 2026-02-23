@@ -1,4 +1,11 @@
-import { Component, signal, inject } from '@angular/core';
+import {
+  Component,
+  signal,
+  inject,
+  input,
+  effect,
+  computed,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { form, FormField, submit } from '@angular/forms/signals';
@@ -19,13 +26,18 @@ import { UserState } from '../../shared/services/user-state';
   styleUrls: ['./create-event.component.css'],
 })
 export class CreateEventComponent {
+  id = input<string>();
+
   eventTypeOptions = eventTypeOptions;
   sportOptions = sportOptions;
   submitError = signal<string | null>(null);
+  isLoading = signal(false);
 
   private readonly eventService = inject(EventService);
   private readonly router = inject(Router);
   private readonly userState = inject(UserState);
+
+  isEditMode = computed(() => !!this.id());
 
   eventModel = signal<EventForm>({
     name: '',
@@ -38,31 +50,87 @@ export class CreateEventComponent {
     capacity: 0,
     description: '',
     createdBy: this.userState.currentUserName || '',
+    createdByUserId: this.userState.authApi.currentUser()?.id || '',
   });
 
   eventForm = form(this.eventModel, eventSchema);
+
+  constructor() {
+    effect(() => {
+      const eventId = this.id();
+      if (eventId) {
+        this.loadEvent(eventId);
+      }
+    });
+  }
+
+  private loadEvent(eventId: string): void {
+    this.isLoading.set(true);
+    this.eventService.getEventById(eventId).subscribe({
+      next: (event) => {
+        this.eventModel.set({
+          name: event.name,
+          conference: event.conference,
+          eventType: event.eventType,
+          sport: event.sport,
+          date: event.date,
+          time: event.time,
+          location: event.location,
+          capacity: event.capacity,
+          description: event.description,
+          createdBy: event.createdBy,
+          createdByUserId: event.createdByUserId,
+        });
+        this.isLoading.set(false);
+      },
+      error: (error) => {
+        console.error('Error loading event:', error);
+        this.submitError.set('Failed to load event');
+        this.isLoading.set(false);
+      },
+    });
+  }
 
   async onSubmit(event: Event): Promise<void> {
     event.preventDefault();
     this.submitError.set(null);
     submit(this.eventForm, async (form) => {
-      this.eventService.createEvent(form().value()).subscribe({
+      const eventId = this.id();
+      const operation = eventId
+        ? this.eventService.updateEvent(eventId, form().value())
+        : this.eventService.createEvent(form().value());
+
+      operation.subscribe({
         next: () => {
-          this.router.navigate(['/dashboard']);
+          if (eventId) {
+            this.router.navigate(['/event', eventId]);
+          } else {
+            this.router.navigate(['/dashboard']);
+          }
         },
         error: (error) => {
           const errorMessage =
             error instanceof Error
               ? error.message
-              : 'Failed to create event. Please try again.';
+              : `Failed to ${
+                  eventId ? 'update' : 'create'
+                } event. Please try again.`;
           this.submitError.set(errorMessage);
-          console.error('Error creating event:', error);
+          console.error(
+            `Error ${eventId ? 'updating' : 'creating'} event:`,
+            error
+          );
         },
       });
     });
   }
 
   onCancel(): void {
-    this.router.navigate(['/dashboard']);
+    const eventId = this.id();
+    if (eventId) {
+      this.router.navigate(['/event', eventId]);
+    } else {
+      this.router.navigate(['/dashboard']);
+    }
   }
 }

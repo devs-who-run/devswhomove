@@ -1,0 +1,389 @@
+<div
+  class="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 py-8 px-4 sm:px-6 lg:px-8"
+>
+  <div class="max-w-6xl mx-auto">
+    <div class="mb-8">
+      <button
+        (click)="goBack()"
+        class="inline-flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors mb-4"
+      >
+        <svg
+          class="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M10 19l-7-7m0 0l7-7m-7 7h18"
+          />
+        </svg>
+        Back to Event
+      </button>
+
+      <div
+        class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+      >
+        <div>
+          <h1
+            class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-2"
+          >
+            Event Registrants
+          </h1>
+          @if (eventName()) {
+          <p class="text-lg text-gray-600 dark:text-gray-400">
+            {{ eventName() }}
+          </p>
+          }
+        </div>
+
+        <button
+          (click)="exportToCSV()"
+          class="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all"
+        >
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            />
+          </svg>
+          Export CSV
+        </button>
+      </div>
+    </div>
+
+    @if (isLoading()) {
+    <div class="glass-card p-12 text-center">
+      <div
+        class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent"
+      ></div>
+      <p class="mt-4 text-gray-600 dark:text-gray-400">
+        Loading registrants...
+      </p>
+    </div>
+    } @else if (error()) {
+    <div class="glass-card p-8 text-center">
+      <div
+        class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900 mb-4"
+      >
+        <svg
+          class="h-6 w-6 text-red-600 dark:text-red-400"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M6 18L18 6M6 6l12 12"
+          />
+        </svg>
+      </div>
+      <p class="text-red-600 dark:text-red-400">{{ error() }}</p>
+    </div>
+    } @else {
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div class="glass-card p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-600 dark:text-gray-400">
+              Total Registrants
+            </p>
+            <p class="text-3xl font-bold text-gray-900 dark:text-white mt-1">
+              {{ totalCount() }}
+            </p>
+          </div>
+          <div
+            class="h-12 w-12 bg-indigo-100 dark:bg-indigo-900 rounded-lg flex items-center justify-center"
+          >
+            <svg
+              class="w-6 h-6 text-indigo-600 dark:text-indigo-400"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-card p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-600 dark:text-gray-400">
+              Confirmed
+            </p>
+            <p
+              class="text-3xl font-bold text-green-600 dark:text-green-400 mt-1"
+            >
+              {{ confirmedCount() }}
+            </p>
+          </div>
+          <div
+            class="h-12 w-12 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center"
+          >
+            <svg
+              class="w-6 h-6 text-green-600 dark:text-green-400"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-card p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-gray-600 dark:text-gray-400">
+              Waitlist
+            </p>
+            <p
+              class="text-3xl font-bold text-orange-600 dark:text-orange-400 mt-1"
+            >
+              {{ waitlistCount() }}
+            </p>
+          </div>
+          <div
+            class="h-12 w-12 bg-orange-100 dark:bg-orange-900 rounded-lg flex items-center justify-center"
+          >
+            <svg
+              class="w-6 h-6 text-orange-600 dark:text-orange-400"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-card overflow-hidden">
+      <div class="border-b border-gray-200 dark:border-gray-700">
+        <nav class="flex -mb-px">
+          <button
+            (click)="setActiveTab('confirmed')"
+            [class.border-indigo-600]="activeTab() === 'confirmed'"
+            [class.text-indigo-600]="activeTab() === 'confirmed'"
+            [class.dark:text-indigo-400]="activeTab() === 'confirmed'"
+            [class.border-transparent]="activeTab() !== 'confirmed'"
+            [class.text-gray-500]="activeTab() !== 'confirmed'"
+            [class.dark:text-gray-400]="activeTab() !== 'confirmed'"
+            class="flex-1 py-4 px-6 text-center border-b-2 font-medium text-sm transition-colors hover:text-indigo-600 dark:hover:text-indigo-400"
+          >
+            Confirmed ({{ confirmedCount() }})
+          </button>
+          <button
+            (click)="setActiveTab('waitlist')"
+            [class.border-indigo-600]="activeTab() === 'waitlist'"
+            [class.text-indigo-600]="activeTab() === 'waitlist'"
+            [class.dark:text-indigo-400]="activeTab() === 'waitlist'"
+            [class.border-transparent]="activeTab() !== 'waitlist'"
+            [class.text-gray-500]="activeTab() !== 'waitlist'"
+            [class.dark:text-gray-400]="activeTab() !== 'waitlist'"
+            class="flex-1 py-4 px-6 text-center border-b-2 font-medium text-sm transition-colors hover:text-indigo-600 dark:hover:text-indigo-400"
+          >
+            Waitlist ({{ waitlistCount() }})
+          </button>
+        </nav>
+      </div>
+
+      @if (activeTab() === 'confirmed') {
+      <div class="p-6">
+        @if (confirmedCount() === 0) {
+        <div class="text-center py-12">
+          <svg
+            class="mx-auto h-12 w-12 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+            />
+          </svg>
+          <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-white">
+            No confirmed registrants
+          </h3>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            No one has registered for this event yet.
+          </p>
+        </div>
+        } @else {
+        <div class="overflow-x-auto">
+          <table
+            class="min-w-full divide-y divide-gray-200 dark:divide-gray-700"
+          >
+            <thead>
+              <tr>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                >
+                  Name
+                </th>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                >
+                  Registration Date
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+              @for (registrant of confirmedRegistrants(); track registrant.id) {
+              <tr
+                class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="flex items-center">
+                    <div
+                      class="h-10 w-10 flex-shrink-0 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center"
+                    >
+                      <span
+                        class="text-green-600 dark:text-green-400 font-semibold text-sm"
+                      >
+                        {{ registrant.userName.charAt(0).toUpperCase() }}
+                      </span>
+                    </div>
+                    <div class="ml-4">
+                      <div
+                        class="text-sm font-medium text-gray-900 dark:text-white"
+                      >
+                        {{ registrant.userName }}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td
+                  class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"
+                >
+                  {{ registrant.registeredAt | date : 'medium' }}
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+      } @if (activeTab() === 'waitlist') {
+      <div class="p-6">
+        @if (waitlistCount() === 0) {
+        <div class="text-center py-12">
+          <svg
+            class="mx-auto h-12 w-12 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-white">
+            No waitlist
+          </h3>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            There are no people on the waitlist.
+          </p>
+        </div>
+        } @else {
+        <div class="overflow-x-auto">
+          <table
+            class="min-w-full divide-y divide-gray-200 dark:divide-gray-700"
+          >
+            <thead>
+              <tr>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                >
+                  Position
+                </th>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                >
+                  Name
+                </th>
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                >
+                  Registration Date
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+              @for (registrant of waitlistRegistrants(); track registrant.id) {
+              <tr
+                class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200"
+                  >
+                    #{{ registrant.waitlistPosition }}
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="flex items-center">
+                    <div
+                      class="h-10 w-10 flex-shrink-0 bg-orange-100 dark:bg-orange-900 rounded-full flex items-center justify-center"
+                    >
+                      <span
+                        class="text-orange-600 dark:text-orange-400 font-semibold text-sm"
+                      >
+                        {{ registrant.userName.charAt(0).toUpperCase() }}
+                      </span>
+                    </div>
+                    <div class="ml-4">
+                      <div
+                        class="text-sm font-medium text-gray-900 dark:text-white"
+                      >
+                        {{ registrant.userName }}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td
+                  class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"
+                >
+                  {{ registrant.registeredAt | date : 'medium' }}
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+      }
+    </div>
+    }
+  </div>
+</div>

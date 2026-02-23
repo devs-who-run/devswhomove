@@ -7,15 +7,28 @@
       <h1
         class="text-2xl sm:text-3xl md:text-4xl font-extrabold text-gray-900 dark:text-white mb-2"
       >
-        Create New Event
+        {{ isEditMode() ? 'Edit Event' : 'Create New Event' }}
       </h1>
       <p
         class="text-sm sm:text-base md:text-lg text-gray-600 dark:text-gray-300"
       >
-        Fill in the details to create a new event
+        {{
+          isEditMode()
+            ? 'Update your event details'
+            : 'Fill in the details to create a new event'
+        }}
       </p>
     </div>
 
+    @if (isLoading()) {
+    <div class="form-card p-6 sm:p-8 md:p-12 animate-pulse">
+      <div class="space-y-6">
+        <div class="h-10 bg-gray-300 dark:bg-gray-600 rounded"></div>
+        <div class="h-10 bg-gray-300 dark:bg-gray-600 rounded"></div>
+        <div class="h-10 bg-gray-300 dark:bg-gray-600 rounded"></div>
+      </div>
+    </div>
+    } @else {
     <div class="form-card p-4 sm:p-6 md:p-8">
       <form (ngSubmit)="onSubmit($event)">
         @if (submitError()) {
@@ -319,12 +332,13 @@
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 ></path>
               </svg>
-              Creating...
+              {{ isEditMode() ? 'Updating...' : 'Creating...' }}
             </span>
-            } @else { Create Event }
+            } @else { {{ isEditMode() ? 'Update Event' : 'Create Event' }} }
           </button>
         </div>
       </form>
     </div>
+    }
   </div>
 </div>

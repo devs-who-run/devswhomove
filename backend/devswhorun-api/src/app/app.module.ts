@@ -5,11 +5,12 @@ import { AppService } from './app.service';
 import { AuthController } from './controllers/auth.controller';
 import { AppwriteService } from './services/appwrite.service';
 import { EventService } from './services/event.service';
-import { SeedService } from './services/seed.service';
 import appwriteConfig from './config/appwrite.config';
 import { EventsController } from './controllers/events.controller';
 import { UserProfileController } from './controllers/user-profile.controller';
 import { UserProfileService } from './services/user-profile.service';
+import { RegistrationService } from './services/registration.service';
+import { RegistrationController } from './controllers/registration.controller';
 
 @Module({
   imports: [
@@ -24,13 +25,14 @@ import { UserProfileService } from './services/user-profile.service';
     AuthController,
     EventsController,
     UserProfileController,
+    RegistrationController,
   ],
   providers: [
     AppService,
     AppwriteService,
     EventService,
-    SeedService,
     UserProfileService,
+    RegistrationService,
   ],
 })
 export class AppModule {}

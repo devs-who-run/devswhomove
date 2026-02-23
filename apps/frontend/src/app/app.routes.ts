@@ -41,6 +41,30 @@ export const appRoutes: Route[] = [
       ),
     canActivate: [authGuard],
   },
+  {
+    path: 'event/:id',
+    loadComponent: () =>
+      import('./pages/event-details/event-details.component').then(
+        (m) => m.EventDetailsComponent
+      ),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'edit-event/:id',
+    loadComponent: () =>
+      import('./pages/create-event/create-event.component').then(
+        (m) => m.CreateEventComponent
+      ),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'event/:id/registrants',
+    loadComponent: () =>
+      import('./pages/event-registrants/event-registrants.component').then(
+        (m) => m.EventRegistrantsComponent
+      ),
+    canActivate: [authGuard],
+  },
   { path: 'landing', redirectTo: '', pathMatch: 'full' },
   { path: '**', redirectTo: '' },
 ];

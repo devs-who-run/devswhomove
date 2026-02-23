@@ -7,6 +7,8 @@ import {
   Param,
   NotFoundException,
   InternalServerErrorException,
+  Put,
+  Delete,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { CreateEventDto, EventResponseDto, Event } from '../dto/events.dto';
@@ -114,6 +116,51 @@ export class EventsController {
         throw new NotFoundException('Event not found');
       }
       throw new InternalServerErrorException('Failed to retrieve event');
+    }
+  }
+
+  @Put(':id')
+  @ApiOperation({ summary: 'Update an event' })
+  @ApiParam({ name: 'id', description: 'Event ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Event updated successfully',
+    type: EventResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async updateEvent(
+    @Param('id') id: string,
+    @Body() updateEventDto: Partial<CreateEventDto>
+  ): Promise<Event> {
+    try {
+      return await this.eventService.updateEvent(id, updateEventDto);
+    } catch (error) {
+      this.logger.error(`Failed to update event with ID: ${id}`, error);
+      if (error?.code === 404 || error?.type === 'document_not_found') {
+        throw new NotFoundException('Event not found');
+      }
+      throw new InternalServerErrorException('Failed to update event');
+    }
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete an event' })
+  @ApiParam({ name: 'id', description: 'Event ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Event deleted successfully',
+  })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async deleteEvent(@Param('id') id: string): Promise<{ message: string }> {
+    try {
+      await this.eventService.deleteEvent(id);
+      return { message: 'Event deleted successfully' };
+    } catch (error) {
+      this.logger.error(`Failed to delete event with ID: ${id}`, error);
+      if (error?.code === 404 || error?.type === 'document_not_found') {
+        throw new NotFoundException('Event not found');
+      }
+      throw new InternalServerErrorException('Failed to delete event');
     }
   }
 }
