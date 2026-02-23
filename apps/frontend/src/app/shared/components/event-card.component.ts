@@ -1,5 +1,6 @@
 import { Component, input } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { SvgIconDirective } from '../directives/svg/svg-icon';
 import { ICON_NAME } from '../directives/svg';
 
@@ -21,7 +22,7 @@ export interface Event {
 @Component({
   selector: 'app-event-card',
   standalone: true,
-  imports: [DatePipe, SvgIconDirective],
+  imports: [DatePipe, SvgIconDirective, RouterLink],
   template: `
     <div class="glass-card p-3 sm:p-4 md:p-6 w-full">
       <div
@@ -148,11 +149,12 @@ export interface Event {
           >
             Created {{ event().createdAt | date : 'short' }}
           </p>
-          <button
-            class="w-full sm:w-auto primary-btn cursor-pointer text-sm sm:text-base order-1 sm:order-2"
+          <a
+            [routerLink]="['/event', event().id]"
+            class="w-full sm:w-auto primary-btn cursor-pointer text-sm sm:text-base order-1 sm:order-2 text-center"
           >
             View Details
-          </button>
+          </a>
         </div>
       </div>
     </div>

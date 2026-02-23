@@ -28,6 +28,7 @@ export class EventService {
         time: createEventDto.time,
         capacity: createEventDto.capacity,
         createdBy: createEventDto.createdBy,
+        createdByUserId: createEventDto.createdByUserId,
       };
 
       const document = await this.databases.createDocument(
@@ -85,7 +86,9 @@ export class EventService {
 
   async updateEvent(
     eventId: string,
-    updateData: Partial<CreateEventDto>
+    updateData:
+      | Partial<CreateEventDto>
+      | { confirmedCount?: number; waitlistCount?: number }
   ): Promise<Event> {
     try {
       const databaseId = this.appwriteService.getDatabaseId();
@@ -176,6 +179,9 @@ export class EventService {
       time: doc.time,
       capacity: doc.capacity,
       createdBy: doc.createdBy,
+      createdByUserId: doc.createdByUserId,
+      confirmedCount: doc.confirmedCount || 0,
+      waitlistCount: doc.waitlistCount || 0,
       createdAt: doc.$createdAt ? new Date(doc.$createdAt) : undefined,
       updatedAt: doc.$updatedAt ? new Date(doc.$updatedAt) : undefined,
     };

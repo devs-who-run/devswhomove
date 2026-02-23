@@ -51,6 +51,11 @@ export class CreateEventDto {
   @IsString()
   @IsNotEmpty()
   createdBy: string;
+
+  @ApiProperty({ description: 'User ID of the user who created the event' })
+  @IsString()
+  @IsNotEmpty()
+  createdByUserId: string;
 }
 
 export class EventResponseDto {
@@ -88,6 +93,15 @@ export class EventResponseDto {
   createdBy: string;
 
   @ApiProperty()
+  createdByUserId: string;
+
+  @ApiProperty({ required: false })
+  confirmedCount?: number;
+
+  @ApiProperty({ required: false })
+  waitlistCount?: number;
+
+  @ApiProperty()
   createdAt?: Date;
 
   @ApiProperty()
@@ -106,6 +120,9 @@ export class Event {
   time: string;
   capacity: number;
   createdBy: string;
+  createdByUserId: string;
+  confirmedCount?: number;
+  waitlistCount?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }

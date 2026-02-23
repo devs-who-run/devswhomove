@@ -15,6 +15,9 @@ export interface Event {
   time: string;
   capacity: number;
   createdBy: string;
+  createdByUserId: string;
+  confirmedCount?: number;
+  waitlistCount?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -47,5 +50,16 @@ export class EventService {
 
   getEventsByType(eventType: string): Observable<Event[]> {
     return this.http.get<Event[]>(`${this.apiUrl}/type/${eventType}`);
+  }
+
+  updateEvent(
+    id: string,
+    event: Partial<Omit<Event, 'id' | 'createdAt' | 'updatedAt'>>
+  ): Observable<Event> {
+    return this.http.put<Event>(`${this.apiUrl}/${id}`, event);
+  }
+
+  deleteEvent(id: string): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${this.apiUrl}/${id}`);
   }
 }
