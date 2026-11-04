@@ -1,12 +1,6 @@
-import {
-  Component,
-  computed,
-  ElementRef,
-  HostListener,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Icon } from './icon';
@@ -30,12 +24,13 @@ const localDate = (date: Date) =>
   new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 
 @Component({
-  imports: [DatePipe, DecimalPipe, FormsModule, Icon],
+  imports: [DatePipe, DecimalPipe, FormsModule, Icon, RouterLink, RouterOutlet],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
 })
 export class App {
+  private readonly router = inject(Router);
   readonly theme = inject(Theme);
   readonly sports = SPORTS;
   readonly nav: { page: Page; label: string; icon: string }[] = [
@@ -68,11 +63,11 @@ export class App {
 
   readonly activities = computed(() => (this.preview() ? DEMO_ACTIVITIES : this.liveActivities()));
   readonly events = computed(() => (this.preview() ? DEMO_EVENTS : this.liveEvents()));
-  readonly displayedProfile = computed(() => this.remoteProfile() || this.viewer() || DEMO_PROFILE);
+  readonly displayedProfile = computed(() => this.remoteProfile() || this.viewer());
   readonly profileActivities = computed(() =>
     this.remoteProfile()
       ? this.remoteActivities()
-      : this.activities().filter((activity) => activity.userId === this.displayedProfile().id),
+      : this.activities().filter((activity) => activity.userId === this.displayedProfile()?.id),
   );
   readonly filteredActivities = computed(() =>
     this.activities().filter(
@@ -156,6 +151,9 @@ export class App {
   agentEvents = false;
 
   constructor() {
+    this.router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
+      if (event instanceof NavigationEnd && !this.loading()) void this.route();
+    });
     void this.load().then(() => this.route());
   }
 
@@ -215,13 +213,14 @@ export class App {
   }
 
   navigate(page: Page): void {
-    window.location.hash = page;
+    void this.router.navigateByUrl(`/${page}`);
   }
 
-  @HostListener('window:hashchange')
   async route(): Promise<void> {
     const request = ++this.routeRequest;
-    const [page, username] = window.location.hash.slice(1).split('/');
+    const [page, username] = new URL(this.router.url, window.location.origin).pathname
+      .slice(1)
+      .split('/');
     this.page.set(this.nav.some((item) => item.page === page) ? (page as Page) : 'feed');
     if (this.page() !== 'agents') this.newToken.set('');
     this.selectedSport.set('All');
@@ -230,27 +229,6 @@ export class App {
     this.profileError.set('');
     this.profileLoading.set(false);
     if (page === 'profile' && username && username !== this.viewer()?.username) {
-      if (this.preview()) {
-        const samples = DEMO_ACTIVITIES.filter((activity) => activity.username === username);
-        if (samples.length) {
-          this.remoteProfile.set(
-            username === DEMO_PROFILE.username
-              ? DEMO_PROFILE
-              : {
-                  id: samples[0].userId,
-                  username,
-                  name: samples[0].name,
-                  avatar: '',
-                  visibility: 'public',
-                  bio: 'A developer making time for life beyond the screen. This is a sample profile.',
-                  location: 'Berlin, Germany',
-                  sports: [...new Set(samples.map((activity) => activity.sport))],
-                },
-          );
-          this.remoteActivities.set(samples);
-          return;
-        }
-      }
       this.profileLoading.set(true);
       try {
         const data = await this.api<{ profile: Profile; activities: Activity[] }>(

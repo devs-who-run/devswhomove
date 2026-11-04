@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './app';
 import { DEMO_ACTIVITIES, DEMO_PROFILE } from './demo';
 import type { Bootstrap } from './models';
+import { provideRouter, Router } from '@angular/router';
+import { routes } from './app.routes';
 
 describe('App', () => {
   const bootstrap: Bootstrap = {
@@ -23,7 +25,10 @@ describe('App', () => {
       }),
     );
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(bootstrap)));
-    await TestBed.configureTestingModule({ imports: [App] }).compileComponents();
+    await TestBed.configureTestingModule({
+      imports: [App],
+      providers: [provideRouter(routes)],
+    }).compileComponents();
   });
 
   afterEach(() => {
@@ -64,6 +69,65 @@ describe('App', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelectorAll('.activity-card')).toHaveLength(1);
     expect(fixture.componentInstance.activities()).toHaveLength(4);
+  });
+
+  it('shows a sign-in prompt at /profile, never a sample identity', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.displayedProfile()).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Your profile starts with you.');
+    expect(fixture.nativeElement.textContent).not.toContain('Avery Chen');
+  });
+
+  it('loads the signed-in identity on a direct /profile route', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      Response.json({
+        ...bootstrap,
+        viewer: {
+          ...DEMO_PROFILE,
+          id: 'real-user',
+          name: 'Signed-in developer',
+          username: 'real-dev',
+        },
+      }),
+    );
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.page()).toBe('profile');
+    expect(fixture.nativeElement.querySelector('h1')?.textContent).toBe('Signed-in developer');
+    expect(fixture.nativeElement.textContent).not.toContain('Avery Chen');
+  });
+
+  it('uses clean router links and navigates between pages', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/events');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.page()).toBe('events');
+    expect(fixture.nativeElement.querySelector('nav a').getAttribute('href')).toBe('/feed');
+    await router.navigateByUrl('/feed');
+    expect(fixture.componentInstance.page()).toBe('feed');
+  });
+
+  it('does not substitute a sample person for a missing public profile', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    vi.mocked(fetch).mockResolvedValue(
+      Response.json({ error: 'Profile is private or does not exist.' }, { status: 404 }),
+    );
+    await TestBed.inject(Router).navigateByUrl('/profile/averybuilds');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.remoteProfile()).toBeNull();
+    expect(fixture.componentInstance.profileError()).toContain('private or does not exist');
+    expect(fixture.nativeElement.textContent).not.toContain('Avery Chen');
   });
 
   it('requires sign-in rather than pretending to save guest activities', async () => {

@@ -1,9 +1,10 @@
+<router-outlet />
 <a class="skip-link" href="#main" (click)="$event.preventDefault(); main.focus()"
   >Skip to content</a
 >
 <div class="app-shell">
   <aside class="sidebar">
-    <a class="brand" href="#feed" aria-label="Devs Who Move home">
+    <a class="brand" routerLink="/feed" aria-label="Devs Who Move home">
       <span class="brand-mark"><app-icon name="move" /></span>
       <span>devs<span class="brand-light">who</span>move<span class="brand-dot">.</span></span>
     </a>
@@ -11,7 +12,7 @@
     <nav aria-label="Main navigation">
       @for (item of nav; track item.page) {
         <a
-          [href]="'#' + item.page"
+          [routerLink]="'/' + item.page"
           [class.active]="page() === item.page"
           [attr.aria-label]="item.label"
           [attr.aria-current]="page() === item.page ? 'page' : null"
@@ -118,7 +119,7 @@
           </button>
         </div>
       }
-      @if (preview() && !loading()) {
+      @if (preview() && !loading() && (page() === 'feed' || page() === 'events')) {
         <div class="preview-strip">
           <span><span class="status-dot"></span> YOU’RE EXPLORING A PREVIEW</span
           ><span
@@ -242,7 +243,7 @@
               @for (activity of filteredActivities(); track activity.id) {
                 <article class="activity-card">
                   <div class="activity-header">
-                    <a class="person" [href]="'#profile/' + activity.username"
+                    <a class="person" [routerLink]="['/profile', activity.username]"
                       ><span
                         class="avatar"
                         [class.orange]="activity.sport === 'Cycling'"
@@ -540,10 +541,9 @@
               <app-icon name="lock" />
               <h2>This story is personal.</h2>
               <p>{{ profileError() }}</p>
-              <a class="button outline" href="#feed">Back to the community</a>
+              <a class="button outline" routerLink="/feed">Back to the community</a>
             </div>
-          } @else {
-            @let profile = displayedProfile();
+          } @else if (displayedProfile(); as profile) {
             <div class="profile-cover">
               <div class="cover-lines" aria-hidden="true"></div>
               <span>MORE THAN YOUR CONTRIBUTION GRAPH.</span><app-icon name="move" />
@@ -565,11 +565,6 @@
                     profile</span
                   ><button class="button outline" (click)="openModal('profile')">
                     <app-icon name="edit" /> Edit profile
-                  </button>
-                } @else if (!viewer() && (!remoteProfile() || preview())) {
-                  <span class="visibility-pill">Example profile</span
-                  ><button class="button primary" (click)="login()">
-                    Build your story <app-icon name="arrow" />
                   </button>
                 }
               </div>
@@ -708,6 +703,15 @@
               Progress summaries reflect the latest 100 visible sessions. Rest days belong here,
               too.
             </p>
+          } @else {
+            <div class="empty-state">
+              <app-icon name="user" />
+              <h1>Your profile starts with you.</h1>
+              <p>Sign in with GitHub to create your own sports profile and track your progress.</p>
+              <button class="button primary" (click)="login()">
+                <app-icon name="github" /> Sign in with GitHub
+              </button>
+            </div>
           }
         }
 

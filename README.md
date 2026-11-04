@@ -35,7 +35,8 @@ New profiles and activities are **private by default**. Edit your profile to cho
 - Light, dark, and system themes, with a saved browser preference and live OS-theme updates in system mode.
 - Activity logging, distance/time/pace, privacy changes, deletion and agent attribution.
 - Profiles with sports, editable bio, visibility controls, summaries and a 13-week activity calendar.
-- Public profile links: `/#profile/GITHUB_USERNAME`. Private profiles return 404 to other users.
+- Clean Angular routes: `/feed`, `/events`, `/profile`, and `/agents`. `/profile` shows your account or a sign-in prompt, never a sample identity.
+- Public profile links: `/profile/GITHUB_USERNAME`. Private profiles return 404 to other users. Cloudflare's SPA fallback supports direct links and refreshes.
 - Public events with local-time display, capacity, host RSVP, joining/leaving and host cancellation. Capacity is enforced in one database statement.
 - GitHub OAuth sign-in, D1-backed sessions and origin checks for cookie-authenticated mutations.
 - Scoped, hashed, expiring and revocable agent bearer tokens, with idempotent private uploads.
