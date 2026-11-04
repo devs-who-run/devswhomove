@@ -1,0 +1,1110 @@
+<a class="skip-link" href="#main" (click)="$event.preventDefault(); main.focus()"
+  >Skip to content</a
+>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="#feed" aria-label="Devs Who Move home">
+      <span class="brand-mark"><app-icon name="move" /></span>
+      <span>devs<span class="brand-light">who</span>move<span class="brand-dot">.</span></span>
+    </a>
+    <div class="workspace-label">A LITTLE LESS SEDENTARY.</div>
+    <nav aria-label="Main navigation">
+      @for (item of nav; track item.page) {
+        <a
+          [href]="'#' + item.page"
+          [class.active]="page() === item.page"
+          [attr.aria-label]="item.label"
+          [attr.aria-current]="page() === item.page ? 'page' : null"
+        >
+          <app-icon [name]="item.icon" /><span>{{ item.label }}</span>
+          @if (item.page === 'agents') {
+            <span class="nav-tag">BETA</span>
+          }
+        </a>
+      }
+    </nav>
+    <div class="sidebar-manifesto">
+      <span class="little-star">✳</span>
+      <h3>Good things happen<br />away from the desk.</h3>
+      <p>Find your pace.<br />Find your people.</p>
+      <button class="text-button" (click)="navigate('events')">
+        Let’s get outside <app-icon name="arrow" />
+      </button>
+    </div>
+    <div class="sidebar-bottom">
+      <span class="status-dot"></span> BUILT FOR HUMANS. & AGENTS.
+      @if (viewer(); as user) {
+        <div class="account">
+          <span class="avatar small">
+            @if (user.avatar) {
+              <img [src]="user.avatar" alt="" referrerpolicy="no-referrer" />
+            } @else {
+              {{ initials(user.name) }}
+            }
+          </span>
+          <div>
+            <strong>{{ user.name }}</strong
+            ><span>&#64;{{ user.username }}</span>
+          </div>
+          <button
+            class="icon-button"
+            aria-label="Sign out"
+            (click)="logout()"
+            [disabled]="saving()"
+          >
+            <app-icon name="logout" />
+          </button>
+        </div>
+      } @else {
+        <button class="github-button" (click)="login()">
+          <app-icon name="github" /> Join with GitHub <app-icon name="arrow" />
+        </button>
+      }
+    </div>
+  </aside>
+
+  <div class="main-shell">
+    <header class="topbar">
+      <div class="breadcrumb">Your next commit? <span>A little movement.</span></div>
+      <div class="topbar-actions">
+        <div class="theme-control">
+          <label for="theme-preference" class="sr-only">Color theme</label>
+          <select
+            id="theme-preference"
+            aria-label="Color theme"
+            [ngModel]="theme.preference()"
+            (ngModelChange)="theme.setPreference($event)"
+          >
+            <option value="system">System theme</option>
+            <option value="light">Light theme</option>
+            <option value="dark">Dark theme</option>
+          </select>
+        </div>
+        <span class="today">{{ '2026' }} <span class="tiny-divider">/</span> EST. IN MOTION</span>
+        @if (viewer()) {
+          <button
+            class="icon-button mobile-signout"
+            aria-label="Sign out"
+            (click)="logout()"
+            [disabled]="saving()"
+          >
+            <app-icon name="logout" />
+          </button>
+          <button class="button primary compact" (click)="openModal('activity')">
+            <app-icon name="plus" /> Log activity
+          </button>
+        } @else {
+          <button class="button primary compact" (click)="login()">
+            <app-icon name="github" /> Sign in
+          </button>
+        }
+      </div>
+    </header>
+
+    <main #main id="main" tabindex="-1">
+      @if (error() && !modal()) {
+        <div class="banner error" role="alert">
+          <span>{{ error() }}</span
+          ><button class="icon-button" aria-label="Dismiss error" (click)="error.set('')">
+            <app-icon name="close" />
+          </button>
+        </div>
+      }
+      @if (notice()) {
+        <div class="banner notice" role="status">
+          <span>{{ notice() }}</span
+          ><button class="icon-button" aria-label="Dismiss notification" (click)="notice.set('')">
+            <app-icon name="close" />
+          </button>
+        </div>
+      }
+      @if (preview() && !loading()) {
+        <div class="preview-strip">
+          <span><span class="status-dot"></span> YOU’RE EXPLORING A PREVIEW</span
+          ><span
+            >Sample people. Real possibilities.
+            <button (click)="login()">Make it yours <span aria-hidden="true">↗</span></button></span
+          >
+        </div>
+      }
+
+      @if (loading()) {
+        <div class="loading-state" role="status">
+          <span class="brand-mark"><app-icon name="move" /></span>
+          <h2>Finding our stride…</h2>
+        </div>
+      } @else {
+        @if (page() === 'feed') {
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">LESS SCROLLING. MORE STRIDING.</p>
+              <h1>Your people. <span>Your pace.</span></h1>
+              <p>A place for developers who move. Every sport. Every starting point.</p>
+            </div>
+            <button class="button outline heading-button" (click)="openModal('activity')">
+              <app-icon name="plus" /> Log a little progress
+            </button>
+          </div>
+          <div class="dashboard-grid">
+            <section class="feed-column" aria-label="Community feed">
+              <div class="hero">
+                <div class="hero-art" aria-hidden="true">
+                  <svg viewBox="0 0 600 340" preserveAspectRatio="xMidYMid slice">
+                    <defs>
+                      <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+                        <path d="M32 0H0V32" fill="none" stroke="#fff" stroke-opacity=".05" />
+                      </pattern>
+                    </defs>
+                    <rect width="600" height="340" fill="url(#grid)" />
+                    <g fill="none" stroke="#bce0c7" stroke-opacity=".13" stroke-width="1">
+                      <path
+                        d="M300-40c-80 80 110 75 40 170S440 230 370 380M330-40c-80 80 110 75 40 170S470 230 400 380M360-40c-80 80 110 75 40 170S500 230 430 380M390-40c-80 80 110 75 40 170S530 230 460 380M420-40c-80 80 110 75 40 170S560 230 490 380M450-40c-80 80 110 75 40 170S590 230 520 380M480-40c-80 80 110 75 40 170S620 230 550 380"
+                      />
+                      <path
+                        d="M260-40c-80 80 110 75 40 170S400 230 330 380M230-40c-80 80 110 75 40 170S370 230 300 380"
+                      />
+                    </g>
+                    <path
+                      d="m385 272-21-46 33-38-9-49 61-28 5-42 55-22 33 31-23 42 13 46-48 38-28-10-42 44-29 34Z"
+                      fill="#b9e46d"
+                      fill-opacity=".08"
+                      stroke="#d4f59a"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                    <circle cx="385" cy="272" r="13" fill="#d4f59a" fill-opacity=".15" />
+                    <circle cx="385" cy="272" r="5" fill="#d4f59a" />
+                    <circle
+                      cx="454"
+                      cy="69"
+                      r="5"
+                      fill="#173f32"
+                      stroke="#d4f59a"
+                      stroke-width="2"
+                    />
+                  </svg>
+                  <div class="route-label">
+                    <span class="status-dot"></span> OUT OF OFFICE. INTO YOUR STRIDE.
+                  </div>
+                </div>
+                <div class="hero-copy">
+                  <span class="hero-label"
+                    ><span class="status-dot"></span> SHIP CODE. COLLECT KILOMETRES.</span
+                  >
+                  <h2>There’s a whole world<br />outside your editor<span>.</span></h2>
+                  <p>
+                    Chase a little fresh air, not another deadline.<br />Your next good session
+                    starts with good company.
+                  </p>
+                  <button class="button lime" (click)="navigate('events')">
+                    Find your next move <app-icon name="arrow" />
+                  </button>
+                </div>
+              </div>
+              <div class="section-top feed-tabs">
+                <div class="tabs" aria-label="Feed filter">
+                  <button
+                    [class.selected]="feedMode() === 'community'"
+                    [attr.aria-pressed]="feedMode() === 'community'"
+                    (click)="feedMode.set('community')"
+                  >
+                    Community
+                  </button>
+                  <button
+                    [class.selected]="feedMode() === 'mine'"
+                    [attr.aria-pressed]="feedMode() === 'mine'"
+                    (click)="feedMode.set('mine')"
+                  >
+                    Your activity
+                  </button>
+                </div>
+                <span class="muted small-text">A little progress, shared.</span>
+              </div>
+              <div class="sport-filters" aria-label="Filter activities by sport">
+                <button
+                  [class.selected]="selectedSport() === 'All'"
+                  [attr.aria-pressed]="selectedSport() === 'All'"
+                  (click)="selectedSport.set('All')"
+                >
+                  All movement
+                </button>
+                @for (sport of sports; track sport) {
+                  <button
+                    [class.selected]="selectedSport() === sport"
+                    [attr.aria-pressed]="selectedSport() === sport"
+                    (click)="selectedSport.set(sport)"
+                  >
+                    <app-icon [name]="sport" />{{ sport }}
+                  </button>
+                }
+              </div>
+              @for (activity of filteredActivities(); track activity.id) {
+                <article class="activity-card">
+                  <div class="activity-header">
+                    <a class="person" [href]="'#profile/' + activity.username"
+                      ><span
+                        class="avatar"
+                        [class.orange]="activity.sport === 'Cycling'"
+                        [class.lilac]="activity.sport === 'Tennis'"
+                      >
+                        @if (activity.avatar) {
+                          <img
+                            [src]="activity.avatar"
+                            alt=""
+                            loading="lazy"
+                            referrerpolicy="no-referrer"
+                          />
+                        } @else {
+                          {{ initials(activity.name) }}
+                        }</span
+                      ><span
+                        ><strong>{{ activity.name }}</strong
+                        ><small
+                          >&#64;{{ activity.username }} <span aria-hidden="true">·</span>
+                          {{ activity.occurredAt | date: 'MMM d, h:mm a' }}</small
+                        ></span
+                      ></a
+                    >
+                    <span class="sport-label"
+                      ><app-icon [name]="activity.sport" />{{ activity.sport }}</span
+                    >
+                  </div>
+                  <h3>{{ activity.title }}</h3>
+                  <p class="activity-notes">{{ activity.notes }}</p>
+                  <div class="activity-metrics">
+                    @if (activity.distance !== null) {
+                      <div>
+                        <span>Distance</span
+                        ><strong
+                          >{{ activity.distance | number: '1.0-2' }} <small>km</small></strong
+                        >
+                      </div>
+                    }
+                    <div>
+                      <span>Moving time</span
+                      ><strong>{{ activity.duration | number: '1.0-1' }} <small>min</small></strong>
+                    </div>
+                    @if (activity.sport === 'Running' && activity.distance) {
+                      <div>
+                        <span>Avg. pace</span
+                        ><strong>{{ pace(activity) }} <small>/km</small></strong>
+                      </div>
+                    }
+                    @if (activity.sport === 'Cycling' && activity.distance) {
+                      <div>
+                        <span>Avg. speed</span
+                        ><strong
+                          >{{ (activity.distance / activity.duration) * 60 | number: '1.0-1' }}
+                          <small>km/h</small></strong
+                        >
+                      </div>
+                    }
+                    <span class="activity-glyph" aria-hidden="true"
+                      ><app-icon [name]="activity.sport"
+                    /></span>
+                  </div>
+                  <footer class="activity-footer">
+                    <span
+                      ><app-icon [name]="activity.visibility === 'private' ? 'lock' : 'globe'" />{{
+                        activity.visibility === 'private' ? 'Only you' : 'Public activity'
+                      }}</span
+                    >
+                    @if (activity.source === 'agent') {
+                      <span class="agent-label"
+                        ><app-icon name="terminal" /> Logged by an agent</span
+                      >
+                    }
+                    @if (activity.userId === viewer()?.id) {
+                      <button
+                        class="text-button"
+                        (click)="toggleVisibility(activity)"
+                        [disabled]="saving()"
+                      >
+                        Make {{ activity.visibility === 'public' ? 'private' : 'public' }}
+                      </button>
+                    }
+                  </footer>
+                </article>
+              } @empty {
+                <div class="empty-state">
+                  <app-icon name="move" />
+                  <h3>A fresh starting line.</h3>
+                  <p>No activities here yet. Your first little move belongs here.</p>
+                  <button class="button outline" (click)="openModal('activity')">
+                    Log an activity <app-icon name="plus" />
+                  </button>
+                </div>
+              }
+              <p class="feed-end">YOU DON’T HAVE TO GO FAST. JUST GO.</p>
+            </section>
+
+            <aside class="right-column" aria-label="Your week and upcoming events">
+              <section class="weekly-card">
+                <div class="section-top">
+                  <h2>Your week in motion</h2>
+                  <app-icon name="spark" />
+                </div>
+                <p class="muted small-text">
+                  {{ preview() ? 'A glimpse of your future rhythm.' : 'Small steps. They add up.' }}
+                </p>
+                <div class="week-total">
+                  {{ weeklyMinutes() | number: '1.0-0' }}<span>min outside the scroll</span>
+                </div>
+                <div class="week-chart" aria-label="Activity minutes by day, Monday to Sunday">
+                  @for (bar of weekBars(); track $index) {
+                    <div class="chart-day" [title]="bar.minutes + ' minutes'">
+                      <div class="bar-track">
+                        <span
+                          [style.height.%]="bar.height"
+                          [class.has-value]="bar.minutes > 0"
+                        ></span>
+                      </div>
+                      <small>{{ bar.day }}</small>
+                    </div>
+                  }
+                </div>
+                <div class="week-footer">
+                  <span
+                    ><strong>{{ weekly().length }}</strong> sessions</span
+                  ><span
+                    ><strong>{{ weeklyDistance() | number: '1.0-1' }}</strong> km covered</span
+                  >
+                </div>
+              </section>
+              <section class="upcoming-section">
+                <div class="section-top">
+                  <h2>Better, together</h2>
+                  <button
+                    class="text-button"
+                    (click)="navigate('events')"
+                    aria-label="See all events"
+                  >
+                    <app-icon name="arrow" />
+                  </button>
+                </div>
+                <p class="muted small-text">Make room for a little good company.</p>
+                @for (event of events().slice(0, 2); track event.id) {
+                  <button class="mini-event" (click)="navigate('events')">
+                    <span class="date-tile"
+                      ><small>{{ event.startsAt | date: 'MMM' }}</small
+                      ><strong>{{ event.startsAt | date: 'dd' }}</strong></span
+                    >
+                    <span
+                      ><span class="mini-sport"
+                        >{{ event.sport }} <span aria-hidden="true">·</span>
+                        {{ event.startsAt | date: 'h:mm a' }}</span
+                      ><strong>{{ event.title }}</strong
+                      ><small><app-icon name="pin" />{{ event.location }}</small></span
+                    >
+                  </button>
+                } @empty {
+                  <p class="small-text muted empty-events">
+                    A little company starts with an invitation. Host the first event.
+                  </p>
+                }
+                <button class="host-button" (click)="openModal('event')">
+                  <app-icon name="plus" /> Bring people together
+                </button>
+              </section>
+              <section class="agent-promo">
+                <div class="terminal-mark">
+                  <app-icon name="terminal" /><span class="status-dot"></span>
+                </div>
+                <span class="eyebrow">YOUR AGENT. YOUR WINGMATE.</span>
+                <h3>You do the moving.<br />Let your agent do the logging.</h3>
+                <p>Less admin. More endorphins.</p>
+                <button class="text-button" (click)="navigate('agents')">
+                  Meet your new routine <app-icon name="arrow" />
+                </button>
+              </section>
+              <p class="right-footnote">
+                Made for developers.<br />Designed for life beyond the screen.
+              </p>
+            </aside>
+          </div>
+        }
+
+        @if (page() === 'events') {
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">GOOD COMPANY. GREAT REASON TO GO.</p>
+              <h1>Better <span>together.</span></h1>
+              <p>A morning run, a friendly match, a ride with no rush. Find your people.</p>
+            </div>
+            <button class="button primary" (click)="openModal('event')">
+              <app-icon name="plus" /> Host an event
+            </button>
+          </div>
+          <div class="events-banner">
+            <app-icon name="people" />
+            <p>
+              <strong>No qualifying pace. No gatekeeping.</strong> Just developers making time to
+              move. Every starting point is welcome.
+            </p>
+          </div>
+          <div class="sport-filters event-filters" aria-label="Filter events by sport">
+            <button
+              [class.selected]="selectedSport() === 'All'"
+              [attr.aria-pressed]="selectedSport() === 'All'"
+              (click)="selectedSport.set('All')"
+            >
+              All sports
+            </button>
+            @for (sport of sports; track sport) {
+              <button
+                [class.selected]="selectedSport() === sport"
+                [attr.aria-pressed]="selectedSport() === sport"
+                (click)="selectedSport.set(sport)"
+              >
+                <app-icon [name]="sport" />{{ sport }}
+              </button>
+            }
+          </div>
+          <div class="event-grid">
+            @for (event of filteredEvents(); track event.id) {
+              <article class="event-card">
+                <div
+                  class="event-art"
+                  [class.tennis]="event.sport === 'Tennis'"
+                  [class.cycling]="event.sport === 'Cycling'"
+                >
+                  <span class="sport-label"><app-icon [name]="event.sport" />{{ event.sport }}</span
+                  ><app-icon class="event-big-icon" [name]="event.sport" /><span
+                    class="event-art-caption"
+                    >FIND YOUR PEOPLE. MAKE YOUR MOVE.</span
+                  >
+                </div>
+                <div class="event-body">
+                  <div class="event-date">
+                    {{ event.startsAt | date: 'EEEE, MMM d' }} <span>·</span>
+                    {{ event.startsAt | date: 'h:mm a' }}
+                  </div>
+                  <h2>{{ event.title }}</h2>
+                  <p class="event-description">{{ event.description }}</p>
+                  <p class="event-detail"><app-icon name="pin" />{{ event.location }}</p>
+                  <p class="event-detail"><app-icon name="move" />{{ event.level }}</p>
+                  <p class="event-detail">
+                    <app-icon name="people" />{{ event.attendees }} / {{ event.capacity }} going
+                    <span class="host-name">· Hosted by {{ event.hostName }}</span>
+                  </p>
+                  @if (event.hostId === viewer()?.id) {
+                    <button
+                      class="button outline full"
+                      (click)="cancelEvent(event)"
+                      [disabled]="saving()"
+                    >
+                      Cancel your event
+                    </button>
+                  } @else {
+                    <button
+                      class="button full"
+                      [class.primary]="!event.joined"
+                      [class.outline]="event.joined"
+                      [disabled]="saving() || (!event.joined && event.attendees >= event.capacity)"
+                      (click)="join(event)"
+                    >
+                      <app-icon [name]="event.joined ? 'check' : 'plus'" />{{
+                        event.joined
+                          ? 'You’re going · Leave event'
+                          : event.attendees >= event.capacity
+                            ? 'This one’s full'
+                            : 'Count me in'
+                      }}
+                    </button>
+                  }
+                </div>
+              </article>
+            } @empty {
+              <div class="empty-state full">
+                <app-icon name="calendar" />
+                <h3>Be the reason someone gets outside.</h3>
+                <p>No upcoming events for this sport yet. Start with a simple invitation.</p>
+                <button class="button primary" (click)="openModal('event')">
+                  Host the first one <app-icon name="plus" />
+                </button>
+              </div>
+            }
+          </div>
+          <p class="privacy-note">
+            <app-icon name="globe" /> Events are public. Use a general meeting area, not your home
+            address. Event times are shown in your local time zone.
+          </p>
+        }
+
+        @if (page() === 'profile') {
+          @if (profileLoading()) {
+            <div class="loading-state" role="status">Loading profile…</div>
+          } @else if (profileError()) {
+            <div class="empty-state">
+              <app-icon name="lock" />
+              <h2>This story is personal.</h2>
+              <p>{{ profileError() }}</p>
+              <a class="button outline" href="#feed">Back to the community</a>
+            </div>
+          } @else {
+            @let profile = displayedProfile();
+            <div class="profile-cover">
+              <div class="cover-lines" aria-hidden="true"></div>
+              <span>MORE THAN YOUR CONTRIBUTION GRAPH.</span><app-icon name="move" />
+            </div>
+            <section class="profile-intro">
+              <div class="profile-avatar">
+                @if (profile.avatar) {
+                  <img [src]="profile.avatar" alt="" referrerpolicy="no-referrer" />
+                } @else {
+                  {{ initials(profile.name) }}
+                }
+              </div>
+              <div class="profile-actions">
+                @if (viewer() && !remoteProfile()) {
+                  <span class="visibility-pill"
+                    ><app-icon [name]="profile.visibility === 'private' ? 'lock' : 'globe'" />{{
+                      profile.visibility
+                    }}
+                    profile</span
+                  ><button class="button outline" (click)="openModal('profile')">
+                    <app-icon name="edit" /> Edit profile
+                  </button>
+                } @else if (!viewer() && (!remoteProfile() || preview())) {
+                  <span class="visibility-pill">Example profile</span
+                  ><button class="button primary" (click)="login()">
+                    Build your story <app-icon name="arrow" />
+                  </button>
+                }
+              </div>
+              <p class="eyebrow">DEVELOPER. HUMAN. WORK IN PROGRESS.</p>
+              <h1>{{ profile.name }}</h1>
+              <a
+                class="github-profile"
+                [href]="'https://github.com/' + profile.username"
+                target="_blank"
+                rel="noopener noreferrer"
+                ><app-icon name="github" />&#64;{{ profile.username }}
+                <span aria-hidden="true">↗</span></a
+              >
+              <p class="profile-bio">
+                {{ profile.bio || 'Your next chapter starts away from the desk.' }}
+              </p>
+              @if (profile.location) {
+                <p class="profile-location"><app-icon name="pin" />{{ profile.location }}</p>
+              }
+              <div class="sport-filters profile-sports">
+                @for (sport of profile.sports; track sport) {
+                  <span><app-icon [name]="sport" />{{ sport }}</span>
+                }
+              </div>
+            </section>
+            @if (viewer() && !remoteProfile() && profile.visibility === 'private') {
+              <div class="privacy-callout">
+                <app-icon name="lock" />
+                <div>
+                  <strong>Your story, on your terms.</strong>
+                  <p>
+                    Your profile is private. Your activities stay out of the community feed, even
+                    when marked public. Events you host or join are still public.
+                  </p>
+                </div>
+                <button class="text-button" (click)="openModal('profile')">
+                  Manage privacy <app-icon name="arrow" />
+                </button>
+              </div>
+            }
+            <div class="profile-stats">
+              <div>
+                <span>SESSIONS</span><strong>{{ profileStats().sessions }}</strong>
+              </div>
+              <div>
+                <span>KILOMETRES</span
+                ><strong>{{ profileStats().distance | number: '1.0-1' }}</strong>
+              </div>
+              <div>
+                <span>HOURS IN MOTION</span
+                ><strong>{{ profileStats().hours | number: '1.0-1' }}</strong>
+              </div>
+              <div>
+                <span>WAYS TO MOVE</span><strong>{{ profileStats().sports }}</strong>
+              </div>
+            </div>
+            <section class="consistency-card">
+              <div class="section-top">
+                <div>
+                  <h2>A different kind of contribution.</h2>
+                  <p class="muted small-text">
+                    Your last 13 weeks in motion. Consistency over competition.
+                  </p>
+                </div>
+                <app-icon name="spark" />
+              </div>
+              <div class="heatmap" aria-label="Activity calendar, last 91 days">
+                @for (day of heatmap(); track $index) {
+                  <span
+                    [class.moved]="day.count > 0"
+                    [class.more]="day.count > 1"
+                    [title]="day.date + ': ' + day.count + ' sessions'"
+                  ></span>
+                }
+              </div>
+              <div class="heatmap-legend">
+                <span>Every little move counts.</span
+                ><span>Rest <i></i><i class="moved"></i><i class="more"></i> Movement</span>
+              </div>
+            </section>
+            <div class="section-top profile-recent">
+              <h2>Recent movement</h2>
+              @if (viewer() && !remoteProfile()) {
+                <button class="text-button" (click)="openModal('activity')">
+                  Log activity <app-icon name="plus" />
+                </button>
+              }
+            </div>
+            @for (activity of profileActivities(); track activity.id) {
+              <article class="profile-activity">
+                <span class="activity-sport-icon"><app-icon [name]="activity.sport" /></span>
+                <div>
+                  <small
+                    >{{ activity.sport }} · {{ activity.occurredAt | date: 'MMM d, y' }}
+                    @if (activity.source === 'agent') {
+                      · Logged by agent
+                    }
+                  </small>
+                  <h3>{{ activity.title }}</h3>
+                  <p>{{ activity.notes }}</p>
+                </div>
+                <div class="profile-activity-metric">
+                  <strong>{{ activity.duration }} <small>min</small></strong>
+                  @if (activity.distance !== null) {
+                    <span>{{ activity.distance }} km</span>
+                  }
+                </div>
+                @if (activity.userId === viewer()?.id) {
+                  <div class="profile-activity-actions">
+                    <button
+                      class="text-button"
+                      (click)="toggleVisibility(activity)"
+                      [disabled]="saving()"
+                    >
+                      <app-icon [name]="activity.visibility === 'private' ? 'lock' : 'globe'" />{{
+                        activity.visibility
+                      }}</button
+                    ><button
+                      class="text-button danger"
+                      (click)="deleteActivity(activity)"
+                      [disabled]="saving()"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                }
+              </article>
+            } @empty {
+              <div class="empty-state">
+                <app-icon name="move" />
+                <h3>The best starting point is yours.</h3>
+                <p>Log your first activity and give your progress a home.</p>
+              </div>
+            }
+            <p class="privacy-note">
+              Progress summaries reflect the latest 100 visible sessions. Rest days belong here,
+              too.
+            </p>
+          }
+        }
+
+        @if (page() === 'agents') {
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">MORE MOVEMENT. LESS MANUAL ENTRY.</p>
+              <h1>Your agent. <span>Your wingmate.</span></h1>
+              <p>You live the session. Your agent takes care of the details.</p>
+            </div>
+            <span class="beta-pill">DEVELOPER PREVIEW</span>
+          </div>
+          <div class="agents-layout">
+            <section class="agent-explainer">
+              <div class="terminal-window">
+                <div class="terminal-top">
+                  <span></span><span></span><span></span><small>you + your favourite agent</small>
+                </div>
+                <div class="terminal-content">
+                  <p>
+                    <span class="terminal-prompt">you ›</span> Log my 5K run. 31 minutes.<br />Felt
+                    great. Keep it private.
+                  </p>
+                  <p>
+                    <span class="terminal-prompt">agent ›</span>
+                    <span class="terminal-comment">With a connected API tool, your agent can:</span>
+                  </p>
+                  <div class="terminal-result">
+                    <app-icon name="check" /><span
+                      >Create a private running session<br /><small
+                        >5.0 km · 31 min · Only you</small
+                      ></span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="agent-principles">
+                <h2>One identity. Clear boundaries.</h2>
+                <p>
+                  Sign in with GitHub, then give each agent its own scoped access. Your GitHub token
+                  is never shared with an agent.
+                </p>
+                <div>
+                  <app-icon name="lock" /><span
+                    ><strong>Private by design</strong>Agents can log private sessions. Publishing
+                    and privacy changes stay with you.</span
+                  >
+                </div>
+                <div>
+                  <app-icon name="clock" /><span
+                    ><strong>Access that expires</strong>Tokens expire after 90 days. Revoke them
+                    whenever you like.</span
+                  >
+                </div>
+                <div>
+                  <app-icon name="terminal" /><span
+                    ><strong>API ready, MCP next</strong>Use bearer tokens with an HTTP-capable
+                    agent today. Interactive OAuth and MCP connections are planned, not enabled
+                    yet.</span
+                  >
+                </div>
+              </div>
+            </section>
+            <section class="connect-card">
+              <p class="eyebrow">YOUR CONNECTED AGENTS</p>
+              <h2>A little help goes a long way.</h2>
+              @if (!viewer()) {
+                <p>
+                  Sign in to create a scoped token and let your favourite agent log sessions for
+                  you.
+                </p>
+                <button class="button primary full" (click)="login()">
+                  <app-icon name="github" /> Connect with GitHub
+                </button>
+              } @else {
+                <form ngNativeValidate (ngSubmit)="createToken()">
+                  <label for="agent-name">Give your agent a name</label
+                  ><input
+                    id="agent-name"
+                    name="agentName"
+                    [(ngModel)]="agentName"
+                    placeholder="e.g. My running companion"
+                    maxlength="60"
+                    required
+                  />
+                  <fieldset>
+                    <legend>What can it do?</legend>
+                    <label class="checkbox-label"
+                      ><input type="checkbox" name="agentWrite" [(ngModel)]="agentWrite" /><span
+                        >Log private activities</span
+                      ></label
+                    ><label class="checkbox-label"
+                      ><input type="checkbox" name="agentRead" [(ngModel)]="agentRead" /><span
+                        >Read your activity history</span
+                      ></label
+                    ><label class="checkbox-label"
+                      ><input type="checkbox" name="agentEvents" [(ngModel)]="agentEvents" /><span
+                        >Discover public events</span
+                      ></label
+                    >
+                  </fieldset>
+                  <button
+                    class="button primary full"
+                    type="submit"
+                    [disabled]="saving() || (!agentRead && !agentWrite && !agentEvents)"
+                  >
+                    {{ saving() ? 'Creating…' : 'Create agent token' }}<app-icon name="plus" />
+                  </button>
+                </form>
+                @if (newToken()) {
+                  <div class="token-reveal" role="status">
+                    <strong>Copy this token now.</strong>
+                    <p>
+                      It is shown once. Store it in your agent’s secret manager, never in source
+                      code.
+                    </p>
+                    <label for="new-token" class="sr-only">New agent token</label
+                    ><textarea id="new-token" readonly [value]="newToken()" rows="3"></textarea
+                    ><button class="text-button" (click)="newToken.set('')">
+                      I’ve saved it · Hide token <app-icon name="check" />
+                    </button>
+                  </div>
+                }
+                <div class="token-list">
+                  @for (token of tokens(); track token.id) {
+                    <div class="token-item">
+                      <app-icon name="terminal" />
+                      <div>
+                        <strong>{{ token.name }}</strong
+                        ><small>Expires {{ token.expiresAt | date: 'MMM d, y' }}</small
+                        ><small>{{ token.scopes.join(' · ') }}</small>
+                      </div>
+                      <button
+                        class="text-button danger"
+                        (click)="revokeToken(token)"
+                        [disabled]="saving()"
+                      >
+                        Revoke
+                      </button>
+                    </div>
+                  } @empty {
+                    <p class="muted small-text">
+                      No connected agents yet. Your next routine starts here.
+                    </p>
+                  }
+                </div>
+              }
+            </section>
+          </div>
+        }
+      }
+      <footer class="page-footer">
+        <span class="footer-wordmark">devswhomove<span>.</span></span
+        ><span>PROGRESS IS PERSONAL. MOVEMENT IS FOR EVERYONE.</span
+        ><span>GO AT YOUR OWN PACE <span aria-hidden="true">↗</span></span>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<dialog #dialog aria-labelledby="modal-title" (cancel)="$event.preventDefault(); closeModal()">
+  <div class="modal-heading">
+    <div>
+      <p class="eyebrow">EVERY LITTLE MOVE COUNTS.</p>
+      <h2 id="modal-title">
+        {{
+          modal() === 'activity'
+            ? 'A little progress, logged.'
+            : modal() === 'event'
+              ? 'Good company starts here.'
+              : 'Make this space yours.'
+        }}
+      </h2>
+    </div>
+    <button
+      type="button"
+      class="icon-button"
+      aria-label="Close dialog"
+      (click)="closeModal()"
+      [disabled]="saving()"
+    >
+      <app-icon name="close" />
+    </button>
+  </div>
+  @if (error() && modal()) {
+    <div class="banner error" role="alert">{{ error() }}</div>
+  }
+  <form ngNativeValidate (ngSubmit)="save()">
+    @if (modal() === 'activity') {
+      <label for="activity-title">Give your session a title</label
+      ><input
+        id="activity-title"
+        name="title"
+        [(ngModel)]="activityForm.title"
+        maxlength="100"
+        placeholder="A little fresh air before standup"
+        required
+      />
+      <div class="form-row">
+        <div>
+          <label for="activity-sport">Sport</label
+          ><select id="activity-sport" name="sport" [(ngModel)]="activityForm.sport">
+            @for (sport of sports; track sport) {
+              <option [value]="sport">{{ sport }}</option>
+            }
+          </select>
+        </div>
+        <div>
+          <label for="activity-date">When did you move?</label
+          ><input
+            id="activity-date"
+            name="occurredAt"
+            type="datetime-local"
+            [(ngModel)]="activityForm.occurredAt"
+            required
+          />
+        </div>
+      </div>
+      <div class="form-row">
+        <div>
+          <label for="duration">Moving time (minutes)</label
+          ><input
+            id="duration"
+            name="duration"
+            type="number"
+            min="1"
+            max="1440"
+            step="0.1"
+            [(ngModel)]="activityForm.duration"
+            required
+          />
+        </div>
+        <div>
+          <label for="distance">Distance (km, optional)</label
+          ><input
+            id="distance"
+            name="distance"
+            type="number"
+            min="0"
+            max="2000"
+            step="0.01"
+            [(ngModel)]="activityForm.distance"
+          />
+        </div>
+      </div>
+      <label for="activity-notes">How did it feel?</label
+      ><textarea
+        id="activity-notes"
+        name="notes"
+        rows="3"
+        [(ngModel)]="activityForm.notes"
+        maxlength="2000"
+        placeholder="The little things are worth remembering."
+      ></textarea>
+      <label for="activity-visibility">Who can see it?</label
+      ><select id="activity-visibility" name="visibility" [(ngModel)]="activityForm.visibility">
+        <option value="private">Only me · Private</option>
+        <option value="public">Everyone · Public when my profile is public</option>
+      </select>
+      <p class="form-help">
+        <app-icon name="lock" />Private by default. Share only when you’re ready.
+      </p>
+    }
+    @if (modal() === 'event') {
+      <p class="form-help">
+        Events are public, including the host name. Use an approximate meeting area, not a private
+        address.
+      </p>
+      <label for="event-title">What are we doing?</label
+      ><input
+        id="event-title"
+        name="title"
+        [(ngModel)]="eventForm.title"
+        maxlength="100"
+        placeholder="The no-standup run club"
+        required
+      />
+      <div class="form-row">
+        <div>
+          <label for="event-sport">Sport</label
+          ><select id="event-sport" name="sport" [(ngModel)]="eventForm.sport">
+            @for (sport of sports; track sport) {
+              <option [value]="sport">{{ sport }}</option>
+            }
+          </select>
+        </div>
+        <div>
+          <label for="event-date">Date and time (your local time)</label
+          ><input
+            id="event-date"
+            name="startsAt"
+            type="datetime-local"
+            [(ngModel)]="eventForm.startsAt"
+            required
+          />
+        </div>
+      </div>
+      <label for="event-location">Meeting area</label
+      ><input
+        id="event-location"
+        name="location"
+        [(ngModel)]="eventForm.location"
+        maxlength="150"
+        placeholder="e.g. North entrance, city park"
+        required
+      />
+      <div class="form-row">
+        <div>
+          <label for="level">Pace / ability level</label
+          ><input id="level" name="level" [(ngModel)]="eventForm.level" maxlength="60" required />
+        </div>
+        <div>
+          <label for="capacity">Total spots (including you)</label
+          ><input
+            id="capacity"
+            name="capacity"
+            type="number"
+            min="2"
+            max="200"
+            [(ngModel)]="eventForm.capacity"
+            required
+          />
+        </div>
+      </div>
+      <label for="event-description">The plan</label
+      ><textarea
+        id="event-description"
+        name="description"
+        rows="4"
+        [(ngModel)]="eventForm.description"
+        maxlength="1000"
+        placeholder="Duration, equipment, weather plans, and anything that helps someone feel welcome."
+      ></textarea>
+    }
+    @if (modal() === 'profile') {
+      <label for="profile-name">Your name</label
+      ><input
+        id="profile-name"
+        name="name"
+        [(ngModel)]="profileForm.name"
+        maxlength="80"
+        required
+      />
+      <label for="profile-bio">A little about you</label
+      ><textarea
+        id="profile-bio"
+        name="bio"
+        rows="3"
+        [(ngModel)]="profileForm.bio"
+        maxlength="300"
+      ></textarea>
+      <label for="profile-location">City or general area (optional)</label
+      ><input
+        id="profile-location"
+        name="location"
+        [(ngModel)]="profileForm.location"
+        maxlength="80"
+      />
+      <fieldset>
+        <legend>Your ways to move</legend>
+        <div class="sport-filters">
+          @for (sport of sports; track sport) {
+            <button
+              type="button"
+              [class.selected]="profileForm.sports.includes(sport)"
+              [attr.aria-pressed]="profileForm.sports.includes(sport)"
+              (click)="toggleSport(sport)"
+            >
+              <app-icon [name]="sport" />{{ sport }}
+            </button>
+          }
+        </div>
+      </fieldset>
+      <label for="profile-visibility">Profile visibility</label
+      ><select id="profile-visibility" name="visibility" [(ngModel)]="profileForm.visibility">
+        <option value="private">Private · Only I can view my profile</option>
+        <option value="public">Public · Anyone can view my profile</option>
+      </select>
+      <p class="form-help">
+        <app-icon name="lock" />Private activities stay private, even with a public profile. Hosted
+        events remain public.
+      </p>
+    }
+    <div class="modal-footer">
+      <button type="button" class="button outline" (click)="closeModal()" [disabled]="saving()">
+        Not now</button
+      ><button class="button primary" type="submit" [disabled]="saving()">
+        {{
+          saving()
+            ? 'Saving…'
+            : modal() === 'activity'
+              ? 'Save my session'
+              : modal() === 'event'
+                ? 'Create event'
+                : 'Save profile'
+        }}<app-icon name="arrow" />
+      </button>
+    </div>
+  </form>
+</dialog>

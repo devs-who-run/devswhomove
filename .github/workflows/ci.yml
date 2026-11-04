@@ -1,35 +1,30 @@
 name: CI
+
 on:
   push:
-    branches:
-      # Change this if your primary branch is not main
-      - main
+    branches: [main]
   pull_request:
 
-# Needed for nx-set-shas when run on the main branch
 permissions:
-  actions: read
   contents: read
 
 jobs:
-  main:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
-          filter: tree:0
-
-      - uses: actions/setup-node@v3
-        with:
-          node-version: 24
-          cache: 'npm'
-      # This line enables distribution
-      # The "--stop-agents-after" is optional, but allows idle agents to shut down once the "e2e-ci" targets have been requested
-      # - run: npx nx-cloud start-ci-run --distribute-on="3 linux-medium-js" --stop-agents-after="e2e-ci"
-      - run: yarn install --frozen-lockfile
-
-      - uses: nrwl/nx-set-shas@v4
-
-      - name: Run build and test
-        uses: ./.github/actions/nx-build
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build Angular
+        run: npm run build
+      - name: Typecheck Worker
+        run: npm run typecheck:worker
+      - name: Test Angular
+        run: npm test
+      - name: Test Worker and D1 integration
+        run: npm run test:worker
+      - name: Validate Cloudflare bundle without deploying
+        run: npx wrangler deploy --dry-run
