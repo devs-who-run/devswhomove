@@ -19,7 +19,7 @@
     },
   ],
   "vars": {
-    "APP_URL": "http://localhost:8787",
+    "APP_URL": "https://devswhorun.dev/",
   },
   "observability": { "enabled": true },
 }
