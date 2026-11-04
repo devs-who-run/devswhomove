@@ -36,6 +36,7 @@ export interface Activity {
   notes: string;
   visibility: Visibility;
   source: 'web' | 'agent';
+  photo?: string | null;
 }
 
 export interface SportEvent {

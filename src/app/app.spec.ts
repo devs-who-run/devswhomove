@@ -176,4 +176,132 @@ describe('App', () => {
       fixture.componentInstance.pace({ ...DEMO_ACTIVITIES[0], distance: 1, duration: 5.999 }),
     ).toBe('6:00');
   });
+
+  it('uploads a prepared photo after logging an activity and shows it in the feed', async () => {
+    HTMLDialogElement.prototype.close = vi.fn();
+    const viewer = { ...DEMO_PROFILE, id: 'me', username: 'me' };
+    const photoUrl = '/api/activities/new/photo?v=abc';
+    let uploaded = false;
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path === '/api/activities' && init?.method === 'POST')
+        return Response.json({ id: 'new' }, { status: 201 });
+      if (path === '/api/activities/new/photo' && init?.method === 'PUT') {
+        uploaded = true;
+        return Response.json({ photo: photoUrl });
+      }
+      return Response.json({
+        ...bootstrap,
+        viewer,
+        activities: uploaded ? [{ ...DEMO_ACTIVITIES[0], userId: 'me', photo: photoUrl }] : [],
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal(
+      'URL',
+      Object.assign(URL, { createObjectURL: () => 'blob:preview', revokeObjectURL: vi.fn() }),
+    );
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+    const photo = new Blob(['jpeg'], { type: 'image/jpeg' });
+    app.preparePhoto = vi.fn().mockResolvedValue(photo);
+    app.modal.set('activity');
+    app.activityForm.title = 'Lunch run';
+    const input = document.createElement('input');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['raw'], 'run.heic', { type: 'image/heic' })],
+    });
+    await app.choosePhoto({ target: input } as unknown as Event);
+    expect(app.photoPreview()).toBe('blob:preview');
+    await app.save();
+    const upload = fetchMock.mock.calls.find(([path]) => path === '/api/activities/new/photo');
+    expect(upload?.[1]).toMatchObject({
+      method: 'PUT',
+      body: photo,
+      headers: { 'Content-Type': 'image/jpeg' },
+    });
+    expect(app.notice()).toBe('Activity logged. Every little move counts.');
+    expect(app.photo()).toBeNull();
+    fixture.detectChanges();
+    const image = fixture.nativeElement.querySelector('.activity-photo') as HTMLImageElement;
+    expect(image.getAttribute('src')).toBe(photoUrl);
+  });
+
+  it('keeps the activity and explains when only the photo upload fails', async () => {
+    HTMLDialogElement.prototype.close = vi.fn();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string, init?: RequestInit) => {
+        if (path === '/api/activities') return Response.json({ id: 'new' }, { status: 201 });
+        if (init?.method === 'PUT')
+          return Response.json(
+            { error: 'Upload a valid JPEG, PNG or WebP image.' },
+            { status: 400 },
+          );
+        return Response.json({ ...bootstrap, viewer: DEMO_PROFILE });
+      }),
+    );
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+    app.modal.set('activity');
+    app.photo.set(new Blob(['x'], { type: 'image/jpeg' }));
+    await app.save();
+    expect(app.notice()).toContain('photo didn’t upload: Upload a valid JPEG');
+    expect(app.error()).toBe('');
+  });
+
+  it('lets the host edit an event with the form prefilled', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+    const event = {
+      id: 'evt-1',
+      hostId: DEMO_PROFILE.id,
+      hostName: DEMO_PROFILE.name,
+      title: 'Morning tennis',
+      sport: 'Tennis' as const,
+      startsAt: '2098-01-01T09:00:00.000Z',
+      location: 'City courts',
+      description: 'Bring a racket.',
+      level: 'All levels welcome',
+      capacity: 4,
+      attendees: 2,
+      joined: true,
+    };
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) =>
+      init?.method === 'PATCH'
+        ? Response.json({ ok: true })
+        : Response.json({ ...bootstrap, viewer: DEMO_PROFILE, events: [event] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/events');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const edit = [...fixture.nativeElement.querySelectorAll('button')].find(
+      (button: HTMLButtonElement) => button.textContent?.trim() === 'Edit event',
+    ) as HTMLButtonElement;
+    edit.click();
+    fixture.detectChanges();
+    expect(app.editingEvent()).toBe('evt-1');
+    expect(app.eventForm).toMatchObject({
+      title: 'Morning tennis',
+      capacity: 4,
+      location: 'City courts',
+    });
+    expect(fixture.nativeElement.querySelector('#modal-title')?.textContent).toContain(
+      'Fine-tune your event.',
+    );
+    app.eventForm.capacity = 8;
+    await app.save();
+    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(patch?.[0]).toBe('/api/events/evt-1');
+    expect(JSON.parse(patch?.[1]?.body as string)).toMatchObject({
+      capacity: 8,
+      startsAt: '2098-01-01T09:00:00.000Z',
+    });
+    expect(app.notice()).toContain('Event updated');
+  });
 });

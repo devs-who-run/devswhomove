@@ -5,6 +5,7 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Icon } from './icon';
 import { Theme } from './theme';
+import { preparePhoto } from './photo';
 import { DEMO_ACTIVITIES, DEMO_EVENTS, DEMO_PROFILE } from './demo';
 import {
   SPORTS,
@@ -58,6 +59,11 @@ export class App {
   readonly remoteActivities = signal<Activity[]>([]);
   readonly profileLoading = signal(false);
   readonly profileError = signal('');
+  readonly photo = signal<Blob | null>(null);
+  readonly photoPreview = signal('');
+  readonly photoBusy = signal(false);
+  readonly editingEvent = signal<string | null>(null);
+  preparePhoto = preparePhoto;
   private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('dialog');
   private routeRequest = 0;
 
@@ -269,8 +275,14 @@ export class App {
     if (!this.signedIn()) return;
     this.error.set('');
     this.notice.set('');
-    if (modal === 'activity') this.activityForm = this.emptyActivity();
-    if (modal === 'event') this.eventForm = this.emptyEvent();
+    if (modal === 'activity') {
+      this.activityForm = this.emptyActivity();
+      this.removePhoto();
+    }
+    if (modal === 'event') {
+      this.eventForm = this.emptyEvent();
+      this.editingEvent.set(null);
+    }
     if (modal === 'profile') {
       const user = this.viewer()!;
       this.profileForm = {
@@ -289,6 +301,45 @@ export class App {
     if (this.saving()) return;
     this.dialog()?.nativeElement.close();
     this.modal.set(null);
+    this.removePhoto();
+  }
+
+  async choosePhoto(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    this.error.set('');
+    this.photoBusy.set(true);
+    try {
+      const photo = await this.preparePhoto(file);
+      this.removePhoto();
+      this.photo.set(photo);
+      this.photoPreview.set(URL.createObjectURL(photo));
+    } catch (error) {
+      this.error.set(this.message(error));
+    } finally {
+      this.photoBusy.set(false);
+    }
+  }
+
+  removePhoto(): void {
+    if (this.photoPreview()) URL.revokeObjectURL(this.photoPreview());
+    this.photo.set(null);
+    this.photoPreview.set('');
+  }
+
+  private async uploadPhoto(activityId: string, photo: Blob): Promise<void> {
+    const response = await fetch(`/api/activities/${encodeURIComponent(activityId)}/photo`, {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': photo.type || 'image/jpeg' },
+      body: photo,
+    });
+    if (!response.ok) {
+      const result = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(result.error || 'The photo upload failed.');
+    }
   }
 
   toggleSport(sport: Sport): void {
@@ -303,17 +354,36 @@ export class App {
     this.error.set('');
     try {
       if (this.modal() === 'activity') {
-        await this.api('/api/activities', 'POST', {
+        const { id } = await this.api<{ id: string }>('/api/activities', 'POST', {
           ...this.activityForm,
           occurredAt: new Date(this.activityForm.occurredAt).toISOString(),
         });
-        this.notice.set('Activity logged. Every little move counts.');
+        const photo = this.photo();
+        let photoError = '';
+        if (photo) {
+          try {
+            await this.uploadPhoto(id, photo);
+          } catch (error) {
+            photoError = this.message(error);
+          }
+        }
+        this.notice.set(
+          photoError
+            ? `Activity logged, but the photo didn’t upload: ${photoError}`
+            : 'Activity logged. Every little move counts.',
+        );
       } else if (this.modal() === 'event') {
-        await this.api('/api/events', 'POST', {
-          ...this.eventForm,
-          startsAt: new Date(this.eventForm.startsAt).toISOString(),
-        });
-        this.notice.set('Event created. You are on the list as host.');
+        const editing = this.editingEvent();
+        await this.api(
+          editing ? `/api/events/${encodeURIComponent(editing)}` : '/api/events',
+          editing ? 'PATCH' : 'POST',
+          { ...this.eventForm, startsAt: new Date(this.eventForm.startsAt).toISOString() },
+        );
+        this.notice.set(
+          editing
+            ? 'Event updated. Everyone going will see the latest details.'
+            : 'Event created. You are on the list as host.',
+        );
         this.navigate('events');
       } else {
         await this.api('/api/me', 'PATCH', this.profileForm);
@@ -340,6 +410,21 @@ export class App {
       );
       await this.load();
     });
+  }
+
+  editEvent(event: SportEvent): void {
+    this.openModal('event');
+    if (this.modal() !== 'event') return;
+    this.editingEvent.set(event.id);
+    this.eventForm = {
+      title: event.title,
+      sport: event.sport,
+      startsAt: localDate(new Date(event.startsAt)),
+      location: event.location,
+      description: event.description,
+      level: event.level,
+      capacity: event.capacity,
+    };
   }
 
   async cancelEvent(event: SportEvent): Promise<void> {
