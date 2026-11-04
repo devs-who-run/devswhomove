@@ -1,97 +1,111 @@
-# Devswhorun
+# Devs Who Move
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+An Angular 22 application served by a Cloudflare Worker, with D1 persistence. Scaffolded with `create-cloudflare`. The repository root contains the application, Worker, database migrations, and npm tooling.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is almost ready ✨.
+## Run locally
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/getting-started/tutorials/angular-monorepo-tutorial?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
-
-## Finish your CI setup
-
-[Click here to finish setting up your workspace!](https://cloud.nx.app/connect/tbMiXHzM2F)
-
-## Run tasks
-
-To run the dev server for your app, use:
+Use Node 22.22.3+ or a current supported Node release.
 
 ```sh
-npx nx serve frontend
+npm ci
+npm run db:local
+npm start
 ```
 
-To create a production bundle:
+Open http://localhost:8787. An empty anonymous community shows **explicitly labelled sample content**, never inserted into the database. After sign-in, the app uses only persisted data. API failures display errors rather than falling back to samples.
+
+For frontend hot reload, run `npm run dev:api` and `npm run dev:ui` in separate terminals. Open http://localhost:4200. OAuth redirects return to `APP_URL` (port 8787 by default); use that origin for testing the full authentication flow. Browser mutations intentionally require the configured `APP_URL` origin, so use port 8787 for mutations, or set `APP_URL` to `http://localhost:4200` locally when using the proxy.
+
+## GitHub sign-in
+
+Create a **GitHub OAuth App** (not a GitHub App) with:
+
+- Homepage URL: `http://localhost:8787`
+- Authorization callback URL: `http://localhost:8787/auth/github/callback`
+
+Copy `.dev.vars.example` to `.dev.vars`, and fill in the client ID and secret. Restart Wrangler. Never commit `.dev.vars`.
+
+The Worker requests `read:user`, not repository or email permissions. GitHub access tokens are used only during sign-in and not stored. Browser sessions use hashed opaque tokens and HTTP-only, SameSite cookies (Secure on HTTPS), expire in 30 days, and are invalidated on logout. OAuth state is random, cookie-bound and expires in 10 minutes.
+
+New profiles and activities are **private by default**. Edit your profile to choose sports, bio, approximate location and public/private visibility. Publishing an individual activity does not override a private profile. Hosting an event is explicitly public even with a private profile.
+
+## Included in this slice
+
+- Responsive community feed with sport filters and personal activity view.
+- Light, dark, and system themes, with a saved browser preference and live OS-theme updates in system mode.
+- Activity logging, distance/time/pace, privacy changes, deletion and agent attribution.
+- Profiles with sports, editable bio, visibility controls, summaries and a 13-week activity calendar.
+- Public profile links: `/#profile/GITHUB_USERNAME`. Private profiles return 404 to other users.
+- Public events with local-time display, capacity, host RSVP, joining/leaving and host cancellation. Capacity is enforced in one database statement.
+- GitHub OAuth sign-in, D1-backed sessions and origin checks for cookie-authenticated mutations.
+- Scoped, hashed, expiring and revocable agent bearer tokens, with idempotent private uploads.
+
+Activity lists and summaries currently cover the latest 100 visible sessions. Events show the next 100 upcoming sessions. Event details and host names are public; attendee identities are not exposed.
+
+## Agent API
+
+Sign in, open **Your agents**, choose permissions and create a token. Copy it once into the agent's secret manager. Tokens expire in 90 days; at most 10 unexpired tokens per account. Token management, publication, profile privacy and event mutations require a browser session.
+
+Supported scopes: `activities:read`, `activities:write`, `events:read`.
+
+An HTTP-capable agent can upload a session:
 
 ```sh
-npx nx build frontend
+curl "$DWM_URL/api/activities" \
+  -H "Authorization: Bearer $DWM_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: training-session-2026-11-04' \
+  --data '{
+    "title": "Before standup",
+    "sport": "Running",
+    "occurredAt": "2026-11-04T07:30:00Z",
+    "duration": 31,
+    "distance": 5,
+    "notes": "Easy effort. Felt good.",
+    "visibility": "private"
+  }'
 ```
 
-To see all available targets to run for a project, run:
+`duration` is minutes; `distance` is optional and measured in kilometres. Times are ISO 8601, stored in UTC. Sports: `Running`, `Cycling`, `Tennis`, `Walking`, `Swimming`, `Strength`, `Other`. Agent uploads are always private. Reusing an idempotency key with the same validated payload returns the original ID; a different payload returns 409. Agents should supply a stable key per session to avoid duplicate imports.
+
+| Endpoint               | Permission                                   |
+| ---------------------- | -------------------------------------------- |
+| `GET /api/activities`  | `activities:read` — own recent sessions only |
+| `POST /api/activities` | `activities:write` — private sessions only   |
+| `GET /api/events`      | `events:read` — upcoming public events       |
+
+This is **bearer-token integration**, not an MCP server. Interactive OAuth authorisation for agents, MCP discovery and tool transport are future work. The GitHub identity/session foundation is implemented, but does not pretend to provide those protocols yet.
+
+## Deploy
 
 ```sh
-npx nx show project frontend
+npx wrangler d1 create devs-who-move
 ```
 
-# Terminal 1: Start backend
-
-npx nx serve devswhorun-api
-
-# Terminal 2: Start frontend
-
-npx nx serve devswhorun-frontend
-
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
-
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Add new projects
-
-While you could add new projects to your workspace manually, you might want to leverage [Nx plugins](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) and their [code generation](https://nx.dev/features/generate-code?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) feature.
-
-Use the plugin's generator to create new projects.
-
-To generate a new application, use:
+Set the returned `database_id` in `wrangler.jsonc`. Set `vars.APP_URL` to the final **HTTPS** origin. Create a separate production GitHub OAuth App with that origin and `/auth/github/callback`.
 
 ```sh
-npx nx g @nx/angular:app demo
+npx wrangler secret put GITHUB_CLIENT_ID
+npx wrangler secret put GITHUB_CLIENT_SECRET
+npm run db:remote
+npm run deploy
 ```
 
-To generate a new library, use:
+Do not deploy with the placeholder database ID or localhost `APP_URL`. No deployment or remote database changes are performed by local setup.
+
+## Checks
 
 ```sh
-npx nx g @nx/angular:lib mylib
+npm run build
+npm run typecheck:worker
+npm test
+npm run test:worker
 ```
 
-You can use `npx nx list` to get a list of installed plugins. Then, run `npx nx list <plugin-name>` to learn about more specific capabilities of a particular plugin. Alternatively, [install Nx Console](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) to browse plugins and generators in your IDE.
+Worker integration tests run in an isolated Miniflare runtime with real D1 SQL, not mocked database responses. They do not use your local or production database. Live GitHub sign-in requires OAuth credentials and is not exercised against GitHub by the automated suite.
 
-[Learn more about Nx plugins &raquo;](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) | [Browse the plugin registry &raquo;](https://nx.dev/plugin-registry?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+## Deliberately not yet included
 
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+Following/follower approvals, reactions, notifications, image uploads, GPS/routes, wearable imports, event waitlists/recurrence, configurable goals, and agent OAuth/MCP. Public/private means **everyone or only you**, not followers-only. Before a public launch, add abuse/rate controls, account deletion/export and operational retention policies.
 
-## Install Nx Console
-
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
-
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Important before code commit
-
-Before commiting code, run the following commands:
-
-```bash
-npx nx format --all
-```
-
-## Useful links
-
-Learn more:
-
-- [Learn more about this workspace setup](https://nx.dev/getting-started/tutorials/angular-monorepo-tutorial?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-And join the Nx community:
-
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+Cloudflare C3's Angular template currently assumes SSR during its final configuration. This app deliberately uses static Angular assets and a dedicated API Worker; its Wrangler entry point and output directory are configured explicitly.

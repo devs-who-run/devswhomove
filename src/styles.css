@@ -1,0 +1,353 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap');
+
+:root {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: var(--text);
+  background: var(--page);
+  color-scheme: light;
+  font-synthesis: none;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  --green: #234d3c;
+  --lime: #d8f294;
+  --muted: #758079;
+  --border: #e5e9e1;
+  --heading: 'Manrope', system-ui, sans-serif;
+  --page: #f8f9f6;
+  --text: #25342e;
+  --surface: #fff;
+  --surface-raised: #fdfefb;
+  --surface-soft: #edf1e4;
+  --accent-text: #bdd99b;
+}
+html:root[data-theme='dark'] {
+  color-scheme: dark;
+  --page: #111c17;
+  --text: #e4ece3;
+  --surface: #19271f;
+  --surface-raised: #15221b;
+  --surface-soft: #253528;
+  --muted: #a6b3aa;
+  --border: #344438;
+}
+html:root[data-theme='dark'] :is(.sidebar, .topbar) {
+  background: var(--surface-raised);
+}
+html:root[data-theme='dark']
+  :is(
+    .activity-card,
+    .weekly-card,
+    .event-card,
+    .profile-stats,
+    .consistency-card,
+    .profile-activity,
+    .connect-card,
+    .github-button,
+    .outline,
+    dialog,
+    .empty-state
+  ) {
+  background: var(--surface);
+  color: var(--text);
+}
+html:root[data-theme='dark']
+  :is(
+    .agent-promo,
+    .privacy-callout,
+    .events-banner,
+    .date-tile,
+    .terminal-mark,
+    .activity-sport-icon,
+    .token-reveal,
+    .activity-footer .agent-label
+  ) {
+  background: var(--surface-soft);
+  border-color: var(--border);
+  color: var(--accent-text);
+}
+html:root[data-theme='dark']
+  :is(
+    .workspace-label,
+    nav a,
+    .sidebar-bottom,
+    .today,
+    .preview-strip,
+    .eyebrow,
+    .page-heading > div > p:last-child,
+    .tabs button,
+    .sport-filters button,
+    .person small,
+    .sport-label,
+    .activity-notes,
+    .activity-metrics > div > span,
+    .activity-metrics small,
+    .activity-footer,
+    .feed-end,
+    .week-total span,
+    .chart-day small,
+    .week-footer,
+    .mini-sport,
+    .mini-event > span:last-child > small,
+    .agent-promo p,
+    .right-footnote,
+    .page-footer,
+    .events-banner,
+    .event-date,
+    .event-description,
+    .event-detail,
+    .privacy-note,
+    .visibility-pill,
+    .github-profile,
+    .profile-bio,
+    .profile-location,
+    .privacy-callout p,
+    .profile-stats span,
+    .heatmap-legend,
+    .profile-activity small,
+    .profile-activity p,
+    .profile-activity-metric > span,
+    .beta-pill,
+    .agent-principles > p,
+    .agent-principles > div,
+    .connect-card > p:not(.eyebrow),
+    .token-reveal > p,
+    .token-item small,
+    .form-help
+  ) {
+  color: var(--muted);
+}
+html:root[data-theme='dark'] :is(.account strong, .breadcrumb span, .events-banner strong, dialog) {
+  color: var(--text);
+}
+html:root[data-theme='dark']
+  :is(
+    h1 span,
+    .text-button,
+    .preview-strip button,
+    .tabs button.selected,
+    .week-footer strong,
+    .host-button,
+    .agent-principles strong,
+    .footer-wordmark,
+    label,
+    legend,
+    .loading-state
+  ) {
+  color: var(--accent-text);
+}
+html:root[data-theme='dark']
+  :is(nav a.active, .sport-filters button.selected, .sport-filters > span) {
+  background: #2b3e2b;
+  border-color: #506546;
+  color: #d3e8b9;
+}
+html:root[data-theme='dark']
+  :is(
+    nav a:hover,
+    .github-button:hover,
+    .outline:hover:not(:disabled),
+    .icon-button:hover,
+    .host-button:hover
+  ) {
+  background: #2c3e30;
+}
+html:root[data-theme='dark']
+  :is(
+    .outline,
+    .nav-tag,
+    .sport-filters button,
+    .sport-filters > span,
+    .host-button,
+    .beta-pill,
+    dialog,
+    .empty-state,
+    .activity-footer
+  ) {
+  border-color: var(--border);
+}
+html:root[data-theme='dark'] .tabs button.selected {
+  border-bottom-color: #bdd99b;
+}
+html:root[data-theme='dark'] .sport-filters button:hover {
+  border-color: #9fb985;
+}
+html:root[data-theme='dark'] :is(.primary, .primary:hover:not(:disabled)) {
+  background: #bdd99b;
+  color: #18271b;
+}
+html:root[data-theme='dark'] .primary:hover:not(:disabled) {
+  background: #d0e9b3;
+}
+html:root[data-theme='dark'] .avatar {
+  background: #30402b;
+  border-color: #506443;
+  color: #d3e8b9;
+}
+html:root[data-theme='dark'] .avatar.orange {
+  background: #48382a;
+  border-color: #6b5137;
+  color: #e7c89f;
+}
+html:root[data-theme='dark'] .avatar.lilac {
+  background: #3c314a;
+  border-color: #5b486e;
+  color: #d5bee9;
+}
+html:root[data-theme='dark'] .profile-avatar {
+  background: #30402b;
+  border-color: var(--page);
+  color: #d3e8b9;
+}
+html:root[data-theme='dark'] :is(.bar-track, .heatmap > span, .heatmap-legend i) {
+  background: #2b392d;
+}
+html:root[data-theme='dark'] :is(.heatmap .moved, .heatmap-legend i.moved) {
+  background: #82a65f;
+}
+html:root[data-theme='dark'] :is(.heatmap .more, .heatmap-legend i.more) {
+  background: #c4de9b;
+}
+html:root[data-theme='dark'] .activity-glyph {
+  color: #608250;
+}
+html:root[data-theme='dark'] .mini-event:hover strong {
+  color: #d3e8b9;
+}
+html:root[data-theme='dark'] .terminal-mark .status-dot {
+  border-color: var(--surface-soft);
+}
+html:root[data-theme='dark'] .event-art {
+  background: #2a3d2c;
+}
+html:root[data-theme='dark'] .event-art.tennis {
+  background: #3e3a28;
+}
+html:root[data-theme='dark'] .event-art.cycling {
+  background: #243d33;
+}
+html:root[data-theme='dark'] .event-art .sport-label {
+  background: #111c17a8;
+  color: #d3e8b9;
+}
+html:root[data-theme='dark'] .event-art-caption {
+  color: #c0cdb0;
+}
+html:root[data-theme='dark'] .event-big-icon {
+  color: #a4bf86;
+}
+html:root[data-theme='dark'] .tennis .event-big-icon {
+  color: #ccbd88;
+}
+html:root[data-theme='dark'] .cycling .event-big-icon {
+  color: #9bc7b1;
+}
+html:root[data-theme='dark'] .banner.error {
+  background: #3e2622;
+  border-color: #785044;
+  color: #ffc0aa;
+}
+html:root[data-theme='dark'] .banner.notice {
+  background: #293d28;
+  border-color: #526e41;
+  color: #d3e8b9;
+}
+html:root[data-theme='dark'] .danger {
+  color: #ffb59f !important;
+}
+html:root[data-theme='dark'] :is(input, select, textarea) {
+  background: #111e16;
+  border-color: #465840;
+  color: var(--text);
+}
+html:root[data-theme='dark'] :is(input, textarea)::placeholder {
+  color: #a6b3aa;
+}
+html:root[data-theme='dark'] :is(button, a, input, select, textarea):focus-visible {
+  outline-color: #bdd99b;
+}
+html:root[data-theme='dark'] dialog::backdrop {
+  background: #050b08b8;
+}
+@media (max-width: 520px) {
+  html:root[data-theme='dark'] .sidebar {
+    background: #15221bf5;
+    border-color: var(--border);
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a {
+  touch-action: manipulation;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #6c943e;
+  outline-offset: 4px;
+}
+button {
+  color: inherit;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+button {
+  border: 0;
+}
+::selection {
+  background: #d8f294;
+  color: #193e2e;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}

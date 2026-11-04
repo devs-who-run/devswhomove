@@ -1,44 +1,12 @@
 {
-  // VSCode debug profiles for NestJS backend
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "NestJS: Debug (ts-node)",
-      "type": "node",
+      "name": "Devs Who Move",
+      "type": "chrome",
       "request": "launch",
-      "cwd": "${workspaceFolder}",
-      "program": "${workspaceFolder}/backend/devswhorun-api/src/main.ts",
-      "runtimeArgs": [
-        "-r",
-        "ts-node/register/transpile-only",
-        "-r",
-        "tsconfig-paths/register"
-      ],
-      "env": {
-        "NODE_ENV": "development",
-        "TS_NODE_PROJECT": "${workspaceFolder}/backend/devswhorun-api/tsconfig.app.json"
-      },
-      "envFile": "${workspaceFolder}/.env",
-      "console": "integratedTerminal",
-      "skipFiles": [
-        "<node_internals>/**"
-      ],
-      "sourceMaps": true
-    },
-    {
-      "name": "NestJS: Debug (dist)",
-      "type": "node",
-      "request": "launch",
-      "cwd": "${workspaceFolder}",
-      "program": "${workspaceFolder}/dist/backend/devswhorun-api/main.js",
-      "outFiles": [
-        "${workspaceFolder}/dist/backend/devswhorun-api/**/*.js"
-      ],
-      "console": "integratedTerminal",
-      "skipFiles": [
-        "<node_internals>/**"
-      ],
-      "sourceMaps": true
+      "preLaunchTask": "Start Devs Who Move",
+      "url": "http://localhost:8787/"
     }
   ]
 }

@@ -1,0 +1,26 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start Devs Who Move",
+      "type": "shell",
+      "command": "npm start",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "wrangler",
+        "pattern": { "regexp": "^(?!)$", "file": 1, "message": 2 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "wrangler dev",
+          "endsPattern": "Ready on http://localhost:8787"
+        }
+      }
+    },
+    {
+      "label": "Test app and Worker",
+      "type": "shell",
+      "command": "npm test && npm run test:worker",
+      "problemMatcher": []
+    }
+  ]
+}
