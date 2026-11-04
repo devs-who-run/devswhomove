@@ -273,6 +273,14 @@
                   </div>
                   <h3>{{ activity.title }}</h3>
                   <p class="activity-notes">{{ activity.notes }}</p>
+                  @if (activity.photo) {
+                    <img
+                      class="activity-photo"
+                      [src]="activity.photo"
+                      [alt]="'Photo from ' + activity.title"
+                      loading="lazy"
+                    />
+                  }
                   <div class="activity-metrics">
                     @if (activity.distance !== null) {
                       <div>
@@ -490,13 +498,21 @@
                     <span class="host-name">· Hosted by {{ event.hostName }}</span>
                   </p>
                   @if (event.hostId === viewer()?.id) {
-                    <button
-                      class="button outline full"
-                      (click)="cancelEvent(event)"
-                      [disabled]="saving()"
-                    >
-                      Cancel your event
-                    </button>
+                    <div class="host-actions">
+                      <button
+                        class="button primary"
+                        (click)="editEvent(event)"
+                        [disabled]="saving()"
+                      >
+                        Edit event</button
+                      ><button
+                        class="button outline"
+                        (click)="cancelEvent(event)"
+                        [disabled]="saving()"
+                      >
+                        Cancel event
+                      </button>
+                    </div>
                   } @else {
                     <button
                       class="button full"
@@ -665,6 +681,14 @@
                   </small>
                   <h3>{{ activity.title }}</h3>
                   <p>{{ activity.notes }}</p>
+                  @if (activity.photo) {
+                    <img
+                      class="profile-activity-photo"
+                      [src]="activity.photo"
+                      [alt]="'Photo from ' + activity.title"
+                      loading="lazy"
+                    />
+                  }
                 </div>
                 <div class="profile-activity-metric">
                   <strong>{{ activity.duration }} <small>min</small></strong>
@@ -881,7 +905,9 @@
           modal() === 'activity'
             ? 'A little progress, logged.'
             : modal() === 'event'
-              ? 'Good company starts here.'
+              ? editingEvent()
+                ? 'Fine-tune your event.'
+                : 'Good company starts here.'
               : 'Make this space yours.'
         }}
       </h2>
@@ -966,6 +992,41 @@
         maxlength="2000"
         placeholder="The little things are worth remembering."
       ></textarea>
+      <label for="activity-photo">Add a photo <span class="optional">(optional)</span></label>
+      @if (photoPreview()) {
+        <figure class="photo-preview">
+          <img [src]="photoPreview()" alt="Preview of the photo you chose" />
+          <figcaption>
+            <span><app-icon name="lock" />Location data removed</span
+            ><button type="button" class="text-button danger" (click)="removePhoto()">
+              Remove photo
+            </button>
+          </figcaption>
+        </figure>
+      }
+      <div class="photo-picker" [class.has-photo]="photoPreview()">
+        <input
+          id="activity-photo"
+          name="photo"
+          type="file"
+          accept="image/*"
+          (change)="choosePhoto($event)"
+          [disabled]="photoBusy() || saving()"
+        />
+        <span class="photo-picker-label" aria-hidden="true">
+          <app-icon name="plus" />
+          <span
+            ><strong>{{
+              photoBusy()
+                ? 'Preparing photo…'
+                : photoPreview()
+                  ? 'Choose a different photo'
+                  : 'Choose a photo'
+            }}</strong
+            ><small>We resize it and strip location data before upload.</small></span
+          >
+        </span>
+      </div>
       <label for="activity-visibility">Who can see it?</label
       ><select id="activity-visibility" name="visibility" [(ngModel)]="activityForm.visibility">
         <option value="private">Only me · Private</option>
@@ -1098,14 +1159,16 @@
     <div class="modal-footer">
       <button type="button" class="button outline" (click)="closeModal()" [disabled]="saving()">
         Not now</button
-      ><button class="button primary" type="submit" [disabled]="saving()">
+      ><button class="button primary" type="submit" [disabled]="saving() || photoBusy()">
         {{
           saving()
             ? 'Saving…'
             : modal() === 'activity'
               ? 'Save my session'
               : modal() === 'event'
-                ? 'Create event'
+                ? editingEvent()
+                  ? 'Save changes'
+                  : 'Create event'
                 : 'Save profile'
         }}<app-icon name="arrow" />
       </button>

@@ -1,9 +1,11 @@
 import type { Activity, AgentScope, Profile, SportEvent } from '../src/app/models';
+import { MAX_PHOTO_BYTES, sanitizeImage } from './images';
 import { date, HttpError, number, sport, text, visibility } from './validation';
 
 interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  PHOTOS: R2Bucket;
   APP_URL: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
@@ -20,7 +22,10 @@ interface Identity {
 const ALL_SCOPES: AgentScope[] = ['activities:read', 'activities:write', 'events:read'];
 const ACTIVITY_SELECT = `SELECT a.id, a.user_id AS userId, u.username, u.name, u.avatar,
   a.title, a.sport, a.occurred_at AS occurredAt, a.duration, a.distance, a.notes,
-  a.visibility, a.source FROM activities a JOIN users u ON u.id = a.user_id`;
+  a.visibility, a.source,
+  CASE WHEN a.photo_key IS NULL THEN NULL
+    ELSE '/api/activities/' || a.id || '/photo?v=' || substr(a.photo_key, -12) END AS photo
+  FROM activities a JOIN users u ON u.id = a.user_id`;
 
 const json = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -92,11 +97,8 @@ function requireIdentity(auth: Identity | null, scope?: AgentScope, browserOnly 
   return auth;
 }
 
-async function body(request: Request): Promise<Record<string, unknown>> {
-  if (!request.headers.get('Content-Type')?.includes('application/json')) {
-    throw new HttpError(415, 'Use application/json.');
-  }
-  if (Number(request.headers.get('Content-Length') || 0) > 16_384)
+async function readLimited(request: Request, limit: number): Promise<Uint8Array> {
+  if (Number(request.headers.get('Content-Length') || 0) > limit)
     throw new HttpError(413, 'Request is too large.');
   const reader = request.body?.getReader();
   if (!reader) throw new HttpError(400, 'Request body is required.');
@@ -106,7 +108,7 @@ async function body(request: Request): Promise<Record<string, unknown>> {
     const { done, value } = await reader.read();
     if (done) break;
     length += value.byteLength;
-    if (length > 16_384) {
+    if (length > limit) {
       await reader.cancel();
       throw new HttpError(413, 'Request is too large.');
     }
@@ -118,6 +120,14 @@ async function body(request: Request): Promise<Record<string, unknown>> {
     bytes.set(chunk, offset);
     offset += chunk.length;
   }
+  return bytes;
+}
+
+async function body(request: Request): Promise<Record<string, unknown>> {
+  if (!request.headers.get('Content-Type')?.includes('application/json')) {
+    throw new HttpError(415, 'Use application/json.');
+  }
+  const bytes = await readLimited(request, 16_384);
   let data: unknown;
   try {
     data = JSON.parse(new TextDecoder().decode(bytes));
@@ -152,6 +162,20 @@ async function events(env: Env, userId?: string): Promise<SportEvent[]> {
     .bind(userId || '', new Date().toISOString())
     .all<SportEvent>();
   return result.results.map((event) => ({ ...event, joined: Boolean(event.joined) }));
+}
+
+function eventFields(data: Record<string, unknown>) {
+  const capacity = number(data['capacity'], 'Capacity', 2, 200);
+  if (!Number.isInteger(capacity)) throw new HttpError(400, 'Capacity must be a whole number.');
+  return [
+    text(data['title'], 'Title', 100),
+    sport(data['sport']),
+    date(data['startsAt'], true),
+    text(data['location'], 'Meeting area', 150),
+    text(data['description'] ?? '', 'Description', 1000, false),
+    text(data['level'], 'Level', 60),
+    capacity,
+  ] as const;
 }
 
 async function githubAuth(request: Request, env: Env, url: URL): Promise<Response> {
@@ -370,14 +394,71 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
     return json({ id }, 201);
   }
+  const photoMatch = /^\/api\/activities\/([^/]+)\/photo$/.exec(url.pathname);
+  if (photoMatch && method === 'GET') {
+    if (auth) requireIdentity(auth, 'activities:read');
+    const row = await env.DB.prepare(
+      `SELECT a.photo_key AS key, a.photo_type AS type FROM activities a JOIN users u ON u.id = a.user_id
+      WHERE a.id = ? AND a.photo_key IS NOT NULL
+      AND (a.user_id = ? OR (a.visibility = 'public' AND u.visibility = 'public'))`,
+    )
+      .bind(photoMatch[1], auth?.user.id || '')
+      .first<{ key: string; type: string }>();
+    const object = row && (await env.PHOTOS.get(row.key));
+    if (!row || !object) throw new HttpError(404, 'Photo not found.');
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': row.type,
+        'Content-Length': String(object.size),
+        'Cache-Control': 'private, max-age=300',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+        'Content-Disposition': 'inline',
+      },
+    });
+  }
+  if (photoMatch && (method === 'PUT' || method === 'DELETE')) {
+    const actor = requireIdentity(auth, 'activities:write');
+    const current = await env.DB.prepare(
+      'SELECT photo_key AS key, visibility FROM activities WHERE id = ? AND user_id = ?',
+    )
+      .bind(photoMatch[1], actor.user.id)
+      .first<{ key: string | null; visibility: string }>();
+    if (!current) throw new HttpError(404, 'Activity not found.');
+    if (actor.agent && current.visibility !== 'private')
+      throw new HttpError(403, 'Agent tokens can only change photos on private activities.');
+    let key: string | null = null;
+    let type: string | null = null;
+    if (method === 'PUT') {
+      const image = sanitizeImage(await readLimited(request, MAX_PHOTO_BYTES));
+      key = `activities/${photoMatch[1]}/${crypto.randomUUID()}`;
+      type = image.type;
+      await env.PHOTOS.put(key, image.bytes, { httpMetadata: { contentType: image.type } });
+    }
+    const result = await env.DB.prepare(
+      'UPDATE activities SET photo_key = ?, photo_type = ? WHERE id = ? AND user_id = ?',
+    )
+      .bind(key, type, photoMatch[1], actor.user.id)
+      .run();
+    if (!result.meta.changes) {
+      if (key) await env.PHOTOS.delete(key);
+      throw new HttpError(404, 'Activity not found.');
+    }
+    if (current.key) await env.PHOTOS.delete(current.key);
+    return json({
+      photo: key ? `/api/activities/${photoMatch[1]}/photo?v=${key.slice(-12)}` : null,
+    });
+  }
   const activityMatch = /^\/api\/activities\/([^/]+)$/.exec(url.pathname);
   if (activityMatch && (method === 'PATCH' || method === 'DELETE')) {
     const { user } = requireIdentity(auth, undefined, true);
     if (method === 'DELETE') {
-      const result = await env.DB.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?')
+      const deleted = await env.DB.prepare(
+        'DELETE FROM activities WHERE id = ? AND user_id = ? RETURNING photo_key AS key',
+      )
         .bind(activityMatch[1], user.id)
-        .run();
-      if (!result.meta.changes) throw new HttpError(404, 'Activity not found.');
+        .first<{ key: string | null }>();
+      if (!deleted) throw new HttpError(404, 'Activity not found.');
+      if (deleted.key) await env.PHOTOS.delete(deleted.key);
     } else {
       const data = await body(request);
       const result = await env.DB.prepare(
@@ -395,25 +476,13 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
   if (url.pathname === '/api/events' && method === 'POST') {
     const { user } = requireIdentity(auth, undefined, true);
-    const data = await body(request);
-    const capacity = number(data['capacity'], 'Capacity', 2, 200);
-    if (!Number.isInteger(capacity)) throw new HttpError(400, 'Capacity must be a whole number.');
+    const fields = eventFields(await body(request));
     const id = crypto.randomUUID();
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO events (id, host_id, title, sport, starts_at, location, description, level, capacity)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        id,
-        user.id,
-        text(data['title'], 'Title', 100),
-        sport(data['sport']),
-        date(data['startsAt'], true),
-        text(data['location'], 'Meeting area', 150),
-        text(data['description'] ?? '', 'Description', 1000, false),
-        text(data['level'], 'Level', 60),
-        capacity,
-      ),
+      ).bind(id, user.id, ...fields),
       env.DB.prepare('INSERT INTO event_attendees (event_id, user_id) VALUES (?, ?)').bind(
         id,
         user.id,
@@ -422,6 +491,34 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return json({ id }, 201);
   }
   const eventMatch = /^\/api\/events\/([^/]+)(\/join)?$/.exec(url.pathname);
+  if (eventMatch && !eventMatch[2] && method === 'PATCH') {
+    const { user } = requireIdentity(auth, undefined, true);
+    const id = eventMatch[1];
+    const fields = eventFields(await body(request));
+    const event = await env.DB.prepare(
+      `SELECT host_id, starts_at, cancelled,
+      (SELECT COUNT(*) FROM event_attendees WHERE event_id = events.id) AS attendees
+      FROM events WHERE id = ?`,
+    )
+      .bind(id)
+      .first<{ host_id: string; starts_at: string; cancelled: number; attendees: number }>();
+    if (!event || event.cancelled || event.starts_at <= new Date().toISOString())
+      throw new HttpError(404, 'Event is no longer available.');
+    if (event.host_id !== user.id) throw new HttpError(403, 'Only the host can edit an event.');
+    const result = await env.DB.prepare(
+      `UPDATE events SET title = ?, sport = ?, starts_at = ?, location = ?, description = ?,
+      level = ?, capacity = ? WHERE id = ? AND host_id = ? AND cancelled = 0
+      AND (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) <= ?`,
+    )
+      .bind(...fields, id, user.id, id, fields[6])
+      .run();
+    if (!result.meta.changes)
+      throw new HttpError(
+        409,
+        `${event.attendees} people are already going. Capacity can’t be lower than that.`,
+      );
+    return json({ ok: true });
+  }
   if (eventMatch && method === 'POST') {
     const { user } = requireIdentity(auth, undefined, true);
     const id = eventMatch[1];

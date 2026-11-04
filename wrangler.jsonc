@@ -18,6 +18,13 @@
       "migrations_dir": "migrations",
     },
   ],
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      // Create once with `npx wrangler r2 bucket create devs-who-move-photos`.
+      "bucket_name": "devs-who-move-photos",
+    },
+  ],
   "vars": {
     "APP_URL": "https://devswhorun.dev/",
   },

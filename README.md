@@ -34,10 +34,11 @@ New profiles and activities are **private by default**. Edit your profile to cho
 - Responsive community feed with sport filters and personal activity view.
 - Light, dark, and system themes, with a saved browser preference and live OS-theme updates in system mode.
 - Activity logging, distance/time/pace, privacy changes, deletion and agent attribution.
+- One optional photo per activity, stored in Cloudflare R2. The browser resizes photos to at most 2048px and re-encodes them as JPEG. The Worker also strips EXIF/GPS, XMP and text metadata from JPEG, PNG and WebP uploads. Photos are only served to people who can see the activity.
 - Profiles with sports, editable bio, visibility controls, summaries and a 13-week activity calendar.
 - Clean Angular routes: `/feed`, `/events`, `/profile`, and `/agents`. `/profile` shows your account or a sign-in prompt, never a sample identity.
 - Public profile links: `/profile/GITHUB_USERNAME`. Private profiles return 404 to other users. Cloudflare's SPA fallback supports direct links and refreshes.
-- Public events with local-time display, capacity, host RSVP, joining/leaving and host cancellation. Capacity is enforced in one database statement.
+- Public events with local-time display, capacity, host RSVP, joining/leaving, host editing and host cancellation. Hosts cannot lower capacity below the number of people already going. Capacity is enforced in one database statement.
 - GitHub OAuth sign-in, D1-backed sessions and origin checks for cookie-authenticated mutations.
 - Scoped, hashed, expiring and revocable agent bearer tokens, with idempotent private uploads.
 
@@ -67,13 +68,24 @@ curl "$DWM_URL/api/activities" \
   }'
 ```
 
+To attach a photo, send the raw image bytes (JPEG, PNG or WebP, at most 5 MB). Location and other embedded metadata are removed before storage:
+
+```sh
+curl -X PUT "$DWM_URL/api/activities/$ACTIVITY_ID/photo" \
+  -H "Authorization: Bearer $DWM_TOKEN" \
+  -H 'Content-Type: image/jpeg' \
+  --data-binary @session.jpg
+```
+
 `duration` is minutes; `distance` is optional and measured in kilometres. Times are ISO 8601, stored in UTC. Sports: `Running`, `Cycling`, `Tennis`, `Walking`, `Swimming`, `Strength`, `Other`. Agent uploads are always private. Reusing an idempotency key with the same validated payload returns the original ID; a different payload returns 409. Agents should supply a stable key per session to avoid duplicate imports.
 
-| Endpoint               | Permission                                   |
-| ---------------------- | -------------------------------------------- |
-| `GET /api/activities`  | `activities:read` — own recent sessions only |
-| `POST /api/activities` | `activities:write` — private sessions only   |
-| `GET /api/events`      | `events:read` — upcoming public events       |
+| Endpoint                           | Permission                                     |
+| ---------------------------------- | ---------------------------------------------- |
+| `GET /api/activities`              | `activities:read` — own recent sessions only   |
+| `POST /api/activities`             | `activities:write` — private sessions only     |
+| `PUT /api/activities/:id/photo`    | `activities:write` — own private sessions only |
+| `DELETE /api/activities/:id/photo` | `activities:write` — own private sessions only |
+| `GET /api/events`                  | `events:read` — upcoming public events         |
 
 This is **bearer-token integration**, not an MCP server. Interactive OAuth authorisation for agents, MCP discovery and tool transport are future work. The GitHub identity/session foundation is implemented, but does not pretend to provide those protocols yet.
 
@@ -81,6 +93,7 @@ This is **bearer-token integration**, not an MCP server. Interactive OAuth autho
 
 ```sh
 npx wrangler d1 create devs-who-move
+npx wrangler r2 bucket create devs-who-move-photos
 ```
 
 Set the returned `database_id` in `wrangler.jsonc`. Set `vars.APP_URL` to the final **HTTPS** origin. Create a separate production GitHub OAuth App with that origin and `/auth/github/callback`.
@@ -88,7 +101,7 @@ Set the returned `database_id` in `wrangler.jsonc`. Set `vars.APP_URL` to the fi
 ```sh
 npx wrangler secret put GITHUB_CLIENT_ID
 npx wrangler secret put GITHUB_CLIENT_SECRET
-npm run db:remote
+npm run db:remote   # also run after pulling new migrations
 npm run deploy
 ```
 
@@ -107,6 +120,6 @@ Worker integration tests run in an isolated Miniflare runtime with real D1 SQL, 
 
 ## Deliberately not yet included
 
-Following/follower approvals, reactions, notifications, image uploads, GPS/routes, wearable imports, event waitlists/recurrence, configurable goals, and agent OAuth/MCP. Public/private means **everyone or only you**, not followers-only. Before a public launch, add abuse/rate controls, account deletion/export and operational retention policies.
+Following/follower approvals, reactions, notifications, multiple photos or video, GPS/routes, wearable imports, event waitlists/recurrence, configurable goals, and agent OAuth/MCP. Public/private means **everyone or only you**, not followers-only. Before a public launch, add abuse/rate controls, account deletion/export and operational retention policies.
 
 Cloudflare C3's Angular template currently assumes SSR during its final configuration. This app deliberately uses static Angular assets and a dedicated API Worker; its Wrangler entry point and output directory are configured explicitly.

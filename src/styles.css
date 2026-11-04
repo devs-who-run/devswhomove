@@ -351,3 +351,12 @@ button {
     transition: none !important;
   }
 }
+
+html:root[data-theme='dark'] .photo-picker-label {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  color: var(--accent-text);
+}
+html:root[data-theme='dark'] :is(.photo-picker-label small, .photo-preview figcaption) {
+  color: var(--muted);
+}

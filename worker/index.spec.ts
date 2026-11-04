@@ -47,6 +47,39 @@ describe('Worker with real D1 storage', () => {
     });
   }
 
+  const photo = new Uint8Array([
+    0xff,
+    0xd8,
+    0xff,
+    0xe1,
+    0x00,
+    0x0f,
+    ...Array.from('Exif\0\0GPS:52N', (char) => char.charCodeAt(0)),
+    0xff,
+    0xda,
+    0x00,
+    0x04,
+    0x01,
+    0x02,
+    0x11,
+    0x22,
+    0xff,
+    0xd9,
+  ]);
+  const upload = (id: string, data: Uint8Array, session?: string, bearer?: string) =>
+    runtime.dispatchFetch(`${origin}/api/activities/${id}/photo`, {
+      method: 'PUT',
+      headers: {
+        Origin: origin,
+        'Content-Type': 'image/jpeg',
+        ...(session ? { Cookie: `dwm_session=${session}` } : {}),
+        ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+      },
+      body: data,
+    });
+  const storedPhotos = async () =>
+    (await (await runtime.getR2Bucket('PHOTOS')).list()).objects.length;
+
   beforeAll(async () => {
     const bundled = await build({
       entryPoints: ['worker/index.ts'],
@@ -62,14 +95,18 @@ describe('Worker with real D1 storage', () => {
         script: bundled.outputFiles[0].text,
         compatibilityDate: '2026-11-03',
         d1Databases: ['DB'],
+        r2Buckets: ['PHOTOS'],
         bindings: { APP_URL: origin },
       }),
     );
     db = await runtime.getD1Database('DB');
-    const migration = await readFile(
-      new URL('../migrations/0001_initial.sql', import.meta.url),
-      'utf8',
-    );
+    const migration = (
+      await Promise.all(
+        ['0001_initial.sql', '0002_activity_photos.sql'].map((file) =>
+          readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'),
+        ),
+      )
+    ).join(';');
     for (const statement of migration
       .split(';')
       .map((part) => part.trim())
@@ -181,6 +218,37 @@ describe('Worker with real D1 storage', () => {
     ).toBe(400);
   });
 
+  it('stores activity photos without metadata and serves them only to allowed viewers', async () => {
+    expect((await upload(activityId, photo, bob)).status).toBe(404);
+    expect((await upload(activityId, photo)).status).toBe(401);
+    expect((await upload(activityId, new TextEncoder().encode('<svg/>'), alice)).status).toBe(400);
+    expect((await upload(activityId, new Uint8Array(5 * 1024 * 1024 + 1), alice)).status).toBe(413);
+    const response = await upload(activityId, photo, alice);
+    expect(response.status).toBe(200);
+    const { photo: url } = await response.json<{ photo: string }>();
+    expect(url).toMatch(new RegExp(`^/api/activities/${activityId}/photo\\?v=`));
+    const own = await (
+      await request('/api/bootstrap', 'GET', undefined, alice)
+    ).json<{ activities: { photo: string }[] }>();
+    expect(own.activities[0].photo).toBe(url);
+    const served = await request(url, 'GET', undefined, alice);
+    expect(served.status).toBe(200);
+    expect(served.headers.get('Content-Type')).toBe('image/jpeg');
+    expect(served.headers.get('Cache-Control')).toContain('private');
+    const image = new Uint8Array(await served.arrayBuffer());
+    expect(String.fromCharCode(...image)).not.toContain('GPS');
+    expect(Array.from(image.slice(-2))).toEqual([0xff, 0xd9]);
+    expect((await request(url)).status).toBe(404);
+    expect((await request(url, 'GET', undefined, bob)).status).toBe(404);
+    expect((await upload(activityId, photo, alice)).status).toBe(200);
+    expect(await storedPhotos()).toBe(1);
+    expect(
+      (await request(`/api/activities/${activityId}/photo`, 'DELETE', undefined, alice)).status,
+    ).toBe(200);
+    expect(await storedPhotos()).toBe(0);
+    expect((await request(url, 'GET', undefined, alice)).status).toBe(404);
+  });
+
   it('creates expiring scoped tokens and never returns their hashes in listings', async () => {
     const response = await request(
       '/api/tokens',
@@ -233,6 +301,16 @@ describe('Worker with real D1 storage', () => {
       .prepare("SELECT source, visibility FROM activities WHERE idempotency_key = 'first-run'")
       .first();
     expect(stored).toMatchObject({ source: 'agent', visibility: 'private' });
+    const agentActivity = (await db
+      .prepare("SELECT id FROM activities WHERE idempotency_key = 'first-run'")
+      .first<{ id: string }>())!.id;
+    expect((await upload(agentActivity, photo, undefined, token)).status).toBe(200);
+    expect((await upload(activityId, photo, undefined, token)).status).toBe(403);
+    expect(await storedPhotos()).toBe(1);
+    expect(
+      (await request(`/api/activities/${agentActivity}`, 'DELETE', undefined, alice)).status,
+    ).toBe(200);
+    expect(await storedPhotos()).toBe(0);
   });
 
   it('enforces agent scopes and blocks account, profile and event management', async () => {
@@ -292,6 +370,49 @@ describe('Worker with real D1 storage', () => {
     expect(
       (await request(`/api/events/${eventId}/join`, 'POST', { join: false }, alice)).status,
     ).toBe(400);
+  });
+
+  it('lets only the host edit an event and never below current attendance', async () => {
+    const edit = {
+      title: 'Doubles tennis',
+      sport: 'Tennis',
+      startsAt: '2098-01-02T10:00:00.000Z',
+      location: 'North courts',
+      description: 'Rackets available.',
+      level: 'Intermediate',
+      capacity: 5,
+    };
+    expect((await request(`/api/events/${eventId}`, 'PATCH', edit, bob)).status).toBe(403);
+    expect(
+      (await request(`/api/events/${eventId}`, 'PATCH', edit, undefined, 'dwm_x')).status,
+    ).toBe(401);
+    expect(
+      (
+        await request(
+          `/api/events/${eventId}`,
+          'PATCH',
+          { ...edit, startsAt: '2001-01-01T00:00:00.000Z' },
+          alice,
+        )
+      ).status,
+    ).toBe(400);
+    expect((await request(`/api/events/${eventId}`, 'PATCH', edit, alice)).status).toBe(200);
+    for (const person of [bob, charlie])
+      expect(
+        (await request(`/api/events/${eventId}/join`, 'POST', { join: true }, person)).status,
+      ).toBe(200);
+    const tooSmall = await request(
+      `/api/events/${eventId}`,
+      'PATCH',
+      { ...edit, capacity: 2 },
+      alice,
+    );
+    expect(tooSmall.status).toBe(409);
+    expect(await tooSmall.json()).toMatchObject({ error: expect.stringContaining('3 people') });
+    const { events } = await (
+      await request('/api/events')
+    ).json<{ events: Record<string, unknown>[] }>();
+    expect(events[0]).toMatchObject({ ...edit, attendees: 3, joined: false });
   });
 
   it('allows only the host to cancel and removes cancelled events from discovery', async () => {

@@ -27,6 +27,7 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
         script: bundled.outputFiles[0].text,
         compatibilityDate: '2026-11-03',
         d1Databases: ['DB'],
+        r2Buckets: ['PHOTOS'],
         bindings: {
           APP_URL: origin,
           GITHUB_CLIENT_ID: 'test-client',
@@ -66,10 +67,13 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
       }),
     );
     db = await runtime.getD1Database('DB');
-    const migration = await readFile(
-      new URL('../migrations/0001_initial.sql', import.meta.url),
-      'utf8',
-    );
+    const migration = (
+      await Promise.all(
+        ['0001_initial.sql', '0002_activity_photos.sql'].map((file) =>
+          readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'),
+        ),
+      )
+    ).join(';');
     for (const statement of migration
       .split(';')
       .map((part) => part.trim())
