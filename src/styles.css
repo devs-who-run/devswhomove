@@ -260,6 +260,9 @@ html:root[data-theme='dark'] .banner.notice {
   border-color: #526e41;
   color: #d3e8b9;
 }
+html:root[data-theme='dark'] .public-confirm {
+  color: #604d1f;
+}
 html:root[data-theme='dark'] .danger {
   color: #ffb59f !important;
 }
