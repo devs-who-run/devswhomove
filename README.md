@@ -43,7 +43,7 @@ openssl ecparam -name prime256v1 -genkey -noout \
 openssl rand -base64 32 | tr -d '\n'
 ```
 
-Put each result in `.dev.vars` beside `wrangler.jsonc`; never commit either key. Use separate keys in production and configure them as Worker secrets. The signing key is published only through the OAuth JWKS endpoint; the private key and encrypted OAuth sessions are never published.
+Put each result in `.dev.vars` beside `wrangler.jsonc`; never commit either key. A raw PKCS#8 PEM (`BEGIN PRIVATE KEY`) is also accepted for the signing key, but SEC1 keys (`BEGIN EC PRIVATE KEY`) must be converted with `openssl pkcs8 -topk8 -nocrypt`. If a key is malformed, sign-in returns a 503 naming the misconfigured secret. Use separate keys in production and configure them as Worker secrets. The signing key is published only through the OAuth JWKS endpoint; the private key and encrypted OAuth sessions are never published.
 
 An AT Protocol personal data server (PDS) is public storage. Profiles, activities, and hosted events for AT Protocol accounts are public records; a public record can be copied, indexed, or cached by others and deleting it cannot guarantee those copies disappear. Do not publish precise home/work locations, live location or routes, private contact details, health or other sensitive notes, attendance identities, or information you would not want permanently public. The app warns users and requires confirmation before public writes. Photos are not supported for these accounts. RSVP identities and agent tokens remain in Cloudflare and are not written to the PDS.
 

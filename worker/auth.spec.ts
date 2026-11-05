@@ -169,6 +169,31 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
     expect(client.clientMetadata).not.toHaveProperty('jwks_uri');
   });
 
+  it('accepts common AT Protocol secret formats and reports invalid keys as configuration errors', async () => {
+    const env = {
+      DB: db,
+      APP_URL: origin,
+      ATPROTO_OAUTH_PRIVATE_KEY: atprotoSigningKey,
+      ATPROTO_SESSION_KEY: atprotoSessionKey,
+    };
+    const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+    for (const signingKey of [pem, pem.replace(/\n/g, '\\n'), `"${atprotoSigningKey}"\n`])
+      await expect(
+        oauthClient({ ...env, ATPROTO_OAUTH_PRIVATE_KEY: signingKey }),
+      ).resolves.toBeDefined();
+
+    const sec1 = Buffer.from(privateKey.export({ type: 'sec1', format: 'pem' })).toString('base64');
+    for (const [overrides, message] of [
+      [{ ATPROTO_OAUTH_PRIVATE_KEY: sec1 }, 'SEC1'],
+      [{ ATPROTO_OAUTH_PRIVATE_KEY: 'not*base64' }, 'not valid base64'],
+      [{ ATPROTO_SESSION_KEY: Buffer.alloc(16).toString('base64') }, '32 bytes'],
+    ] as const)
+      await expect(oauthClient({ ...env, ...overrides })).rejects.toMatchObject({
+        status: 503,
+        message: expect.stringContaining(message),
+      });
+  });
+
   it('rejects missing or mismatched state before exchanging any GitHub code', async () => {
     const { state } = await begin();
     const missing = await runtime.dispatchFetch(
