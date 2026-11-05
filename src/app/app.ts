@@ -20,7 +20,7 @@ import {
 } from './models';
 
 type Page = 'feed' | 'events' | 'profile' | 'agents';
-type Modal = 'activity' | 'event' | 'profile' | null;
+type Modal = 'activity' | 'event' | 'profile' | 'atproto-login' | null;
 const localDate = (date: Date) =>
   new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 
@@ -54,6 +54,7 @@ export class App {
   readonly selectedSport = signal<Sport | 'All'>('All');
   readonly feedMode = signal<'community' | 'mine'>('community');
   readonly modal = signal<Modal>(null);
+  atprotoHandle = '';
   readonly tokens = signal<AgentToken[]>([]);
   readonly newToken = signal('');
   readonly remoteProfile = signal<Profile | null>(null);
@@ -289,9 +290,20 @@ export class App {
       );
       return;
     }
-    const handle = window.prompt('Enter your AT Protocol handle or DID');
-    if (handle?.trim())
-      window.location.assign(`/auth/atproto?handle=${encodeURIComponent(handle.trim())}`);
+    this.error.set('');
+    this.notice.set('');
+    this.atprotoHandle = '';
+    this.modal.set('atproto-login');
+    this.dialog()?.nativeElement.showModal();
+  }
+
+  beginAtprotoLogin(): void {
+    const handle = this.atprotoHandle.trim();
+    if (!handle || handle.length > 253) {
+      this.error.set('Enter a valid AT Protocol handle or DID.');
+      return;
+    }
+    window.location.assign(`/auth/atproto?${new URLSearchParams({ handle })}`);
   }
 
   private signedIn(): boolean {
