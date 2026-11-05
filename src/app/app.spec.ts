@@ -46,10 +46,15 @@ describe('App', () => {
       '[aria-label="Color theme"]',
     ) as HTMLSelectElement;
     expect(select.options).toHaveLength(3);
+    const themeIcon = fixture.nativeElement.querySelector(
+      '.theme-control app-icon path',
+    ) as SVGPathElement;
+    const systemIcon = themeIcon.getAttribute('d');
     select.value = 'dark';
     select.dispatchEvent(new Event('change'));
     fixture.detectChanges();
     expect(document.documentElement.dataset['theme']).toBe('dark');
+    expect(themeIcon.getAttribute('d')).not.toBe(systemIcon);
     localStorage.removeItem('dwm-theme');
   });
 

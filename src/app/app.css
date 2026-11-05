@@ -1,11 +1,24 @@
 :host {
   display: block;
 }
+.theme-control {
+  position: relative;
+}
+.theme-control app-icon {
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  width: 15px;
+  height: 15px;
+  color: var(--muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
 .theme-control select {
   width: auto;
   min-height: 36px;
   margin: 0;
-  padding: 7px 25px 7px 10px;
+  padding: 7px 25px 7px 33px;
   font-size: 13px;
   cursor: pointer;
 }
@@ -2289,6 +2302,7 @@ fieldset .sport-filters {
   .theme-control select {
     max-width: 140px;
     font-size: 13px;
+    padding-left: 32px;
   }
   .sidebar {
     width: 100%;

@@ -73,6 +73,15 @@
       <div class="topbar-actions">
         <div class="theme-control">
           <label for="theme-preference" class="sr-only">Color theme</label>
+          <app-icon
+            [name]="
+              theme.preference() === 'system'
+                ? 'monitor'
+                : theme.preference() === 'dark'
+                  ? 'moon'
+                  : 'sun'
+            "
+          />
           <select
             id="theme-preference"
             aria-label="Color theme"
