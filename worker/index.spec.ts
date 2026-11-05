@@ -150,6 +150,7 @@ describe('Worker with real D1 storage', () => {
         '0002_activity_photos.sql',
         '0003_atproto.sql',
         '0004_atproto_handle_index.sql',
+        '0005_mcp_oauth.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -215,7 +216,9 @@ describe('Worker with real D1 storage', () => {
         '2099-01-01',
       )
       .run();
-    for (const statement of migrations[3]
+    for (const statement of migrations
+      .slice(3)
+      .join(';')
       .split(';')
       .map((part) => part.trim())
       .filter(Boolean))

@@ -922,15 +922,15 @@
                 </div>
                 <div>
                   <app-icon name="clock" /><span
-                    ><strong>Access that expires</strong>Tokens expire after 90 days. Revoke them
-                    whenever you like.</span
+                    ><strong>Access that expires</strong>Tokens and MCP connections expire after 90
+                    days. Revoke them whenever you like.</span
                   >
                 </div>
                 <div>
                   <app-icon name="terminal" /><span
-                    ><strong>MCP is ready to connect</strong>Use a scoped agent token with the
-                    Streamable HTTP endpoint. Tools are enabled by the token’s permissions;
-                    interactive OAuth is not supported.</span
+                    ><strong>MCP is ready to connect</strong>Sign in from your MCP client, or use a
+                    scoped agent token with the Streamable HTTP endpoint. Tools are enabled by the
+                    permissions you grant.</span
                   >
                 </div>
               </div>
@@ -1047,9 +1047,10 @@
                 client’s secret storage.
               </p>
               <p class="small-text muted">
-                Available tools depend on the token’s scopes: read your activities, log private
-                activities, and discover upcoming public events. MCP uses your existing token;
-                interactive OAuth is not available.
+                Clients that support MCP authorization can omit <code>headers</code>: add just the
+                URL and sign in from your browser to choose permissions. Each connection appears
+                here and can be revoked. Available tools depend on the granted scopes: read your
+                activities, log private activities, and discover upcoming public events.
               </p>
             </div>
             <div class="terminal-window">

@@ -112,8 +112,21 @@ curl -X PUT "$DWM_URL/api/activities/$ACTIVITY_ID/photo" \
 ## MCP server
 
 The app also exposes a stateless MCP server at `POST /mcp`, using the
-2026-07-28 Streamable HTTP protocol. Configure an MCP client with the app URL
-and an existing scoped agent token:
+2026-07-28 Streamable HTTP protocol. Clients that support MCP authorization
+only need the URL; they discover the authorization server and open a browser
+sign-in and consent page:
+
+```json
+{
+  "mcpServers": {
+    "devs-who-move": {
+      "url": "https://devswhorun.dev/mcp"
+    }
+  }
+}
+```
+
+Other clients can send an existing scoped agent token:
 
 ```json
 {
@@ -133,8 +146,27 @@ exposes `list_activities` (`activities:read`), `create_activity`
 (`activities:write`) and `list_upcoming_events` (`events:read`) according to
 the token's scopes. Agent-created activities are always private; activity
 validation, idempotency and token revocation use the same API and storage as
-other agents. MCP connections use the existing bearer tokens; MCP OAuth
-authorization is not implemented.
+other agents.
+
+The Worker is its own OAuth 2.1 authorization server for MCP:
+
+- `/.well-known/oauth-protected-resource/mcp` (RFC 9728) and
+  `/.well-known/oauth-authorization-server` (RFC 8414) publish metadata;
+  unauthenticated `/mcp` requests receive a `WWW-Authenticate` challenge that
+  points to it.
+- Public clients register with `POST /oauth/register` (RFC 7591) or identify
+  themselves with an HTTPS client ID metadata document. Redirect URIs must be
+  HTTPS, loopback HTTP or a private-use scheme, and match exactly (loopback
+  ports may vary).
+- `/oauth/authorize` requires PKCE (`S256`), shows the GitHub/AT Protocol
+  sign-in when needed, and asks for consent per scope. AT Protocol accounts
+  cannot grant `activities:write`.
+- `POST /oauth/token` exchanges single-use, 10-minute codes and rotates
+  refresh tokens; `POST /oauth/revoke` (RFC 7009) revokes a connection.
+
+Access tokens last an hour and use the same hashed agent-token storage, so
+each connection appears in **Your agents**, counts towards the 10-token limit,
+and is revoked there too. Connections expire 90 days after consent.
 
 ## Deploy
 
@@ -169,6 +201,6 @@ Worker integration tests run in an isolated Miniflare runtime with real D1 SQL, 
 
 ## Deliberately not yet included
 
-Following/follower approvals, reactions, notifications, multiple photos or video, GPS/routes, wearable imports, event waitlists/recurrence, configurable goals, and agent OAuth. Public/private means **everyone or only you**, not followers-only. Before a public launch, add abuse/rate controls, account deletion/export and operational retention policies.
+Following/follower approvals, reactions, notifications, multiple photos or video, GPS/routes, wearable imports, event waitlists/recurrence, and configurable goals. Public/private means **everyone or only you**, not followers-only. Before a public launch, add abuse/rate controls, account deletion/export and operational retention policies.
 
 Cloudflare C3's Angular template currently assumes SSR during its final configuration. This app deliberately uses static Angular assets and a dedicated API Worker; its Wrangler entry point and output directory are configured explicitly.
