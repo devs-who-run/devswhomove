@@ -137,7 +137,7 @@ describe('Worker with real D1 storage', () => {
     db = await runtime.getD1Database('DB');
     const migration = (
       await Promise.all(
-        ['0001_initial.sql', '0002_activity_photos.sql'].map((file) =>
+        ['0001_initial.sql', '0002_activity_photos.sql', '0003_atproto.sql'].map((file) =>
           readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'),
         ),
       )

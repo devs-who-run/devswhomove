@@ -159,6 +159,13 @@ nav app-icon {
 .github-button:hover {
   background: #edf3e6;
 }
+.atproto-button {
+  margin-top: 8px;
+  background: #f3f5ff;
+}
+.atproto-button:hover {
+  background: #e8ebfa;
+}
 .github-button app-icon:last-child {
   margin-left: auto;
 }
@@ -1534,6 +1541,12 @@ h1 span {
   background: #edf4e5;
   border: 1px solid #d0e0bb;
 }
+.public-data-warning {
+  display: block;
+  color: #604d1f;
+  background: #fff8df;
+  border: 1px solid #eadca8;
+}
 .empty-state {
   text-align: center;
   padding: 50px 20px;
@@ -1653,6 +1666,12 @@ legend {
   min-height: 0;
   margin: 0;
   accent-color: #496b35;
+}
+.public-confirm {
+  padding: 10px 12px;
+  border: 1px solid #eadca8;
+  border-radius: 7px;
+  background: #fff8df;
 }
 .form-row {
   display: grid;

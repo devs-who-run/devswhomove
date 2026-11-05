@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { convertV4MiniflareOptions, Miniflare, Response } from 'miniflare';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 
 describe('GitHub OAuth protocol with mocked GitHub responses', () => {
   let runtime: Miniflare;
@@ -11,6 +11,11 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
   let outboundCalls = 0;
   let githubTokenWasServerSide = false;
   let githubUsername = 'octo-runner';
+  const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const atprotoSigningKey = Buffer.from(
+    privateKey.export({ type: 'pkcs8', format: 'pem' }),
+  ).toString('base64');
+  const atprotoSessionKey = Buffer.alloc(32, 7).toString('base64');
 
   beforeAll(async () => {
     const bundled = await build({
@@ -32,6 +37,8 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
           APP_URL: origin,
           GITHUB_CLIENT_ID: 'test-client',
           GITHUB_CLIENT_SECRET: 'test-secret',
+          ATPROTO_OAUTH_PRIVATE_KEY: atprotoSigningKey,
+          ATPROTO_SESSION_KEY: atprotoSessionKey,
         },
         outboundService: async (request) => {
           outboundCalls++;
@@ -69,7 +76,7 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
     db = await runtime.getD1Database('DB');
     const migration = (
       await Promise.all(
-        ['0001_initial.sql', '0002_activity_photos.sql'].map((file) =>
+        ['0001_initial.sql', '0002_activity_photos.sql', '0003_atproto.sql'].map((file) =>
           readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'),
         ),
       )
@@ -104,6 +111,29 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
     );
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(outboundCalls).toBe(0);
+  });
+
+  it('publishes AT Protocol OAuth metadata and only the signing key’s public material', async () => {
+    const metadataResponse = await runtime.dispatchFetch(
+      `${origin}/oauth/client-metadata.json`,
+    );
+    const metadata = await metadataResponse.json<{
+      client_id: string;
+      redirect_uris: string[];
+      dpop_bound_access_tokens: boolean;
+    }>();
+    expect(metadataResponse.status).toBe(200);
+    expect(metadata.client_id).toBe(`${origin}/oauth/client-metadata.json`);
+    expect(metadata.redirect_uris).toEqual([`${origin}/auth/atproto/callback`]);
+    expect(metadata.dpop_bound_access_tokens).toBe(true);
+
+    const jwksResponse = await runtime.dispatchFetch(`${origin}/oauth/jwks.json`);
+    const jwks = await jwksResponse.json<{ keys: Record<string, unknown>[] }>();
+    expect(jwksResponse.status).toBe(200);
+    expect(jwks.keys).toHaveLength(1);
+    expect(jwks.keys[0]).toMatchObject({ kty: 'EC', crv: 'P-256' });
+    expect(jwks.keys[0]).not.toHaveProperty('d');
+    expect(JSON.stringify(jwks)).not.toContain(atprotoSigningKey);
   });
 
   it('rejects missing or mismatched state before exchanging any GitHub code', async () => {

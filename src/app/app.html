@@ -60,6 +60,9 @@
         <button class="github-button" (click)="login()">
           <app-icon name="github" /> Join with GitHub <app-icon name="arrow" />
         </button>
+        <button class="github-button atproto-button" (click)="loginAtproto()">
+          Join with AT Protocol <app-icon name="arrow" />
+        </button>
       }
     </div>
   </aside>
@@ -96,8 +99,9 @@
           </button>
         } @else {
           <button class="button primary compact" (click)="login()">
-            <app-icon name="github" /> Sign in
+            <app-icon name="github" /> GitHub
           </button>
+          <button class="button outline compact" (click)="loginAtproto()">AT Protocol</button>
         }
       </div>
     </header>
@@ -117,6 +121,14 @@
           ><button class="icon-button" aria-label="Dismiss notification" (click)="notice.set('')">
             <app-icon name="close" />
           </button>
+        </div>
+      }
+      @if (viewer()?.provider === 'atproto') {
+        <div class="banner public-data-warning" role="note">
+          Your profile, activities, and hosted events are public AT Protocol records. Others can
+          copy them, and deleting a record cannot remove copies already made. Keep exact locations,
+          sensitive health details, and private information out. RSVP identities and agent tokens
+          stay in Cloudflare.
         </div>
       }
       @if (preview() && !loading() && (page() === 'feed' || page() === 'events')) {
@@ -243,7 +255,12 @@
               @for (activity of filteredActivities(); track activity.id) {
                 <article class="activity-card">
                   <div class="activity-header">
-                    <a class="person" [routerLink]="['/profile', activity.username]"
+                    <a
+                      class="person"
+                      [routerLink]="[
+                        '/profile',
+                        activity.userId.startsWith('did:') ? activity.userId : activity.username,
+                      ]"
                       ><span
                         class="avatar"
                         [class.orange]="activity.sport === 'Cycling'"
@@ -324,7 +341,7 @@
                         ><app-icon name="terminal" /> Logged by an agent</span
                       >
                     }
-                    @if (activity.userId === viewer()?.id) {
+                    @if (activity.userId === viewer()?.id && viewer()?.provider !== 'atproto') {
                       <button
                         class="text-button"
                         (click)="toggleVisibility(activity)"
@@ -588,10 +605,16 @@
               <h1>{{ profile.name }}</h1>
               <a
                 class="github-profile"
-                [href]="'https://github.com/' + profile.username"
+                [href]="
+                  profile.provider === 'atproto'
+                    ? 'https://bsky.app/profile/' + profile.username
+                    : 'https://github.com/' + profile.username
+                "
                 target="_blank"
                 rel="noopener noreferrer"
-                ><app-icon name="github" />&#64;{{ profile.username }}
+                ><app-icon [name]="profile.provider === 'atproto' ? 'globe' : 'github'" />&#64;{{
+                  profile.username
+                }}
                 <span aria-hidden="true">↗</span></a
               >
               <p class="profile-bio">
@@ -712,15 +735,18 @@
                 </div>
                 @if (activity.userId === viewer()?.id) {
                   <div class="profile-activity-actions">
+                    @if (viewer()?.provider !== 'atproto') {
+                      <button
+                        class="text-button"
+                        (click)="toggleVisibility(activity)"
+                        [disabled]="saving()"
+                      >
+                        <app-icon [name]="activity.visibility === 'private' ? 'lock' : 'globe'" />{{
+                          activity.visibility
+                        }}</button
+                      >
+                    }
                     <button
-                      class="text-button"
-                      (click)="toggleVisibility(activity)"
-                      [disabled]="saving()"
-                    >
-                      <app-icon [name]="activity.visibility === 'private' ? 'lock' : 'globe'" />{{
-                        activity.visibility
-                      }}</button
-                    ><button
                       class="text-button danger"
                       (click)="deleteActivity(activity)"
                       [disabled]="saving()"
@@ -745,9 +771,12 @@
             <div class="empty-state">
               <app-icon name="user" />
               <h1>Your profile starts with you.</h1>
-              <p>Sign in with GitHub to create your own sports profile and track your progress.</p>
+              <p>Sign in with GitHub or AT Protocol to create your own sports profile and track your progress.</p>
               <button class="button primary" (click)="login()">
                 <app-icon name="github" /> Sign in with GitHub
+              </button>
+              <button class="button outline" (click)="loginAtproto()">
+                Sign in with AT Protocol
               </button>
             </div>
           }
@@ -771,7 +800,7 @@
                 <div class="terminal-content">
                   <p>
                     <span class="terminal-prompt">you ›</span> Log my 5K run. 31 minutes.<br />Felt
-                    great. Keep it private.
+                    great.
                   </p>
                   <p>
                     <span class="terminal-prompt">agent ›</span>
@@ -779,8 +808,8 @@
                   </p>
                   <div class="terminal-result">
                     <app-icon name="check" /><span
-                      >Create a private running session<br /><small
-                        >5.0 km · 31 min · Only you</small
+                      >Create an activity on your account<br /><small
+                        >5.0 km · 31 min · Visibility depends on your sign-in provider</small
                       ></span
                     >
                   </div>
@@ -789,13 +818,13 @@
               <div class="agent-principles">
                 <h2>One identity. Clear boundaries.</h2>
                 <p>
-                  Sign in with GitHub, then give each agent its own scoped access. Your GitHub token
-                  is never shared with an agent.
+                  Sign in with GitHub or AT Protocol, then give each agent its own scoped access.
+                  Your sign-in credentials are never shared with an agent.
                 </p>
                 <div>
                   <app-icon name="lock" /><span
-                    ><strong>Private by design</strong>Agents can log private sessions. Publishing
-                    and privacy changes stay with you.</span
+                  ><strong>Your data, your rules</strong>GitHub accounts can log private
+                  sessions. AT Protocol accounts publish activity records publicly.</span
                   >
                 </div>
                 <div>
@@ -824,6 +853,9 @@
                 <button class="button primary full" (click)="login()">
                   <app-icon name="github" /> Connect with GitHub
                 </button>
+                <button class="button outline full" (click)="loginAtproto()">
+                  Connect with AT Protocol
+                </button>
               } @else {
                 <form ngNativeValidate (ngSubmit)="createToken()">
                   <label for="agent-name">Give your agent a name</label
@@ -839,7 +871,11 @@
                     <legend>What can it do?</legend>
                     <label class="checkbox-label"
                       ><input type="checkbox" name="agentWrite" [(ngModel)]="agentWrite" /><span
-                        >Log private activities</span
+                        >{{
+                          viewer()?.provider === 'atproto'
+                            ? 'Log public activities'
+                            : 'Log private activities'
+                        }}</span
                       ></label
                     ><label class="checkbox-label"
                       ><input type="checkbox" name="agentRead" [(ngModel)]="agentRead" /><span
@@ -941,6 +977,21 @@
   }
   <form ngNativeValidate (ngSubmit)="save()">
     @if (modal() === 'activity') {
+      @if (viewer()?.provider === 'atproto') {
+        <div class="banner public-data-warning" role="note">
+          This activity will be written to your public PDS repository. Its title, sport, exact
+          time, duration, distance, and notes are public and may be copied permanently. Avoid
+          health details and precise locations; photos are disabled for AT Protocol accounts.
+        </div>
+        <label class="checkbox-label public-confirm"
+          ><input
+            type="checkbox"
+            name="publicDisclosure"
+            [(ngModel)]="publicDisclosure"
+            required
+          /><span>I understand this activity will be public.</span></label
+        >
+      }
       <label for="activity-title">Give your session a title</label
       ><input
         id="activity-title"
@@ -1006,55 +1057,71 @@
         maxlength="2000"
         placeholder="The little things are worth remembering."
       ></textarea>
-      <label for="activity-photo">Add a photo <span class="optional">(optional)</span></label>
-      @if (photoPreview()) {
-        <figure class="photo-preview">
-          <img [src]="photoPreview()" alt="Preview of the photo you chose" />
-          <figcaption>
-            <span><app-icon name="lock" />Location data removed</span
-            ><button type="button" class="text-button danger" (click)="removePhoto()">
-              Remove photo
-            </button>
-          </figcaption>
-        </figure>
+      @if (viewer()?.provider !== 'atproto') {
+        <label for="activity-photo">Add a photo <span class="optional">(optional)</span></label>
+        @if (photoPreview()) {
+          <figure class="photo-preview">
+            <img [src]="photoPreview()" alt="Preview of the photo you chose" />
+            <figcaption>
+              <span><app-icon name="lock" />Location data removed</span
+              ><button type="button" class="text-button danger" (click)="removePhoto()">
+                Remove photo
+              </button>
+            </figcaption>
+          </figure>
+        }
+        <div class="photo-picker" [class.has-photo]="photoPreview()">
+          <input
+            id="activity-photo"
+            name="photo"
+            type="file"
+            accept="image/*"
+            (change)="choosePhoto($event)"
+            [disabled]="photoBusy() || saving()"
+          />
+          <span class="photo-picker-label" aria-hidden="true">
+            <app-icon name="plus" />
+            <span
+              ><strong>{{
+                photoBusy()
+                  ? 'Preparing photo…'
+                  : photoPreview()
+                    ? 'Choose a different photo'
+                    : 'Choose a photo'
+              }}</strong
+              ><small>We resize it and strip location data before upload.</small></span
+            >
+          </span>
+        </div>
+        <label for="activity-visibility">Who can see it?</label
+        ><select id="activity-visibility" name="visibility" [(ngModel)]="activityForm.visibility">
+          <option value="private">Only me · Private</option>
+          <option value="public">Everyone · Public when my profile is public</option>
+        </select>
+        <p class="form-help">
+          <app-icon name="lock" />Private by default. Share only when you’re ready.
+        </p>
       }
-      <div class="photo-picker" [class.has-photo]="photoPreview()">
-        <input
-          id="activity-photo"
-          name="photo"
-          type="file"
-          accept="image/*"
-          (change)="choosePhoto($event)"
-          [disabled]="photoBusy() || saving()"
-        />
-        <span class="photo-picker-label" aria-hidden="true">
-          <app-icon name="plus" />
-          <span
-            ><strong>{{
-              photoBusy()
-                ? 'Preparing photo…'
-                : photoPreview()
-                  ? 'Choose a different photo'
-                  : 'Choose a photo'
-            }}</strong
-            ><small>We resize it and strip location data before upload.</small></span
-          >
-        </span>
-      </div>
-      <label for="activity-visibility">Who can see it?</label
-      ><select id="activity-visibility" name="visibility" [(ngModel)]="activityForm.visibility">
-        <option value="private">Only me · Private</option>
-        <option value="public">Everyone · Public when my profile is public</option>
-      </select>
-      <p class="form-help">
-        <app-icon name="lock" />Private by default. Share only when you’re ready.
-      </p>
     }
     @if (modal() === 'event') {
       <p class="form-help">
         Events are public, including the host name. Use an approximate meeting area, not a private
         address.
       </p>
+      @if (viewer()?.provider === 'atproto') {
+        <div class="banner public-data-warning" role="note">
+          Event details are saved as public PDS records. Use a public meeting point; do not include
+          private contact details or a home address. RSVP identities remain in Cloudflare.
+        </div>
+        <label class="checkbox-label public-confirm"
+          ><input
+            type="checkbox"
+            name="publicDisclosure"
+            [(ngModel)]="publicDisclosure"
+            required
+          /><span>I understand this event will be public.</span></label
+        >
+      }
       <label for="event-title">What are we doing?</label
       ><input
         id="event-title"
@@ -1122,6 +1189,20 @@
       ></textarea>
     }
     @if (modal() === 'profile') {
+      @if (viewer()?.provider === 'atproto') {
+        <div class="banner public-data-warning" role="note">
+          Your name, bio, and selected sports are public PDS records. Avoid personal contact
+          details or sensitive information. AT Protocol profiles cannot be private in this app.
+        </div>
+        <label class="checkbox-label public-confirm"
+          ><input
+            type="checkbox"
+            name="publicDisclosure"
+            [(ngModel)]="publicDisclosure"
+            required
+          /><span>I understand my profile will be public.</span></label
+        >
+      }
       <label for="profile-name">Your name</label
       ><input
         id="profile-name"
@@ -1138,13 +1219,15 @@
         [(ngModel)]="profileForm.bio"
         maxlength="300"
       ></textarea>
-      <label for="profile-location">City or general area (optional)</label
-      ><input
-        id="profile-location"
-        name="location"
-        [(ngModel)]="profileForm.location"
-        maxlength="80"
-      />
+      @if (viewer()?.provider !== 'atproto') {
+        <label for="profile-location">City or general area (optional)</label
+        ><input
+          id="profile-location"
+          name="location"
+          [(ngModel)]="profileForm.location"
+          maxlength="80"
+        />
+      }
       <fieldset>
         <legend>Your ways to move</legend>
         <div class="sport-filters" role="group" aria-label="Choose your sports">
@@ -1160,15 +1243,17 @@
           }
         </div>
       </fieldset>
-      <label for="profile-visibility">Profile visibility</label
-      ><select id="profile-visibility" name="visibility" [(ngModel)]="profileForm.visibility">
-        <option value="private">Private · Only I can view my profile</option>
-        <option value="public">Public · Anyone can view my profile</option>
-      </select>
-      <p class="form-help">
-        <app-icon name="lock" />Private activities stay private, even with a public profile. Hosted
-        events remain public.
-      </p>
+      @if (viewer()?.provider !== 'atproto') {
+        <label for="profile-visibility">Profile visibility</label
+        ><select id="profile-visibility" name="visibility" [(ngModel)]="profileForm.visibility">
+          <option value="private">Private · Only I can view my profile</option>
+          <option value="public">Public · Anyone can view my profile</option>
+        </select>
+        <p class="form-help">
+          <app-icon name="lock" />Private activities stay private, even with a public profile.
+          Hosted events remain public.
+        </p>
+      }
     }
     <div class="modal-footer">
       <button type="button" class="button outline" (click)="closeModal()" [disabled]="saving()">

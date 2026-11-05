@@ -1,2 +1,4 @@
 GITHUB_CLIENT_ID=your-github-oauth-client-id
 GITHUB_CLIENT_SECRET=your-github-oauth-client-secret
+ATPROTO_OAUTH_PRIVATE_KEY=base64-encoded-pkcs8-pem
+ATPROTO_SESSION_KEY=base64-encoded-32-byte-key
