@@ -32,8 +32,8 @@ html:root[data-theme='dark'] {
   --surface-raised: #15221b;
   --surface-soft: #253528;
   --muted: #cdd7cf;
-  --border: #415444;
-  --border-hover: #60784f;
+  --border: #648168;
+  --border-hover: #7a9864;
   --accent-text: #cde6ad;
 }
 html:root[data-theme='dark'] body {

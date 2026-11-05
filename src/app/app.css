@@ -2834,6 +2834,15 @@ nav a {
     padding-left: 16px;
   }
 
+  .profile-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 18px;
+  }
+
+  .profile-stats > div + div:nth-child(odd) {
+    border-left: 0;
+  }
+
   .heatmap-details ul {
     columns: 1;
   }
