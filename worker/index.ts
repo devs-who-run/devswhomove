@@ -8,6 +8,7 @@ import {
 } from '../src/app/models';
 import {
   ACTIVITY_COLLECTION,
+  ATPROTO_OAUTH_SCOPE,
   atprotoAgent,
   EVENT_COLLECTION,
   oauthClient,
@@ -892,7 +893,7 @@ async function atprotoAuth(request: Request, env: Env, url: URL): Promise<Respon
     if (!handle || handle.length > 253)
       throw new HttpError(400, 'Enter a valid AT Protocol handle or DID.');
     const state = secret();
-    const authorize = await client.authorize(handle, { state });
+    const authorize = await client.authorize(handle, { state, scope: ATPROTO_OAUTH_SCOPE });
     return new Response(null, {
       status: 302,
       headers: {

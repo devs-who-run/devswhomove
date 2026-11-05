@@ -14,6 +14,13 @@ import { JoseKey } from '@atproto/jwk-jose';
 export const PROFILE_COLLECTION = 'dev.devswhorun.profile';
 export const ACTIVITY_COLLECTION = 'dev.devswhorun.activity';
 export const EVENT_COLLECTION = 'dev.devswhorun.event';
+export const ATPROTO_OAUTH_SCOPE = [
+  'atproto',
+  `repo:${ACTIVITY_COLLECTION}`,
+  `repo:${EVENT_COLLECTION}`,
+  `repo:${PROFILE_COLLECTION}`,
+  'repo:app.bsky.actor.profile',
+].join(' ');
 
 export interface AtprotoEnv {
   DB: D1Database;
@@ -148,6 +155,9 @@ export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
   const isLoopback = new URL(origin).protocol === 'http:';
   const callback = new URL('/auth/atproto/callback', origin);
   if (isLoopback) callback.hostname = '127.0.0.1';
+  const loopbackClientId = new URL('http://localhost');
+  loopbackClientId.searchParams.set('redirect_uri', callback.toString());
+  loopbackClientId.searchParams.set('scope', ATPROTO_OAUTH_SCOPE);
   const stateStore: StateStore = {
     async set(state: string, value: InternalStateData) {
       const now = new Date().toISOString();
@@ -203,12 +213,12 @@ export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
   return new OAuthClient({
     clientMetadata: (isLoopback
       ? {
-          client_id: 'http://localhost',
+          client_id: loopbackClientId.toString(),
           client_name: 'Devs Who Move',
           client_uri: 'http://localhost',
           redirect_uris: [callback.toString()],
           grant_types: ['authorization_code', 'refresh_token'],
-          scope: 'atproto',
+          scope: ATPROTO_OAUTH_SCOPE,
           response_types: ['code'],
           application_type: 'native',
           token_endpoint_auth_method: 'none',
@@ -220,7 +230,7 @@ export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
           client_uri: origin,
           redirect_uris: [callback.toString()],
           grant_types: ['authorization_code', 'refresh_token'],
-          scope: 'atproto',
+          scope: ATPROTO_OAUTH_SCOPE,
           response_types: ['code'],
           application_type: 'web',
           token_endpoint_auth_method: 'private_key_jwt',

@@ -3,7 +3,7 @@ import { convertV4MiniflareOptions, Miniflare, Response } from 'miniflare';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
 import { createHash, generateKeyPairSync } from 'node:crypto';
-import { oauthClient } from './atproto';
+import { ATPROTO_OAUTH_SCOPE, oauthClient } from './atproto';
 
 describe('GitHub OAuth protocol with mocked GitHub responses', () => {
   let runtime: Miniflare;
@@ -122,11 +122,13 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
     const metadata = await metadataResponse.json<{
       client_id: string;
       redirect_uris: string[];
+      scope: string;
       dpop_bound_access_tokens: boolean;
     }>();
     expect(metadataResponse.status).toBe(200);
     expect(metadata.client_id).toBe(`${origin}/oauth/client-metadata.json`);
     expect(metadata.redirect_uris).toEqual([`${origin}/auth/atproto/callback`]);
+    expect(metadata.scope).toBe(ATPROTO_OAUTH_SCOPE);
     expect(metadata.dpop_bound_access_tokens).toBe(true);
 
     const jwksResponse = await runtime.dispatchFetch(`${origin}/oauth/jwks.json`);
@@ -146,9 +148,10 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
       ATPROTO_SESSION_KEY: atprotoSessionKey,
     });
     expect(client.clientMetadata).toMatchObject({
-      client_id: 'http://localhost',
+      client_id:
+        'http://localhost/?redirect_uri=http%3A%2F%2F127.0.0.1%3A8787%2Fauth%2Fatproto%2Fcallback&scope=atproto+repo%3Adev.devswhorun.activity+repo%3Adev.devswhorun.event+repo%3Adev.devswhorun.profile+repo%3Aapp.bsky.actor.profile',
       redirect_uris: ['http://127.0.0.1:8787/auth/atproto/callback'],
-      scope: 'atproto',
+      scope: ATPROTO_OAUTH_SCOPE,
       token_endpoint_auth_method: 'none',
     });
     expect(client.clientMetadata).not.toHaveProperty('jwks_uri');
