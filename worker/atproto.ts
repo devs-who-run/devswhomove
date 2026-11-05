@@ -22,6 +22,19 @@ export const ATPROTO_OAUTH_SCOPE = [
   'repo:app.bsky.actor.profile',
 ].join(' ');
 
+/** Return only native profile fields that changed from the user's current projection. */
+export function atprotoProfileChanges(
+  name: string,
+  bio: string,
+  currentName: string,
+  currentBio: string,
+): { displayName?: string; description?: string } | undefined {
+  const changes: { displayName?: string; description?: string } = {};
+  if (name !== currentName) changes.displayName = name;
+  if (bio !== currentBio) changes.description = bio;
+  return Object.keys(changes).length ? changes : undefined;
+}
+
 export interface AtprotoEnv {
   DB: D1Database;
   APP_URL: string;

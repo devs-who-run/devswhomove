@@ -3,7 +3,7 @@ import { convertV4MiniflareOptions, Miniflare, Response } from 'miniflare';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
 import { createHash, generateKeyPairSync } from 'node:crypto';
-import { ATPROTO_OAUTH_SCOPE, oauthClient } from './atproto';
+import { atprotoProfileChanges, ATPROTO_OAUTH_SCOPE, oauthClient } from './atproto';
 
 describe('GitHub OAuth protocol with mocked GitHub responses', () => {
   let runtime: Miniflare;
@@ -94,6 +94,18 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
 
   afterAll(async () => {
     await runtime?.dispose();
+  });
+
+  it('only updates native AT Protocol profile fields that changed', () => {
+    expect(
+      atprotoProfileChanges('Bluesky name', 'Bluesky bio', 'Bluesky name', 'Bluesky bio'),
+    ).toBeUndefined();
+    expect(
+      atprotoProfileChanges('Updated name', 'Bluesky bio', 'Bluesky name', 'Bluesky bio'),
+    ).toEqual({ displayName: 'Updated name' });
+    expect(
+      atprotoProfileChanges('Bluesky name', 'Updated bio', 'Bluesky name', 'Bluesky bio'),
+    ).toEqual({ description: 'Updated bio' });
   });
 
   async function begin() {

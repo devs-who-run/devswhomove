@@ -10,6 +10,7 @@ import {
   ACTIVITY_COLLECTION,
   ATPROTO_OAUTH_SCOPE,
   atprotoAgent,
+  atprotoProfileChanges,
   EVENT_COLLECTION,
   oauthClient,
   PROFILE_COLLECTION,
@@ -1056,11 +1057,14 @@ async function handle(request: Request, env: Env): Promise<Response> {
         throw new HttpError(400, 'AT Protocol profiles are public and cannot be made private.');
       const agent = identity.atprotoAgent;
       if (!agent) throw new HttpError(500, 'AT Protocol session is unavailable.');
-      await agent.upsertProfile((existing) => ({
-        ...existing,
-        displayName: name,
-        description: bio,
-      }));
+      const profileChanges = atprotoProfileChanges(
+        name,
+        bio,
+        identity.user.name,
+        identity.user.bio,
+      );
+      if (profileChanges)
+        await agent.upsertProfile((existing) => ({ ...existing, ...profileChanges }));
       const profileRecord = {
         $type: PROFILE_COLLECTION,
         sports: selected,
