@@ -1111,7 +1111,7 @@ h1 span {
 }
 .profile-intro .eyebrow {
   margin-top: 20px;
-  font-size: 8px;
+  font-size: 10px;
 }
 .profile-intro h1 {
   font-size: 34px;
@@ -2147,7 +2147,7 @@ fieldset .sport-filters {
     top: 67px;
   }
   .profile-actions .visibility-pill {
-    font-size: 8px;
+    font-size: 10px;
   }
   .profile-intro {
     padding: 0 10px;
@@ -2511,7 +2511,7 @@ fieldset .sport-filters {
     padding: 0 5px;
   }
   .profile-intro .eyebrow {
-    font-size: 6px;
+    font-size: 10px;
     margin-top: 25px;
   }
   .profile-intro h1 {
@@ -2527,7 +2527,7 @@ fieldset .sport-filters {
     min-height: 34px;
   }
   .profile-actions > .visibility-pill {
-    font-size: 7px;
+    font-size: 10px;
   }
   .profile-bio {
     font-size: 11px;
@@ -2858,13 +2858,17 @@ nav a {
 .visibility-pill,
 .beta-pill,
 .terminal-top small,
-.terminal-comment,
-.terminal-result small,
 .token-item small,
 .photo-picker-label small,
 .photo-preview figcaption,
 .form-help {
   color: var(--muted);
+  font-size: max(10px, 0.8em);
+}
+
+.terminal-comment,
+.terminal-result small {
+  color: #c2d0b1;
   font-size: max(10px, 0.8em);
 }
 
