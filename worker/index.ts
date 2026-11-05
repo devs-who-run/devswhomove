@@ -1,5 +1,6 @@
 import type { Activity, AgentScope, Profile, SportEvent } from '../src/app/models';
 import { MAX_PHOTO_BYTES, sanitizeImage } from './images';
+import { handleMcp } from './mcp';
 import { date, HttpError, number, sport, text, visibility } from './validation';
 
 interface Env {
@@ -276,6 +277,13 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const method = request.method;
   if (url.pathname.startsWith('/auth/github') && method === 'GET')
     return githubAuth(request, env, url);
+  if (url.pathname === '/mcp')
+    return handleMcp(
+      request,
+      env.APP_URL,
+      () => identity(request, env),
+      (apiRequest) => handle(apiRequest, env),
+    );
   if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
 
   if (!['GET', 'HEAD'].includes(method) && !request.headers.has('Authorization')) {
@@ -651,7 +659,16 @@ export default {
         secured.headers.set('Cache-Control', 'no-store');
       return secured;
     } catch (error) {
-      if (error instanceof HttpError) return json({ error: error.message }, error.status);
+      if (error instanceof HttpError) {
+        const response = json({ error: error.message }, error.status);
+        if (new URL(request.url).pathname === '/mcp' && error.status === 401) {
+          response.headers.set(
+            'WWW-Authenticate',
+            'Bearer realm="devs-who-move MCP", scope="activities:read activities:write events:read"',
+          );
+        }
+        return response;
+      }
       console.error(
         'Worker request failed',
         error instanceof Error ? error.message : 'Unknown error',

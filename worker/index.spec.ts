@@ -47,6 +47,41 @@ describe('Worker with real D1 storage', () => {
     });
   }
 
+  function mcpRequest(
+    method: string,
+    params: Record<string, unknown> = {},
+    bearer?: string,
+    protocolVersion = '2026-07-28',
+    extra: Record<string, string> = {},
+  ) {
+    return request(
+      '/mcp',
+      'POST',
+      {
+        jsonrpc: '2.0',
+        id: 'mcp-test',
+        method,
+        params: {
+          ...params,
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': protocolVersion,
+            'io.modelcontextprotocol/clientInfo': { name: 'Worker test', version: '1.0' },
+            'io.modelcontextprotocol/clientCapabilities': {},
+          },
+        },
+      },
+      undefined,
+      bearer,
+      {
+        Accept: 'application/json, text/event-stream',
+        'MCP-Protocol-Version': protocolVersion,
+        'Mcp-Method': method,
+        ...(typeof params['name'] === 'string' ? { 'Mcp-Name': params['name'] } : {}),
+        ...extra,
+      },
+    );
+  }
+
   const photo = new Uint8Array([
     0xff,
     0xd8,
@@ -311,6 +346,129 @@ describe('Worker with real D1 storage', () => {
       (await request(`/api/activities/${agentActivity}`, 'DELETE', undefined, alice)).status,
     ).toBe(200);
     expect(await storedPhotos()).toBe(0);
+  });
+
+  it('serves the current stateless MCP protocol through scoped agent tokens', async () => {
+    const tokenResponse = await request(
+      '/api/tokens',
+      'POST',
+      {
+        name: 'MCP integration',
+        scopes: ['activities:read', 'activities:write', 'events:read'],
+      },
+      alice,
+    );
+    expect(tokenResponse.status).toBe(201);
+    const mcpToken = await tokenResponse.json<{ id: string; token: string }>();
+
+    const discovery = await mcpRequest('server/discover', {}, mcpToken.token);
+    expect(discovery.status).toBe(200);
+    expect(await discovery.json()).toMatchObject({
+      result: {
+        resultType: 'complete',
+        supportedVersions: ['2026-07-28'],
+        capabilities: { tools: {} },
+        _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'devs-who-move' } },
+      },
+    });
+
+    const listing = await mcpRequest('tools/list', {}, mcpToken.token);
+    const availableTools = await listing.json<{
+      result: { tools: { name: string }[]; cacheScope: string; ttlMs: number };
+    }>();
+    expect(availableTools.result.tools.map(({ name }) => name)).toEqual([
+      'list_activities',
+      'create_activity',
+      'list_upcoming_events',
+    ]);
+    expect(availableTools.result).toMatchObject({ cacheScope: 'private', ttlMs: 60_000 });
+
+    const activityArgs = {
+      title: 'MCP activity',
+      sport: 'Running',
+      occurredAt: new Date(Date.now() - 60_000).toISOString(),
+      duration: 25,
+      distance: 4,
+      idempotencyKey: 'mcp-import-1',
+    };
+    const created = await mcpRequest(
+      'tools/call',
+      { name: 'create_activity', arguments: activityArgs },
+      mcpToken.token,
+    );
+    const createdResult = await created.json<{
+      result: { structuredContent: { id: string; visibility: string; source: string } };
+    }>();
+    expect(createdResult.result.structuredContent).toMatchObject({
+      visibility: 'private',
+      source: 'agent',
+    });
+
+    const invalidActivity = await mcpRequest(
+      'tools/call',
+      {
+        name: 'create_activity',
+        arguments: {
+          title: 'Invalid MCP activity',
+          sport: 'Running',
+          occurredAt: new Date(Date.now() - 60_000).toISOString(),
+          duration: 0,
+        },
+      },
+      mcpToken.token,
+    );
+    expect(invalidActivity.status).toBe(200);
+    expect(await invalidActivity.json()).toMatchObject({
+      result: {
+        isError: true,
+        structuredContent: { error: 'Duration in minutes must be between 1 and 1440.' },
+      },
+    });
+
+    const listedActivities = await mcpRequest(
+      'tools/call',
+      { name: 'list_activities' },
+      mcpToken.token,
+    );
+    const activityResult = await listedActivities.json<{
+      result: { structuredContent: { activities: { id: string; title: string }[] } };
+    }>();
+    expect(activityResult.result.structuredContent.activities).toContainEqual(
+      expect.objectContaining({
+        id: createdResult.result.structuredContent.id,
+        title: 'MCP activity',
+      }),
+    );
+
+    const writeOnly = await mcpRequest('tools/list', {}, token);
+    expect(
+      (await writeOnly.json<{ result: { tools: { name: string }[] } }>()).result.tools.map(
+        ({ name }) => name,
+      ),
+    ).toEqual(['create_activity']);
+
+    const unsupportedVersion = await mcpRequest('tools/list', {}, mcpToken.token, '1900-01-01');
+    expect(unsupportedVersion.status).toBe(400);
+    expect(await unsupportedVersion.json()).toMatchObject({
+      error: { code: -32022, data: { supported: ['2026-07-28'] } },
+    });
+
+    const badHeader = await mcpRequest('tools/list', {}, mcpToken.token, '2026-07-28', {
+      'Mcp-Method': 'tools/call',
+    });
+    expect(badHeader.status).toBe(400);
+    expect(await badHeader.json()).toMatchObject({ error: { code: -32020 } });
+
+    const wrongOrigin = await mcpRequest('tools/list', {}, mcpToken.token, '2026-07-28', {
+      Origin: 'https://other.example',
+    });
+    expect(wrongOrigin.status).toBe(403);
+
+    const unauthenticated = await mcpRequest('server/discover');
+    expect(unauthenticated.status).toBe(401);
+    expect(unauthenticated.headers.get('WWW-Authenticate')).toContain('Bearer');
+
+    await request(`/api/tokens/${mcpToken.id}`, 'DELETE', undefined, alice);
   });
 
   it('enforces agent scopes and blocks account, profile and event management', async () => {
