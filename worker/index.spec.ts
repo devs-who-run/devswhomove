@@ -293,6 +293,61 @@ describe('Worker with real D1 storage', () => {
     expect(other.activities).toHaveLength(0);
   });
 
+  it('changes visibility for a batch of owned activities atomically', async () => {
+    const secondResponse = await request('/api/activities', 'POST', activity, alice);
+    const secondId = (await secondResponse.json<{ id: string }>()).id;
+    const foreignResponse = await request('/api/activities', 'POST', activity, bob);
+    const foreignId = (await foreignResponse.json<{ id: string }>()).id;
+
+    expect(
+      (
+        await request(
+          '/api/activities/bulk-visibility',
+          'PATCH',
+          { ids: [activityId, foreignId], visibility: 'public' },
+          alice,
+        )
+      ).status,
+    ).toBe(404);
+    const unchanged = await (
+      await request('/api/activities', 'GET', undefined, alice)
+    ).json<{ activities: { visibility: string }[] }>();
+    expect(unchanged.activities.every((item) => item.visibility === 'private')).toBe(true);
+    expect(
+      (
+        await request(
+          '/api/activities/bulk-visibility',
+          'PATCH',
+          { ids: [], visibility: 'public' },
+          alice,
+        )
+      ).status,
+    ).toBe(400);
+
+    const response = await request(
+      '/api/activities/bulk-visibility',
+      'PATCH',
+      { ids: [activityId, secondId], visibility: 'public' },
+      alice,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ updated: 2 });
+    const owned = await (
+      await request('/api/activities', 'GET', undefined, alice)
+    ).json<{ activities: { id: string; visibility: string }[] }>();
+    expect(owned.activities).toHaveLength(2);
+    expect(owned.activities.every((item) => item.visibility === 'public')).toBe(true);
+
+    await request(
+      '/api/activities/bulk-visibility',
+      'PATCH',
+      { ids: [activityId, secondId], visibility: 'private' },
+      alice,
+    );
+    await request(`/api/activities/${secondId}`, 'DELETE', undefined, alice);
+    await request(`/api/activities/${foreignId}`, 'DELETE', undefined, bob);
+  });
+
   it('shows public activities only while their owner’s profile is public', async () => {
     expect(
       (await request(`/api/activities/${activityId}`, 'PATCH', { visibility: 'public' }, alice))

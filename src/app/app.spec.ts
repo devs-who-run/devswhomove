@@ -34,6 +34,7 @@ describe('App', () => {
   afterEach(() => {
     delete document.documentElement.dataset['theme'];
     delete document.documentElement.dataset['themePreference'];
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -197,6 +198,52 @@ describe('App', () => {
     await fixture.whenStable();
     expect(fixture.componentInstance.preview()).toBe(false);
     expect(fixture.componentInstance.myActivities()).toHaveLength(1);
+  });
+
+  it('selects profile activities and confirms a bulk public visibility change', async () => {
+    const viewer = { ...DEMO_PROFILE, id: 'me' };
+    const activities = DEMO_ACTIVITIES.slice(0, 2).map((activity) => ({
+      ...activity,
+      userId: 'me',
+    }));
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path === '/api/activities/bulk-visibility')
+        return Response.json({ ok: true, updated: 1 });
+      return Response.json({ ...bootstrap, viewer, activities });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const button = (label: string) =>
+      [...(fixture.nativeElement as HTMLElement).querySelectorAll('button')].find((item) =>
+        item.textContent?.includes(label),
+      ) as HTMLButtonElement;
+    button('Select activities').click();
+    fixture.detectChanges();
+    const checkbox = fixture.nativeElement.querySelector(
+      '.profile-activity-select input',
+    ) as HTMLInputElement;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    button('Make public').click();
+    await fixture.whenStable();
+
+    expect(confirm).toHaveBeenCalledOnce();
+    const update = fetchMock.mock.calls.find(
+      ([path]) => path === '/api/activities/bulk-visibility',
+    );
+    expect(update?.[1]).toMatchObject({
+      method: 'PATCH',
+      body: JSON.stringify({ ids: [activities[0].id], visibility: 'public' }),
+    });
+    expect(fixture.componentInstance.bulkVisibilityMode()).toBe(false);
+    expect(fixture.componentInstance.notice()).toBe('1 activity is now public.');
   });
 
   it('shows actionable setup feedback when OAuth is not configured', async () => {

@@ -1232,6 +1232,24 @@ async function handle(request: Request, env: Env): Promise<Response> {
       photo: key ? `/api/activities/${activityId}/photo?v=${key.slice(-12)}` : null,
     });
   }
+  if (url.pathname === '/api/activities/bulk-visibility' && method === 'PATCH') {
+    const { user } = requireIdentity(auth, undefined, true);
+    const data = await body(request);
+    const rawIds = data['ids'];
+    if (!Array.isArray(rawIds) || rawIds.length < 1 || rawIds.length > 100)
+      throw new HttpError(400, 'Select between 1 and 100 activities.');
+    const ids = [...new Set(rawIds.map((id) => text(id, 'Activity ID', 128)))];
+    const nextVisibility = visibility(data['visibility']);
+    const placeholders = ids.map(() => '?').join(', ');
+    const result = await env.DB.prepare(
+      `UPDATE activities SET visibility = ? WHERE user_id = ? AND id IN (${placeholders})
+      AND (SELECT COUNT(*) FROM activities WHERE user_id = ? AND id IN (${placeholders})) = ?`,
+    )
+      .bind(nextVisibility, user.id, ...ids, user.id, ...ids, ids.length)
+      .run();
+    if (result.meta.changes !== ids.length) throw new HttpError(404, 'Activity not found.');
+    return json({ ok: true, updated: ids.length });
+  }
   const activityMatch = /^\/api\/activities\/([^/]+)$/.exec(url.pathname);
   if (activityMatch && (method === 'PATCH' || method === 'DELETE')) {
     const identity = requireIdentity(auth, undefined, true);
