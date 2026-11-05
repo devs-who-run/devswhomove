@@ -61,7 +61,8 @@ function profile(row: UserRow): Profile {
 
 async function identity(request: Request, env: Env): Promise<Identity | null> {
   const authorization = request.headers.get('Authorization');
-  if (authorization) {
+  // Any Authorization header (even empty) bypasses the Origin check, so it must never fall back to the session cookie.
+  if (authorization !== null) {
     const match = /^Bearer (dwm_[a-f0-9]{64})$/.exec(authorization);
     if (!match) throw new HttpError(401, 'Invalid agent token.');
     const token = await env.DB.prepare(
