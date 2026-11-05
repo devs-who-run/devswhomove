@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
+import { convertV4MiniflareOptions, Miniflare, Response as WorkerResponse } from 'miniflare';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
-import { createHash, generateKeyPairSync } from 'node:crypto';
+import { createCipheriv, createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
+import { ATPROTO_OAUTH_SCOPE } from './atproto';
 
 describe('Worker with real D1 storage', () => {
   let runtime: Miniflare;
@@ -140,6 +141,22 @@ describe('Worker with real D1 storage', () => {
           APP_URL: origin,
           ATPROTO_OAUTH_PRIVATE_KEY: atprotoSigningKey,
           ATPROTO_SESSION_KEY: atprotoSessionKey,
+        },
+        outboundService: async (request) => {
+          if (request.url === 'https://auth.example/.well-known/oauth-authorization-server')
+            return WorkerResponse.json({
+              issuer: 'https://auth.example',
+              authorization_endpoint: 'https://auth.example/authorize',
+              token_endpoint: 'https://auth.example/token',
+              pushed_authorization_request_endpoint: 'https://auth.example/par',
+              response_types_supported: ['code'],
+              grant_types_supported: ['authorization_code', 'refresh_token'],
+              code_challenge_methods_supported: ['S256'],
+              token_endpoint_auth_methods_supported: ['none'],
+              dpop_signing_alg_values_supported: ['ES256'],
+              client_id_metadata_document_supported: true,
+            });
+          throw new Error(`Unexpected external request: ${request.url}`);
         },
       }),
     );
@@ -669,6 +686,77 @@ describe('Worker with real D1 storage', () => {
         { name: 'bob', avatar: '' },
       ],
     });
+  });
+
+  it('restricts encoded AT-URI attendee lists to the host and includes both account providers', async () => {
+    const did = 'did:plc:7sagqfh4v4t6zl7bdwbikdc2';
+    const uri = `at://${did}/dev.devswhorun.event/attendees`;
+    const session = 'atproto-attendee-host-session';
+    const path = `/api/events/${encodeURIComponent(uri)}/attendees`;
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', Buffer.from(atprotoSessionKey, 'base64'), iv);
+    cipher.setAAD(Buffer.from(`session:${did}`));
+    const ciphertext = Buffer.concat([
+      cipher.update(
+        JSON.stringify({
+          dpopJwk: privateKey.export({ format: 'jwk' }),
+          authMethod: { method: 'none' },
+          tokenSet: {
+            sub: did,
+            iss: 'https://auth.example',
+            aud: 'https://pds.example',
+            scope: ATPROTO_OAUTH_SCOPE,
+            token_type: 'DPoP',
+            access_token: 'test-access-token',
+            expires_at: '2099-01-01T00:00:00.000Z',
+          },
+        }),
+      ),
+      cipher.final(),
+      cipher.getAuthTag(),
+    ]);
+    await db.batch([
+      db
+        .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+        .bind(did, 'host.example', 'AT Protocol Host', new Date().toISOString()),
+      db
+        .prepare('INSERT INTO atproto_sessions (token_hash, did, expires_at) VALUES (?, ?, ?)')
+        .bind(hash(session), did, '2099-01-01T00:00:00.000Z'),
+      db
+        .prepare(
+          'INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)',
+        )
+        .bind(
+          did,
+          `${iv.toString('base64')}.${ciphertext.toString('base64')}`,
+          new Date().toISOString(),
+        ),
+      db
+        .prepare(
+          `INSERT INTO atproto_events
+            (uri, did, rkey, record_json, title, sport, starts_at, location, level, capacity, indexed_at)
+          VALUES (?, ?, 'attendees', '{}', 'AT Protocol event', 'Running', ?, 'Park', 'All', 5, ?)`,
+        )
+        .bind(uri, did, '2098-01-01T09:00:00.000Z', new Date().toISOString()),
+      db
+        .prepare('INSERT INTO atproto_event_attendees (event_uri, attendee_id) VALUES (?, ?), (?, ?)')
+        .bind(uri, 'github:alice', uri, `atproto:${did}`),
+    ]);
+    try {
+      expect((await request(path)).status).toBe(401);
+      expect((await request(path, 'GET', undefined, bob)).status).toBe(403);
+      const response = await request(path, 'GET', undefined, session);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        attendees: [
+          { name: 'AT Protocol Host', avatar: '' },
+          { name: 'Alice', avatar: '' },
+        ],
+      });
+    } finally {
+      await db.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind(did).run();
+      await db.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(did).run();
+    }
   });
 
   it('enforces capacity atomically, treats repeat joins as idempotent and allows leaving', async () => {
