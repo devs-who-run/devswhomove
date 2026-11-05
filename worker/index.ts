@@ -1323,6 +1323,58 @@ async function handle(request: Request, env: Env): Promise<Response> {
     ]);
     return json({ id }, 201);
   }
+  const attendeeMatch = /^\/api\/events\/([^/]+)\/attendees$/.exec(url.pathname);
+  const attendeeEventId = attendeeMatch ? decodedPathPart(attendeeMatch[1]) : '';
+  if (attendeeMatch && method === 'GET') {
+    const identity = requireIdentity(auth, undefined, true);
+    if (attendeeEventId.startsWith('at://')) {
+      const event = await env.DB.prepare('SELECT did FROM atproto_events WHERE uri = ?')
+        .bind(attendeeEventId)
+        .first<{ did: string }>();
+      if (!event) throw new HttpError(404, 'Event not found.');
+      if (event.did !== identity.user.id)
+        throw new HttpError(403, 'Only the host can view event attendees.');
+      const attendees = await env.DB.prepare(
+        `SELECT name, avatar FROM (
+          SELECT u.name AS name, u.avatar AS avatar
+          FROM atproto_event_attendees a JOIN users u
+            ON a.attendee_id = 'github:' || u.id
+          WHERE a.event_uri = ?
+          UNION ALL
+          SELECT COALESCE(NULLIF(u.name, ''), u.handle, 'AT Protocol member') AS name,
+            u.avatar AS avatar
+          FROM atproto_event_attendees a LEFT JOIN atproto_accounts u
+            ON a.attendee_id = 'atproto:' || u.did
+          WHERE a.event_uri = ? AND a.attendee_id LIKE 'atproto:%'
+        ) ORDER BY name`,
+      )
+        .bind(attendeeEventId, attendeeEventId)
+        .all<{ name: string; avatar: string }>();
+      return json({ attendees: attendees.results });
+    }
+    const event = await env.DB.prepare('SELECT host_id FROM events WHERE id = ?')
+      .bind(attendeeEventId)
+      .first<{ host_id: string }>();
+    if (!event) throw new HttpError(404, 'Event not found.');
+    if (event.host_id !== identity.user.id)
+      throw new HttpError(403, 'Only the host can view event attendees.');
+    const attendees = await env.DB.prepare(
+      `SELECT name, avatar FROM (
+        SELECT u.name AS name, u.avatar AS avatar
+        FROM event_attendees a JOIN users u ON u.id = a.user_id
+        WHERE a.event_id = ?
+        UNION ALL
+        SELECT COALESCE(NULLIF(u.name, ''), u.handle, 'AT Protocol member') AS name,
+          u.avatar AS avatar
+        FROM atproto_external_event_attendees a LEFT JOIN atproto_accounts u
+          ON a.attendee_id = 'atproto:' || u.did
+        WHERE a.event_id = ? AND a.attendee_id LIKE 'atproto:%'
+      ) ORDER BY name`,
+    )
+      .bind(attendeeEventId, attendeeEventId)
+      .all<{ name: string; avatar: string }>();
+    return json({ attendees: attendees.results });
+  }
   const eventMatch = /^\/api\/events\/([^/]+)(\/join)?$/.exec(url.pathname);
   const eventId = eventMatch ? decodedPathPart(eventMatch[1]) : '';
   if (eventMatch && !eventMatch[2] && method === 'PATCH') {

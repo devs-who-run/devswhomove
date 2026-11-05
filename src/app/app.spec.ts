@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './app';
-import { DEMO_ACTIVITIES, DEMO_PROFILE } from './demo';
+import { DEMO_ACTIVITIES, DEMO_EVENTS, DEMO_PROFILE } from './demo';
 import type { Bootstrap } from './models';
 import { provideRouter, Router } from '@angular/router';
 import { routes } from './app.routes';
@@ -79,6 +79,66 @@ describe('App', () => {
     expect(fixture.nativeElement.querySelectorAll('.activity-card')).toHaveLength(1);
     expect(fixture.componentInstance.activities()).toHaveLength(4);
   });
+
+  it.each([
+    ['success', 'before'],
+    ['error', 'before'],
+    ['success', 'after'],
+    ['error', 'after'],
+  ] as const)(
+    'ignores stale attendee request %s settling %s the latest request',
+    async (outcome, order) => {
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      const app = fixture.componentInstance;
+      const event = DEMO_EVENTS[0];
+      let resolveOld!: (response: Response) => void;
+      let rejectOld!: (error: Error) => void;
+      let resolveNew!: (response: Response) => void;
+      vi.mocked(fetch)
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve, reject) => {
+              resolveOld = resolve;
+              rejectOld = reject;
+            }),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve) => {
+              resolveNew = resolve;
+            }),
+        );
+
+      const oldRequest = app.toggleAttendees(event);
+      await app.toggleAttendees(event);
+      expect(app.attendeeEvent()).toBeNull();
+      expect(app.loadingAttendees()).toBeNull();
+      const newRequest = app.toggleAttendees(event);
+      const attendees = [{ name: 'Current attendee', avatar: '' }];
+      const settleOld = async () => {
+        if (outcome === 'success')
+          resolveOld(Response.json({ attendees: [{ name: 'Stale attendee', avatar: '' }] }));
+        else rejectOld(new Error('Stale request failed'));
+        await oldRequest;
+      };
+
+      if (order === 'before') {
+        await settleOld();
+        expect(app.eventAttendees()).toEqual([]);
+        expect(app.attendeeEvent()).toBe(event.id);
+        expect(app.loadingAttendees()).toBe(event.id);
+        expect(app.error()).toBe('');
+      }
+      resolveNew(Response.json({ attendees }));
+      await newRequest;
+      if (order === 'after') await settleOld();
+      expect(app.eventAttendees()).toEqual(attendees);
+      expect(app.attendeeEvent()).toBe(event.id);
+      expect(app.loadingAttendees()).toBeNull();
+      expect(app.error()).toBe('');
+    },
+  );
 
   it('shows a sign-in prompt at /profile, never a sample identity', async () => {
     const fixture = TestBed.createComponent(App);
