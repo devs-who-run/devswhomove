@@ -75,6 +75,7 @@ export class App {
   preparePhoto = preparePhoto;
   private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('dialog');
   private routeRequest = 0;
+  private attendeeRequest = 0;
 
   readonly activities = computed(() => (this.preview() ? DEMO_ACTIVITIES : this.liveActivities()));
   readonly events = computed(() => (this.preview() ? DEMO_EVENTS : this.liveEvents()));
@@ -483,8 +484,10 @@ export class App {
   }
 
   async toggleAttendees(event: SportEvent): Promise<void> {
+    const request = ++this.attendeeRequest;
     if (this.attendeeEvent() === event.id) {
       this.attendeeEvent.set(null);
+      this.loadingAttendees.set(null);
       return;
     }
     this.attendeeEvent.set(event.id);
@@ -495,14 +498,14 @@ export class App {
       const result = await this.api<{ attendees: EventAttendee[] }>(
         `/api/events/${encodeURIComponent(event.id)}/attendees`,
       );
-      if (this.attendeeEvent() === event.id) this.eventAttendees.set(result.attendees);
+      if (request === this.attendeeRequest) this.eventAttendees.set(result.attendees);
     } catch (error) {
-      if (this.attendeeEvent() === event.id) {
+      if (request === this.attendeeRequest) {
         this.error.set(this.message(error));
         this.attendeeEvent.set(null);
       }
     } finally {
-      if (this.loadingAttendees() === event.id) this.loadingAttendees.set(null);
+      if (request === this.attendeeRequest) this.loadingAttendees.set(null);
     }
   }
 
