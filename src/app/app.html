@@ -252,6 +252,21 @@
                   </button>
                 }
               </div>
+              @if (profileHidden()) {
+                <div class="privacy-callout" style="margin: 0 0 18px" role="note">
+                  <app-icon name="lock" />
+                  <div>
+                    <strong>Your profile is private.</strong>
+                    <p>
+                      Profiles are private by default. Make your profile public to share your public
+                      activities with the community.
+                    </p>
+                  </div>
+                  <button class="text-button" (click)="openModal('profile')">
+                    Make profile public <app-icon name="arrow" />
+                  </button>
+                </div>
+              }
               @for (activity of filteredActivities(); track activity.id) {
                 <article class="activity-card">
                   <div class="activity-header">
@@ -337,11 +352,23 @@
                     /></span>
                   </div>
                   <footer class="activity-footer">
-                    <span
-                      ><app-icon [name]="activity.visibility === 'private' ? 'lock' : 'globe'" />{{
-                        activity.visibility === 'private' ? 'Only you' : 'Public activity'
-                      }}</span
-                    >
+                    @if (
+                      activity.visibility === 'public' &&
+                      activity.userId === viewer()?.id &&
+                      profileHidden()
+                    ) {
+                      <span title="Make your profile public to share this activity."
+                        ><app-icon name="lock" />Public · hidden while your profile is private</span
+                      >
+                    } @else {
+                      <span
+                        ><app-icon
+                          [name]="activity.visibility === 'private' ? 'lock' : 'globe'"
+                        />{{
+                          activity.visibility === 'private' ? 'Only you' : 'Public activity'
+                        }}</span
+                      >
+                    }
                     @if (activity.source === 'agent') {
                       <span class="agent-label"
                         ><app-icon name="terminal" /> Logged by an agent</span
@@ -795,8 +822,8 @@
                       >
                         <app-icon [name]="activity.visibility === 'private' ? 'lock' : 'globe'" />{{
                           activity.visibility
-                        }}</button
-                      >
+                        }}
+                      </button>
                     }
                     <button
                       class="text-button danger"
@@ -823,7 +850,10 @@
             <div class="empty-state">
               <app-icon name="user" />
               <h1>Your profile starts with you.</h1>
-              <p>Sign in with GitHub or AT Protocol to create your own sports profile and track your progress.</p>
+              <p>
+                Sign in with GitHub or AT Protocol to create your own sports profile and track your
+                progress.
+              </p>
               <button class="button primary" (click)="login()">
                 <app-icon name="github" /> Sign in with GitHub
               </button>
@@ -877,8 +907,8 @@
                 </p>
                 <div>
                   <app-icon name="lock" /><span
-                  ><strong>Your data, your rules</strong>GitHub accounts can log private
-                  sessions. AT Protocol accounts publish activity records publicly.</span
+                    ><strong>Your data, your rules</strong>GitHub accounts can log private sessions.
+                    AT Protocol accounts publish activity records publicly.</span
                   >
                 </div>
                 <div>
@@ -1096,9 +1126,9 @@
     } @else if (modal() === 'activity') {
       @if (viewer()?.provider === 'atproto') {
         <div class="banner public-data-warning" role="note">
-          This activity will be written to your public PDS repository. Its title, sport, exact
-          time, duration, distance, and notes are public and may be copied permanently. Avoid
-          health details and precise locations; photos are disabled for AT Protocol accounts.
+          This activity will be written to your public PDS repository. Its title, sport, exact time,
+          duration, distance, and notes are public and may be copied permanently. Avoid health
+          details and precise locations; photos are disabled for AT Protocol accounts.
         </div>
         <label class="checkbox-label public-confirm"
           ><input
@@ -1218,6 +1248,12 @@
         <p class="form-help">
           <app-icon name="lock" />Private by default. Share only when you’re ready.
         </p>
+        @if (activityForm.visibility === 'public' && profileHidden()) {
+          <div class="banner public-data-warning" role="note">
+            Your profile is private, so this activity stays hidden until you make your profile
+            public.
+          </div>
+        }
       }
     }
     @if (modal() === 'event') {
@@ -1308,8 +1344,8 @@
     @if (modal() === 'profile') {
       @if (viewer()?.provider === 'atproto') {
         <div class="banner public-data-warning" role="note">
-          Your name, bio, and selected sports are public PDS records. Avoid personal contact
-          details or sensitive information. AT Protocol profiles cannot be private in this app.
+          Your name, bio, and selected sports are public PDS records. Avoid personal contact details
+          or sensitive information. AT Protocol profiles cannot be private in this app.
         </div>
         <label class="checkbox-label public-confirm"
           ><input
@@ -1367,8 +1403,9 @@
           <option value="public">Public · Anyone can view my profile</option>
         </select>
         <p class="form-help">
-          <app-icon name="lock" />Private activities stay private, even with a public profile.
-          Hosted events remain public.
+          <app-icon name="lock" />Profiles are private by default. Make yours public to share public
+          activities with the community. Private activities stay private, even with a public
+          profile. Hosted events remain public.
         </p>
       }
     }
