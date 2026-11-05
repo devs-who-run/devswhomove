@@ -85,6 +85,19 @@ describe('App', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Avery Chen');
   });
 
+  it('shows the live MCP connection details on /agents', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/agents');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const html = fixture.nativeElement as HTMLElement;
+    expect(html.textContent).toContain('MCP is ready to connect');
+    expect(html.textContent).toContain('https://devswhorun.dev/mcp');
+    expect(html.textContent).toContain('Bearer YOUR_AGENT_TOKEN');
+    expect(html.textContent).not.toContain('MCP next');
+  });
+
   it('loads the signed-in identity on a direct /profile route', async () => {
     vi.mocked(fetch).mockResolvedValue(
       Response.json({
