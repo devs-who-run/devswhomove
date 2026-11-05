@@ -20,6 +20,7 @@ export interface Profile {
   location: string;
   sports: Sport[];
   visibility: Visibility;
+  provider?: 'github' | 'atproto';
 }
 
 export interface Activity {
@@ -67,4 +68,5 @@ export interface Bootstrap {
   activities: Activity[];
   events: SportEvent[];
   githubConfigured: boolean;
+  atprotoConfigured?: boolean;
 }

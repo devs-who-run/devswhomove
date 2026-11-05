@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "pnpm run build && wrangler dev",
+    "start": "pnpm run build && wrangler dev --var APP_URL:http://127.0.0.1:8787",
     "dev:ui": "ng serve --proxy-config proxy.conf.json",
-    "dev:api": "wrangler dev",
+    "dev:api": "wrangler dev --var APP_URL:http://127.0.0.1:4200",
     "build": "ng build",
     "deploy": "pnpm run build && wrangler deploy",
     "db:local": "wrangler d1 migrations apply devs-who-move --local",
@@ -22,6 +22,10 @@
   },
   "packageManager": "pnpm@12.16.1",
   "dependencies": {
+    "@atproto/api": "^0.30.0",
+    "@atproto/jwk-jose": "^0.2.4",
+    "@atproto-labs/handle-resolver": "^0.4.10",
+    "@atproto/oauth-client": "^0.9.0",
     "@angular/common": "^22.2.0",
     "@angular/compiler": "^22.2.0",
     "@angular/core": "^22.2.0",

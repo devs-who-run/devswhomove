@@ -15,22 +15,39 @@ pnpm start
 
 Commit dependency changes with `pnpm-lock.yaml`. Native dependency build scripts are explicitly allowed in `pnpm-workspace.yaml`; review new build-script requests before approving them with `pnpm approve-builds`.
 
-Open http://localhost:8787. An empty anonymous community shows **explicitly labelled sample content**, never inserted into the database. After sign-in, the app uses only persisted data. API failures display errors rather than falling back to samples.
+Open http://127.0.0.1:8787. `pnpm start` configures `APP_URL` for this loopback origin. An empty anonymous community shows **explicitly labelled sample content**, never inserted into the database. After sign-in, the app uses only persisted data. API failures display errors rather than falling back to samples.
 
-For frontend hot reload, run `pnpm run dev:api` and `pnpm run dev:ui` in separate terminals. Open http://localhost:4200. OAuth redirects return to `APP_URL` (port 8787 by default); use that origin for testing the full authentication flow. Browser mutations intentionally require the configured `APP_URL` origin, so use port 8787 for mutations, or set `APP_URL` to `http://localhost:4200` locally when using the proxy.
+For frontend hot reload, run `pnpm run dev:api` and `pnpm run dev:ui` in separate terminals. `dev:api` configures `APP_URL` as `http://127.0.0.1:4200` for the proxy; open http://127.0.0.1:4200. Use the same `127.0.0.1` host for the app and OAuth callback so the state cookie is sent on the loopback redirect.
 
 ## GitHub sign-in
 
 Create a **GitHub OAuth App** (not a GitHub App) with:
 
-- Homepage URL: `http://localhost:8787`
-- Authorization callback URL: `http://localhost:8787/auth/github/callback`
+- Homepage URL: `http://127.0.0.1:8787`
+- Authorization callback URL: `http://127.0.0.1:8787/auth/github/callback`
 
 Copy `.dev.vars.example` to `.dev.vars`, and fill in the client ID and secret. Restart Wrangler. Never commit `.dev.vars`.
 
 The Worker requests `read:user`, not repository or email permissions. GitHub access tokens are used only during sign-in and not stored. Browser sessions use hashed opaque tokens and HTTP-only, SameSite cookies (Secure on HTTPS), expire in 30 days, and are invalidated on logout. OAuth state is random, cookie-bound and expires in 10 minutes.
 
-New profiles and activities are **private by default**. Edit your profile to choose sports, bio, approximate location and public/private visibility. Publishing an individual activity does not override a private profile. Hosting an event is explicitly public even with a private profile.
+For GitHub accounts, new profiles and activities are **private by default**. Edit your profile to choose sports, bio, approximate location and public/private visibility. Publishing an individual activity does not override a private profile. Hosting an event is explicitly public even with a private profile. AT Protocol accounts are public-only; see the privacy notes below.
+
+## AT Protocol sign-in and public data
+
+AT Protocol sign-in uses OAuth with PKCE and DPoP. Set `ATPROTO_OAUTH_PRIVATE_KEY` to a base64-encoded PKCS#8 P-256 private key PEM, and `ATPROTO_SESSION_KEY` to a base64-encoded, random 32-byte AES key. Generate local development values with:
+
+```sh
+openssl ecparam -name prime256v1 -genkey -noout \
+  | openssl pkcs8 -topk8 -nocrypt -outform PEM \
+  | base64 | tr -d '\n'
+openssl rand -base64 32 | tr -d '\n'
+```
+
+Put each result in `.dev.vars` beside `wrangler.jsonc`; never commit either key. Use separate keys in production and configure them as Worker secrets. The signing key is published only through the OAuth JWKS endpoint; the private key and encrypted OAuth sessions are never published.
+
+An AT Protocol personal data server (PDS) is public storage. Profiles, activities, and hosted events for AT Protocol accounts are public records; a public record can be copied, indexed, or cached by others and deleting it cannot guarantee those copies disappear. Do not publish precise home/work locations, live location or routes, private contact details, health or other sensitive notes, attendance identities, or information you would not want permanently public. The app warns users and requires confirmation before public writes. Photos are not supported for these accounts. RSVP identities and agent tokens remain in Cloudflare and are not written to the PDS.
+
+The PDS is canonical for AT Protocol profiles, activities, and hosted events. Cloudflare D1 holds a validated, bounded read projection for the community feed; synchronization is throttled to once every five minutes and capped at 1,000 records per collection per sync. OAuth state and refresh sessions are encrypted in D1. Never put OAuth signing keys, session-encryption keys, agent tokens, or credentials in PDS records.
 
 ## Included in this slice
 
@@ -43,6 +60,7 @@ New profiles and activities are **private by default**. Edit your profile to cho
 - Public profile links: `/profile/GITHUB_USERNAME`. Private profiles return 404 to other users. Cloudflare's SPA fallback supports direct links and refreshes.
 - Public events with local-time display, capacity, host RSVP, joining/leaving, host editing and host cancellation. Hosts cannot lower capacity below the number of people already going. Capacity is enforced in one database statement.
 - GitHub OAuth sign-in, D1-backed sessions and origin checks for cookie-authenticated mutations.
+- AT Protocol OAuth sign-in with PDS-backed public profiles, activities and hosted events; private RSVP identities and agent tokens remain in Cloudflare.
 - Scoped, hashed, expiring and revocable agent bearer tokens, with idempotent private uploads.
 
 Activity lists and summaries currently cover the latest 100 visible sessions. Events show the next 100 upcoming sessions. Event details and host names are public; attendee identities are not exposed.
@@ -52,6 +70,7 @@ Activity lists and summaries currently cover the latest 100 visible sessions. Ev
 Sign in, open **Your agents**, choose permissions and create a token. Copy it once into the agent's secret manager. Tokens expire in 90 days; at most 10 unexpired tokens per account. Token management, publication, profile privacy and event mutations require a browser session.
 
 Supported scopes: `activities:read`, `activities:write`, `events:read`.
+AT Protocol agent tokens are read-only for activities; public PDS writes are not available to agents.
 
 An HTTP-capable agent can upload a session:
 
@@ -129,6 +148,8 @@ Set the returned `database_id` in `wrangler.jsonc`. Set `vars.APP_URL` to the fi
 ```sh
 pnpm exec wrangler secret put GITHUB_CLIENT_ID
 pnpm exec wrangler secret put GITHUB_CLIENT_SECRET
+pnpm exec wrangler secret put ATPROTO_OAUTH_PRIVATE_KEY
+pnpm exec wrangler secret put ATPROTO_SESSION_KEY
 pnpm run db:remote   # also run after pulling new migrations
 pnpm run deploy
 ```

@@ -49,6 +49,7 @@ export class App {
   readonly liveActivities = signal<Activity[]>([]);
   readonly liveEvents = signal<SportEvent[]>([]);
   readonly githubConfigured = signal(false);
+  readonly atprotoConfigured = signal(false);
   readonly preview = signal(false);
   readonly selectedSport = signal<Sport | 'All'>('All');
   readonly feedMode = signal<'community' | 'mine'>('community');
@@ -62,6 +63,7 @@ export class App {
   readonly photo = signal<Blob | null>(null);
   readonly photoPreview = signal('');
   readonly photoBusy = signal(false);
+  readonly publicDisclosure = signal(false);
   readonly editingEvent = signal<string | null>(null);
   preparePhoto = preparePhoto;
   private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('dialog');
@@ -226,6 +228,7 @@ export class App {
       this.liveActivities.set(data.activities);
       this.liveEvents.set(data.events);
       this.githubConfigured.set(data.githubConfigured);
+      this.atprotoConfigured.set(data.atprotoConfigured ?? false);
       this.preview.set(!data.viewer && data.activities.length === 0 && data.events.length === 0);
     } catch (error) {
       this.error.set(this.message(error));
@@ -279,10 +282,22 @@ export class App {
     window.location.assign('/auth/github');
   }
 
+  loginAtproto(): void {
+    if (!this.atprotoConfigured()) {
+      this.error.set(
+        'AT Protocol sign-in needs setup: add the OAuth signing and session encryption keys to the Worker. See README.md.',
+      );
+      return;
+    }
+    const handle = window.prompt('Enter your AT Protocol handle or DID');
+    if (handle?.trim())
+      window.location.assign(`/auth/atproto?handle=${encodeURIComponent(handle.trim())}`);
+  }
+
   private signedIn(): boolean {
     if (this.viewer()) return true;
     this.notice.set(
-      'Your story starts here. Sign in with GitHub to log an activity, join an event, or connect an agent.',
+      'Your story starts here. Sign in with GitHub or AT Protocol to log an activity, join an event, or connect an agent.',
     );
     return false;
   }
@@ -291,8 +306,10 @@ export class App {
     if (!this.signedIn()) return;
     this.error.set('');
     this.notice.set('');
+    this.publicDisclosure.set(false);
     if (modal === 'activity') {
       this.activityForm = this.emptyActivity();
+      if (this.viewer()?.provider === 'atproto') this.activityForm.visibility = 'public';
       this.removePhoto();
     }
     if (modal === 'event') {
@@ -305,7 +322,7 @@ export class App {
         name: user.name,
         bio: user.bio,
         location: user.location,
-        visibility: user.visibility,
+        visibility: user.provider === 'atproto' ? 'public' : user.visibility,
         sports: [...user.sports],
       };
     }
@@ -366,6 +383,10 @@ export class App {
 
   async save(): Promise<void> {
     if (this.saving()) return;
+    if (this.viewer()?.provider === 'atproto' && !this.publicDisclosure()) {
+      this.error.set('Confirm that this will be publicly visible before saving.');
+      return;
+    }
     this.saving.set(true);
     this.error.set('');
     try {
@@ -418,7 +439,9 @@ export class App {
   async join(event: SportEvent): Promise<void> {
     if (!this.signedIn()) return;
     await this.action(async () => {
-      await this.api(`/api/events/${event.id}/join`, 'POST', { join: !event.joined });
+      await this.api(`/api/events/${encodeURIComponent(event.id)}/join`, 'POST', {
+        join: !event.joined,
+      });
       this.notice.set(
         event.joined
           ? 'You have left the event.'
@@ -446,7 +469,7 @@ export class App {
   async cancelEvent(event: SportEvent): Promise<void> {
     if (!window.confirm(`Cancel "${event.title}" for everyone?`)) return;
     await this.action(async () => {
-      await this.api(`/api/events/${event.id}`, 'POST', {});
+      await this.api(`/api/events/${encodeURIComponent(event.id)}`, 'POST', {});
       await this.load();
       this.notice.set('Event cancelled. It is no longer available to join.');
     });
@@ -462,7 +485,9 @@ export class App {
     )
       return;
     await this.action(async () => {
-      await this.api(`/api/activities/${activity.id}`, 'PATCH', { visibility: next });
+      await this.api(`/api/activities/${encodeURIComponent(activity.id)}`, 'PATCH', {
+        visibility: next,
+      });
       await this.load();
       this.notice.set(`Activity is now ${next}.`);
     });
@@ -471,7 +496,7 @@ export class App {
   async deleteActivity(activity: Activity): Promise<void> {
     if (!window.confirm(`Delete "${activity.title}"? This cannot be undone.`)) return;
     await this.action(async () => {
-      await this.api(`/api/activities/${activity.id}`, 'DELETE');
+      await this.api(`/api/activities/${encodeURIComponent(activity.id)}`, 'DELETE');
       await this.load();
       this.notice.set('Activity deleted.');
     });
@@ -490,7 +515,7 @@ export class App {
     await this.action(async () => {
       const scopes: AgentScope[] = [];
       if (this.agentRead) scopes.push('activities:read');
-      if (this.agentWrite) scopes.push('activities:write');
+      if (this.agentWrite && this.viewer()?.provider !== 'atproto') scopes.push('activities:write');
       if (this.agentEvents) scopes.push('events:read');
       const result = await this.api<{ token: string }>('/api/tokens', 'POST', {
         name: this.agentName,
