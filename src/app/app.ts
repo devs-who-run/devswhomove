@@ -52,6 +52,8 @@ export class App {
   readonly preview = signal(false);
   readonly selectedSport = signal<Sport | 'All'>('All');
   readonly feedMode = signal<'community' | 'mine'>('community');
+  readonly bulkVisibilityMode = signal(false);
+  readonly selectedActivityIds = signal<string[]>([]);
   readonly modal = signal<Modal>(null);
   readonly tokens = signal<AgentToken[]>([]);
   readonly newToken = signal('');
@@ -92,6 +94,12 @@ export class App {
     this.activities().filter(
       (activity) => activity.userId === (this.viewer()?.id || DEMO_PROFILE.id),
     ),
+  );
+  readonly selectedProfileActivityCount = computed(
+    () =>
+      this.profileActivities().filter((activity) =>
+        this.selectedActivityIds().includes(activity.id),
+      ).length,
   );
   readonly weekly = computed(() => {
     const start = new Date();
@@ -244,6 +252,8 @@ export class App {
       .slice(1)
       .split('/');
     this.page.set(this.nav.some((item) => item.page === page) ? (page as Page) : 'feed');
+    this.bulkVisibilityMode.set(false);
+    this.selectedActivityIds.set([]);
     if (this.page() !== 'agents') this.newToken.set('');
     this.selectedSport.set('All');
     this.remoteProfile.set(null);
@@ -465,6 +475,48 @@ export class App {
       await this.api(`/api/activities/${activity.id}`, 'PATCH', { visibility: next });
       await this.load();
       this.notice.set(`Activity is now ${next}.`);
+    });
+  }
+
+  toggleBulkVisibilityMode(): void {
+    this.bulkVisibilityMode.update((enabled) => !enabled);
+    this.selectedActivityIds.set([]);
+  }
+
+  toggleActivitySelection(activityId: string): void {
+    this.selectedActivityIds.update((ids) =>
+      ids.includes(activityId) ? ids.filter((id) => id !== activityId) : [...ids, activityId],
+    );
+  }
+
+  selectAllProfileActivities(): void {
+    this.selectedActivityIds.set(this.profileActivities().map((activity) => activity.id));
+  }
+
+  clearActivitySelection(): void {
+    this.selectedActivityIds.set([]);
+  }
+
+  async setSelectedVisibility(next: Visibility): Promise<void> {
+    const ids = this.profileActivities()
+      .filter((activity) => this.selectedActivityIds().includes(activity.id))
+      .map((activity) => activity.id);
+    if (!ids.length || this.saving()) return;
+    if (
+      next === 'public' &&
+      !window.confirm(
+        `Make ${ids.length} ${ids.length === 1 ? 'activity' : 'activities'} public? They will appear in the community when your profile is public.`,
+      )
+    )
+      return;
+    await this.action(async () => {
+      await this.api('/api/activities/bulk-visibility', 'PATCH', { ids, visibility: next });
+      await this.load();
+      this.selectedActivityIds.set([]);
+      this.bulkVisibilityMode.set(false);
+      this.notice.set(
+        `${ids.length} ${ids.length === 1 ? 'activity is' : 'activities are'} now ${next}.`,
+      );
     });
   }
 

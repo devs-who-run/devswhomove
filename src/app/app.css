@@ -1265,6 +1265,17 @@ h1 span {
   margin-top: 32px;
   margin-bottom: 16px;
 }
+.profile-bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.profile-bulk-actions > span {
+  color: #7a857c;
+  font-size: 12px;
+}
 .profile-activity {
   display: flex;
   align-items: center;
@@ -1274,6 +1285,21 @@ h1 span {
   border: 1px solid var(--border);
   border-radius: 9px;
   margin-top: 10px;
+}
+.profile-activity.bulk-selected {
+  border-color: #9aad7d;
+}
+.profile-activity-select {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.profile-activity-select input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--green);
+  cursor: pointer;
 }
 .activity-sport-icon {
   display: flex;

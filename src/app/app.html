@@ -677,14 +677,60 @@
             </section>
             <div class="section-top profile-recent">
               <h2>Recent movement</h2>
-              @if (viewer() && !remoteProfile()) {
-                <button class="text-button" (click)="openModal('activity')">
-                  Log activity <app-icon name="plus" />
-                </button>
-              }
+              <div class="profile-bulk-actions">
+                @if (viewer() && !remoteProfile() && profileActivities().length) {
+                  @if (bulkVisibilityMode()) {
+                    <button class="text-button" (click)="selectAllProfileActivities()">
+                      Select all
+                    </button>
+                    @if (selectedProfileActivityCount()) {
+                      <span>{{ selectedProfileActivityCount() }} selected</span>
+                      <button
+                        class="text-button"
+                        (click)="setSelectedVisibility('private')"
+                        [disabled]="saving()"
+                      >
+                        Make private
+                      </button>
+                      <button
+                        class="text-button"
+                        (click)="setSelectedVisibility('public')"
+                        [disabled]="saving()"
+                      >
+                        Make public
+                      </button>
+                      <button class="text-button" (click)="clearActivitySelection()">Clear</button>
+                    }
+                    <button class="text-button" (click)="toggleBulkVisibilityMode()">Done</button>
+                  } @else {
+                    <button class="text-button" (click)="toggleBulkVisibilityMode()">
+                      Select activities
+                    </button>
+                  }
+                }
+                @if (viewer() && !remoteProfile()) {
+                  <button class="text-button" (click)="openModal('activity')">
+                    Log activity <app-icon name="plus" />
+                  </button>
+                }
+              </div>
             </div>
             @for (activity of profileActivities(); track activity.id) {
-              <article class="profile-activity">
+              <article
+                class="profile-activity"
+                [class.bulk-selected]="selectedActivityIds().includes(activity.id)"
+              >
+                @if (bulkVisibilityMode() && activity.userId === viewer()?.id) {
+                  <label class="profile-activity-select">
+                    <input
+                      type="checkbox"
+                      [checked]="selectedActivityIds().includes(activity.id)"
+                      [attr.aria-label]="'Select ' + activity.title"
+                      [disabled]="saving()"
+                      (change)="toggleActivitySelection(activity.id)"
+                    />
+                  </label>
+                }
                 <span class="activity-sport-icon"><app-icon [name]="activity.sport" /></span>
                 <div>
                   <small
