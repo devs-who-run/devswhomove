@@ -199,8 +199,37 @@ export function webCryptoDigest(name: string): string {
   return name.toUpperCase().replace(/^SHA-?(\d+)$/, 'SHA-$1');
 }
 
+/**
+ * Workers reject `redirect: 'error'`, which the AT Protocol resolvers use to refuse redirects.
+ * `manual` keeps redirects unfollowed: they surface as 3xx responses the libraries reject as non-2xx.
+ */
+function edgeRequestInit<T extends RequestInit | undefined>(init: T): T {
+  return init?.redirect === 'error' ? { ...init, redirect: 'manual' } : init;
+}
+
+/** Fetch that accepts AT Protocol resolver requests in the Workers runtime. */
+const edgeFetch = (input: RequestInfo | URL, init?: RequestInit) =>
+  fetch(input, edgeRequestInit(init));
+
+/** Let library-constructed `Request`s use `redirect: 'error'` in the Workers runtime. */
+export function installEdgeRequest(): void {
+  const NativeRequest = globalThis.Request;
+  if (Object.hasOwn(NativeRequest, 'edgeRedirectShim')) return;
+  class EdgeRequest extends NativeRequest {
+    static readonly edgeRedirectShim = true;
+    constructor(input: RequestInfo | URL, init?: RequestInit) {
+      super(input, edgeRequestInit(init));
+    }
+    static [Symbol.hasInstance](value: unknown): boolean {
+      return value instanceof NativeRequest;
+    }
+  }
+  globalThis.Request = EdgeRequest as typeof Request;
+}
+
 /** Create the AT Protocol OAuth client with encrypted D1 stores and Worker WebCrypto. */
 export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
+  installEdgeRequest();
   const origin = oauthOrigin(env);
   const key = await privateKey(env);
   await encryptionKey(env, ['encrypt']);
@@ -291,8 +320,10 @@ export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
           jwks_uri: `${origin}/oauth/jwks.json`,
         }) as OAuthClientMetadataInput,
     keyset: [key],
+    fetch: edgeFetch,
     handleResolver: new AtprotoDohHandleResolver({
       dohEndpoint: 'https://cloudflare-dns.com/dns-query',
+      fetch: edgeFetch,
     }),
     responseMode: 'query',
     runtimeImplementation: {

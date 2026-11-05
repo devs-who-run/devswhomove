@@ -15,6 +15,7 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
   let db: Awaited<ReturnType<Miniflare['getD1Database']>>;
   const origin = 'https://move.example';
   let outboundCalls = 0;
+  const atprotoResolverRequests: string[] = [];
   let githubTokenWasServerSide = false;
   let githubUsername = 'octo-runner';
   const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -47,8 +48,15 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
           ATPROTO_SESSION_KEY: atprotoSessionKey,
         },
         outboundService: async (request) => {
-          outboundCalls++;
           const url = new URL(request.url);
+          if (url.hostname === 'plc.directory' || url.hostname === 'redirected.example') {
+            atprotoResolverRequests.push(url.href);
+            return new Response(null, {
+              status: 302,
+              headers: { Location: 'https://redirected.example/did.json' },
+            });
+          }
+          outboundCalls++;
           if (url.pathname === '/login/oauth/access_token') {
             expect(request.method).toBe('POST');
             const exchange = (await request.json()) as {
@@ -181,6 +189,15 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
         crypto.subtle.digest(webCryptoDigest(name), new Uint8Array([1])),
       ).resolves.toBeInstanceOf(ArrayBuffer);
     }
+  });
+
+  it('resolves AT Protocol identities in the Workers runtime without following redirects', async () => {
+    const did = 'did:plc:7sagqfh4v4t6zl7bdwbikdc2';
+    const response = await runtime.dispatchFetch(`${origin}/auth/atproto?handle=${did}`, {
+      redirect: 'manual',
+    });
+    expect(response.status).toBe(500);
+    expect(atprotoResolverRequests).toEqual([`https://plc.directory/${encodeURIComponent(did)}`]);
   });
 
   it('accepts common AT Protocol secret formats and reports invalid keys as configuration errors', async () => {
