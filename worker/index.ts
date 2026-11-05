@@ -22,8 +22,10 @@ import {
   TokenRevokedError,
 } from '@atproto/oauth-client';
 import type { Agent } from '@atproto/api';
+import { hash, secret } from './crypto';
 import { MAX_PHOTO_BYTES, sanitizeImage } from './images';
 import { handleMcp } from './mcp';
+import { handleOAuth, mcpChallenge, safeReturnTo } from './oauth';
 import { date, HttpError, number, sport, text, visibility } from './validation';
 
 interface Env {
@@ -58,19 +60,6 @@ const ACTIVITY_SELECT = `SELECT a.id, a.user_id AS userId, u.username, u.name, u
 
 const json = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
-
-/** Hash opaque browser sessions and bearer tokens before storage or lookup. */
-async function hash(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-/** Generate a cryptographically random opaque session or token. */
-function secret(): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('');
-}
 
 /** Read one named cookie from a request without exposing unrelated cookie values. */
 function cookie(request: Request, name: string): string | undefined {
@@ -148,6 +137,29 @@ function setCookie(env: Env, name: string, value: string, age: number): string {
 /** Parse a stored user row's JSON sports list into the API profile shape. */
 function profile(row: UserRow): Profile {
   return { ...row, sports: JSON.parse(row.sports) };
+}
+
+/** Remember a safe MCP authorization page to resume after sign-in, or clear a stale one. */
+function returnToCookie(env: Env, url: URL): string {
+  const returnTo = safeReturnTo(url.searchParams.get('return_to'), env.APP_URL);
+  return returnTo
+    ? setCookie(env, 'dwm_return_to', encodeURIComponent(returnTo), 600)
+    : setCookie(env, 'dwm_return_to', '', 0);
+}
+
+/** Choose where to land after sign-in: a pending MCP authorization or the welcome page. */
+function signedInLocation(env: Env, request: Request): string {
+  const appOrigin = new URL(env.APP_URL).origin;
+  let returnTo: string | null = null;
+  try {
+    returnTo = safeReturnTo(
+      decodeURIComponent(cookie(request, 'dwm_return_to') || ''),
+      env.APP_URL,
+    );
+  } catch {
+    returnTo = null;
+  }
+  return returnTo ? `${appOrigin}${returnTo}` : `${appOrigin}/?welcome=1`;
 }
 
 /** Authenticate a request using a scoped bearer token or a browser session cookie. */
@@ -805,13 +817,10 @@ async function githubAuth(request: Request, env: Env, url: URL): Promise<Respons
       scope: 'read:user',
       state,
     }).toString();
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: authorize.toString(),
-        'Set-Cookie': setCookie(env, 'dwm_oauth_state', state, 600),
-      },
-    });
+    const headers = new Headers({ Location: authorize.toString() });
+    headers.append('Set-Cookie', setCookie(env, 'dwm_oauth_state', state, 600));
+    headers.append('Set-Cookie', returnToCookie(env, url));
+    return new Response(null, { status: 302, headers });
   }
   const state = url.searchParams.get('state');
   if (!state || state !== cookie(request, 'dwm_oauth_state'))
@@ -875,9 +884,10 @@ async function githubAuth(request: Request, env: Env, url: URL): Promise<Respons
       new Date(Date.now() + 30 * 86400_000).toISOString(),
     ),
   ]);
-  const headers = new Headers({ Location: `${new URL(env.APP_URL).origin}/?welcome=1` });
+  const headers = new Headers({ Location: signedInLocation(env, request) });
   headers.append('Set-Cookie', setCookie(env, 'dwm_session', session, 30 * 86400));
   headers.append('Set-Cookie', setCookie(env, 'dwm_oauth_state', '', 0));
+  headers.append('Set-Cookie', setCookie(env, 'dwm_return_to', '', 0));
   return new Response(null, { status: 302, headers });
 }
 
@@ -895,13 +905,10 @@ async function atprotoAuth(request: Request, env: Env, url: URL): Promise<Respon
       throw new HttpError(400, 'Enter a valid AT Protocol handle or DID.');
     const state = secret();
     const authorize = await client.authorize(handle, { state, scope: ATPROTO_OAUTH_SCOPE });
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: authorize.toString(),
-        'Set-Cookie': setCookie(env, 'dwm_atproto_state', state, 600),
-      },
-    });
+    const headers = new Headers({ Location: authorize.toString() });
+    headers.append('Set-Cookie', setCookie(env, 'dwm_atproto_state', state, 600));
+    headers.append('Set-Cookie', returnToCookie(env, url));
+    return new Response(null, { status: 302, headers });
   }
 
   const result = await client.callback(url.searchParams);
@@ -962,9 +969,10 @@ async function atprotoAuth(request: Request, env: Env, url: URL): Promise<Respon
       new Date(Date.now() + 30 * 86400_000).toISOString(),
     ),
   ]);
-  const headers = new Headers({ Location: `${new URL(env.APP_URL).origin}/?welcome=1` });
+  const headers = new Headers({ Location: signedInLocation(env, request) });
   headers.append('Set-Cookie', setCookie(env, 'dwm_session', session, 30 * 86400));
   headers.append('Set-Cookie', setCookie(env, 'dwm_atproto_state', '', 0));
+  headers.append('Set-Cookie', setCookie(env, 'dwm_return_to', '', 0));
   return new Response(null, { status: 302, headers });
 }
 
@@ -986,6 +994,24 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
   if (url.pathname.startsWith('/auth/atproto') && method === 'GET')
     return atprotoAuth(request, env, url);
+  const oauthResponse = await handleOAuth(request, env, url, {
+    viewer: async () => {
+      const auth = await identity(request, env);
+      return auth && !auth.agent
+        ? {
+            id: auth.user.id,
+            name: auth.user.name,
+            username: auth.user.username,
+            provider: auth.provider,
+          }
+        : null;
+    },
+    signIn: {
+      github: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
+      atproto: Boolean(env.ATPROTO_OAUTH_PRIVATE_KEY && env.ATPROTO_SESSION_KEY),
+    },
+  });
+  if (oauthResponse) return oauthResponse;
   if (url.pathname === '/mcp')
     return handleMcp(
       request,
@@ -1549,7 +1575,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const identity = requireIdentity(auth, undefined, true);
     if (identity.provider === 'atproto') {
       const result = await env.DB.prepare(
-        `SELECT id, name, scopes, created_at AS createdAt, expires_at AS expiresAt
+        `SELECT id, name, scopes, created_at AS createdAt,
+        COALESCE(refresh_expires_at, expires_at) AS expiresAt
         FROM atproto_agent_tokens WHERE did = ? ORDER BY created_at DESC`,
       )
         .bind(identity.user.id)
@@ -1559,7 +1586,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
       });
     }
     const result = await env.DB.prepare(
-      `SELECT id, name, scopes, created_at AS createdAt, expires_at AS expiresAt
+      `SELECT id, name, scopes, created_at AS createdAt,
+        COALESCE(refresh_expires_at, expires_at) AS expiresAt
       FROM agent_tokens WHERE user_id = ? ORDER BY created_at DESC`,
     )
       .bind(identity.user.id)
@@ -1590,7 +1618,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         ? await env.DB.prepare(
             `INSERT INTO atproto_agent_tokens (id, did, token_hash, name, scopes, created_at, expires_at)
             SELECT ?, ?, ?, ?, ?, ?, ? WHERE
-            (SELECT COUNT(*) FROM atproto_agent_tokens WHERE did = ? AND expires_at > ?) < 10`,
+            (SELECT COUNT(*) FROM atproto_agent_tokens WHERE did = ? AND COALESCE(refresh_expires_at, expires_at) > ?) < 10`,
           )
             .bind(
               id,
@@ -1607,7 +1635,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         : await env.DB.prepare(
             `INSERT INTO agent_tokens (id, user_id, token_hash, name, scopes, created_at, expires_at)
             SELECT ?, ?, ?, ?, ?, ?, ? WHERE
-            (SELECT COUNT(*) FROM agent_tokens WHERE user_id = ? AND expires_at > ?) < 10`,
+            (SELECT COUNT(*) FROM agent_tokens WHERE user_id = ? AND COALESCE(refresh_expires_at, expires_at) > ?) < 10`,
           )
             .bind(
               id,
@@ -1688,10 +1716,7 @@ export default {
       if (error instanceof HttpError) {
         const response = json({ error: error.message }, error.status);
         if (new URL(request.url).pathname === '/mcp' && error.status === 401) {
-          response.headers.set(
-            'WWW-Authenticate',
-            'Bearer realm="devs-who-move MCP", scope="activities:read activities:write events:read"',
-          );
+          response.headers.set('WWW-Authenticate', mcpChallenge(env.APP_URL, 'invalid_token'));
         }
         return response;
       }

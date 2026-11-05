@@ -95,6 +95,7 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
           '0002_activity_photos.sql',
           '0003_atproto.sql',
           '0004_atproto_handle_index.sql',
+          '0005_mcp_oauth.sql',
         ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
       )
     ).join(';');
@@ -286,6 +287,50 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
       viewer: { username: 'octo-runner', name: 'Octo Runner', visibility: 'private' },
       githubConfigured: true,
     });
+  });
+
+  it('resumes only same-site MCP authorization requests after sign-in', async () => {
+    const pending = '/oauth/authorize?client_id=mcp_test&response_type=code';
+    const start = await runtime.dispatchFetch(
+      `${origin}/auth/github?return_to=${encodeURIComponent(pending)}`,
+      { redirect: 'manual' },
+    );
+    const returnCookie = start.headers
+      .getSetCookie()
+      .find((value) => value.startsWith('dwm_return_to='))!;
+    expect(returnCookie).toContain('HttpOnly; SameSite=Lax; Max-Age=600; Secure');
+    const state = new URL(start.headers.get('Location')!).searchParams.get('state')!;
+    const callback = await runtime.dispatchFetch(
+      `${origin}/auth/github/callback?code=ok&state=${state}`,
+      {
+        headers: { Cookie: `dwm_oauth_state=${state}; ${returnCookie.split(';')[0]}` },
+        redirect: 'manual',
+      },
+    );
+    expect(callback.headers.get('Location')).toBe(`${origin}${pending}`);
+    expect(
+      callback.headers.getSetCookie().find((value) => value.startsWith('dwm_return_to=')),
+    ).toContain('Max-Age=0');
+
+    for (const unsafe of ['https://evil.example/oauth/authorize?x=1', '//evil.example/', '/feed']) {
+      const rejected = await runtime.dispatchFetch(
+        `${origin}/auth/github?return_to=${encodeURIComponent(unsafe)}`,
+        { redirect: 'manual' },
+      );
+      expect(
+        rejected.headers.getSetCookie().find((value) => value.startsWith('dwm_return_to=')),
+      ).toContain('Max-Age=0');
+    }
+    const forged = await runtime.dispatchFetch(
+      `${origin}/auth/github/callback?code=ok&state=${state}`,
+      {
+        headers: {
+          Cookie: `dwm_oauth_state=${state}; dwm_return_to=${encodeURIComponent('https://evil.example/')}`,
+        },
+        redirect: 'manual',
+      },
+    );
+    expect(forged.headers.get('Location')).toBe(`${origin}/?welcome=1`);
   });
 
   it('matches returning users by immutable GitHub ID and preserves customised profiles', async () => {

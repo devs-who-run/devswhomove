@@ -1,4 +1,5 @@
 import type { AgentScope } from '../src/app/models';
+import { mcpChallenge } from './oauth';
 import { HttpError } from './validation';
 
 const PROTOCOL_VERSION = '2026-07-28';
@@ -41,10 +42,9 @@ function rpcError(
   );
 }
 
-function unauthorized(): Response {
-  return response({ error: 'Use a valid scoped agent bearer token.' }, 401, {
-    'WWW-Authenticate':
-      'Bearer realm="devs-who-move MCP", scope="activities:read activities:write events:read"',
+function unauthorized(appUrl: string): Response {
+  return response({ error: 'Sign in with MCP OAuth or use a valid scoped agent token.' }, 401, {
+    'WWW-Authenticate': mcpChallenge(appUrl),
   });
 }
 
@@ -197,6 +197,9 @@ export async function handleMcp(
   if (request.method !== 'POST')
     return new Response(null, { status: 405, headers: { Allow: 'POST' } });
 
+  const auth = await authenticate();
+  if (!auth?.agent) return unauthorized(appUrl);
+
   if (!request.headers.get('Content-Type')?.toLowerCase().startsWith('application/json'))
     return rpcError(undefined, -32600, 'Content-Type must be application/json.');
 
@@ -266,15 +269,12 @@ export async function handleMcp(
       return rpcError(requestId, -32020, 'Mcp-Name does not match the request body.');
   }
 
-  const auth = await authenticate();
-  if (!auth?.agent) return unauthorized();
-
   if (method === 'server/discover') {
     return complete(requestId, {
       supportedVersions: [PROTOCOL_VERSION],
       capabilities: { tools: {} },
       instructions:
-        'Use scoped agent tokens. Available tools read your own activities, record private activities, and read upcoming public events.',
+        'Access is limited to the permissions granted to this connection. Available tools read your own activities, record private activities, and read upcoming public events.',
       ttlMs: 3_600_000,
       cacheScope: 'private',
     });
