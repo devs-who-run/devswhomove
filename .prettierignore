@@ -3,4 +3,4 @@ dist/
 coverage/
 .angular/
 .wrangler/
-package-lock.json
+pnpm-lock.yaml

@@ -1,20 +1,23 @@
 # Devs Who Move
 
-An Angular 22 application served by a Cloudflare Worker, with D1 persistence. Scaffolded with `create-cloudflare`. The repository root contains the application, Worker, database migrations, and npm tooling.
+An Angular 22 application served by a Cloudflare Worker, with D1 persistence. Scaffolded with `create-cloudflare`. The repository root contains the application, Worker, database migrations, and pnpm tooling.
 
 ## Run locally
 
-Use Node 22.22.3+ or a current supported Node release.
+Use Node 24+ (see `.nvmrc`) and pnpm 12.16.1, pinned in `package.json`.
 
 ```sh
-npm ci
-npm run db:local
-npm start
+npm install --global pnpm@12.16.1
+pnpm install --frozen-lockfile
+pnpm run db:local
+pnpm start
 ```
+
+Commit dependency changes with `pnpm-lock.yaml`. Native dependency build scripts are explicitly allowed in `pnpm-workspace.yaml`; review new build-script requests before approving them with `pnpm approve-builds`.
 
 Open http://localhost:8787. An empty anonymous community shows **explicitly labelled sample content**, never inserted into the database. After sign-in, the app uses only persisted data. API failures display errors rather than falling back to samples.
 
-For frontend hot reload, run `npm run dev:api` and `npm run dev:ui` in separate terminals. Open http://localhost:4200. OAuth redirects return to `APP_URL` (port 8787 by default); use that origin for testing the full authentication flow. Browser mutations intentionally require the configured `APP_URL` origin, so use port 8787 for mutations, or set `APP_URL` to `http://localhost:4200` locally when using the proxy.
+For frontend hot reload, run `pnpm run dev:api` and `pnpm run dev:ui` in separate terminals. Open http://localhost:4200. OAuth redirects return to `APP_URL` (port 8787 by default); use that origin for testing the full authentication flow. Browser mutations intentionally require the configured `APP_URL` origin, so use port 8787 for mutations, or set `APP_URL` to `http://localhost:4200` locally when using the proxy.
 
 ## GitHub sign-in
 
@@ -117,17 +120,17 @@ authorization is not implemented.
 ## Deploy
 
 ```sh
-npx wrangler d1 create devs-who-move
-npx wrangler r2 bucket create devs-who-move-photos
+pnpm exec wrangler d1 create devs-who-move
+pnpm exec wrangler r2 bucket create devs-who-move-photos
 ```
 
 Set the returned `database_id` in `wrangler.jsonc`. Set `vars.APP_URL` to the final **HTTPS** origin. Create a separate production GitHub OAuth App with that origin and `/auth/github/callback`.
 
 ```sh
-npx wrangler secret put GITHUB_CLIENT_ID
-npx wrangler secret put GITHUB_CLIENT_SECRET
-npm run db:remote   # also run after pulling new migrations
-npm run deploy
+pnpm exec wrangler secret put GITHUB_CLIENT_ID
+pnpm exec wrangler secret put GITHUB_CLIENT_SECRET
+pnpm run db:remote   # also run after pulling new migrations
+pnpm run deploy
 ```
 
 Do not deploy with the placeholder database ID or localhost `APP_URL`. No deployment or remote database changes are performed by local setup.
@@ -135,10 +138,10 @@ Do not deploy with the placeholder database ID or localhost `APP_URL`. No deploy
 ## Checks
 
 ```sh
-npm run build
-npm run typecheck:worker
-npm test
-npm run test:worker
+pnpm run build
+pnpm run typecheck:worker
+pnpm test
+pnpm run test:worker
 ```
 
 Worker integration tests run in an isolated Miniflare runtime with real D1 SQL, not mocked database responses. They do not use your local or production database. Live GitHub sign-in requires OAuth credentials and is not exercised against GitHub by the automated suite.
