@@ -3,7 +3,12 @@ import { convertV4MiniflareOptions, Miniflare, Response } from 'miniflare';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
 import { createHash, generateKeyPairSync } from 'node:crypto';
-import { atprotoProfileChanges, ATPROTO_OAUTH_SCOPE, oauthClient } from './atproto';
+import {
+  atprotoProfileChanges,
+  ATPROTO_OAUTH_SCOPE,
+  oauthClient,
+  webCryptoDigest,
+} from './atproto';
 
 describe('GitHub OAuth protocol with mocked GitHub responses', () => {
   let runtime: Miniflare;
@@ -167,6 +172,15 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
       token_endpoint_auth_method: 'none',
     });
     expect(client.clientMetadata).not.toHaveProperty('jwks_uri');
+  });
+
+  it('maps OAuth digest names to WebCrypto algorithm names', async () => {
+    for (const name of ['sha256', 'sha384', 'sha512'] as const) {
+      expect(webCryptoDigest(name)).toBe(`SHA-${name.slice(3)}`);
+      await expect(
+        crypto.subtle.digest(webCryptoDigest(name), new Uint8Array([1])),
+      ).resolves.toBeInstanceOf(ArrayBuffer);
+    }
   });
 
   it('accepts common AT Protocol secret formats and reports invalid keys as configuration errors', async () => {
