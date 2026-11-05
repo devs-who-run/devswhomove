@@ -75,6 +75,11 @@ export class App {
   readonly activities = computed(() => (this.preview() ? DEMO_ACTIVITIES : this.liveActivities()));
   readonly events = computed(() => (this.preview() ? DEMO_EVENTS : this.liveEvents()));
   readonly displayedProfile = computed(() => this.remoteProfile() || this.viewer());
+  /** Public activities from a private GitHub profile are not shared with anyone else. */
+  readonly profileHidden = computed(() => {
+    const viewer = this.viewer();
+    return !!viewer && viewer.provider !== 'atproto' && viewer.visibility === 'private';
+  });
   readonly profileActivities = computed(() =>
     this.remoteProfile()
       ? this.remoteActivities()
@@ -502,7 +507,9 @@ export class App {
     if (
       next === 'public' &&
       !window.confirm(
-        'Make this activity public? It will appear in the community when your profile is public.',
+        this.profileHidden()
+          ? 'Make this activity public? Your profile is private, so it stays hidden until you make your profile public.'
+          : 'Make this activity public? It will appear in the community feed.',
       )
     )
       return;
@@ -511,7 +518,11 @@ export class App {
         visibility: next,
       });
       await this.load();
-      this.notice.set(`Activity is now ${next}.`);
+      this.notice.set(
+        next === 'public' && this.profileHidden()
+          ? 'Activity is now public, but your profile is private. Make your profile public to share it.'
+          : `Activity is now ${next}.`,
+      );
     });
   }
 
@@ -542,7 +553,11 @@ export class App {
     if (
       next === 'public' &&
       !window.confirm(
-        `Make ${ids.length} ${ids.length === 1 ? 'activity' : 'activities'} public? They will appear in the community when your profile is public.`,
+        `Make ${ids.length} ${ids.length === 1 ? 'activity' : 'activities'} public? ${
+          this.profileHidden()
+            ? 'Your profile is private, so they stay hidden until you make your profile public.'
+            : 'They will appear in the community feed.'
+        }`,
       )
     )
       return;
@@ -552,7 +567,11 @@ export class App {
       this.selectedActivityIds.set([]);
       this.bulkVisibilityMode.set(false);
       this.notice.set(
-        `${ids.length} ${ids.length === 1 ? 'activity is' : 'activities are'} now ${next}.`,
+        `${ids.length} ${ids.length === 1 ? 'activity is' : 'activities are'} now ${next}.${
+          next === 'public' && this.profileHidden()
+            ? ' Make your profile public to share them.'
+            : ''
+        }`,
       );
     });
   }

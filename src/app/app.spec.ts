@@ -246,6 +246,40 @@ describe('App', () => {
     expect(fixture.componentInstance.notice()).toBe('1 activity is now public.');
   });
 
+  it('explains that public activities stay hidden while the profile is private', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      Response.json({
+        ...bootstrap,
+        viewer: { ...DEMO_PROFILE, visibility: 'private', provider: 'github' },
+        activities: [{ ...DEMO_ACTIVITIES[0], userId: DEMO_PROFILE.id, visibility: 'public' }],
+      }),
+    );
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const text = (fixture.nativeElement as HTMLElement).textContent;
+    expect(fixture.componentInstance.profileHidden()).toBe(true);
+    expect(text).toContain('Your profile is private.');
+    expect(text).toContain('Public · hidden while your profile is private');
+  });
+
+  it('does not warn about privacy once the profile is public', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      Response.json({
+        ...bootstrap,
+        viewer: { ...DEMO_PROFILE, visibility: 'public', provider: 'github' },
+        activities: [{ ...DEMO_ACTIVITIES[0], userId: DEMO_PROFILE.id, visibility: 'public' }],
+      }),
+    );
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const text = (fixture.nativeElement as HTMLElement).textContent;
+    expect(fixture.componentInstance.profileHidden()).toBe(false);
+    expect(text).not.toContain('Your profile is private.');
+    expect(text).toContain('Public activity');
+  });
+
   it('shows actionable setup feedback when OAuth is not configured', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
