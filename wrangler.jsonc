@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "devs-who-move",
-      // Replace with the ID returned by `npx wrangler d1 create devs-who-move` before deploying.
+      // Replace with the ID returned by `pnpm exec wrangler d1 create devs-who-move` before deploying.
       "database_id": "dbf6f9e3-dd68-413e-8cf0-979319d9d2cc",
       "migrations_dir": "migrations",
     },
@@ -21,7 +21,7 @@
   "r2_buckets": [
     {
       "binding": "PHOTOS",
-      // Create once with `npx wrangler r2 bucket create devs-who-move-photos`.
+      // Create once with `pnpm exec wrangler r2 bucket create devs-who-move-photos`.
       "bucket_name": "devs-who-move-photos",
     },
   ],

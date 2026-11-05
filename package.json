@@ -4,11 +4,11 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "npm run build && wrangler dev",
+    "start": "pnpm run build && wrangler dev",
     "dev:ui": "ng serve --proxy-config proxy.conf.json",
     "dev:api": "wrangler dev",
     "build": "ng build",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "pnpm run build && wrangler deploy",
     "db:local": "wrangler d1 migrations apply devs-who-move --local",
     "db:remote": "wrangler d1 migrations apply devs-who-move --remote",
     "typecheck:worker": "tsc -p tsconfig.worker.json --noEmit",
@@ -20,7 +20,7 @@
   "engines": {
     "node": ">=24.0.0"
   },
-  "packageManager": "npm@11.20.0",
+  "packageManager": "pnpm@12.16.1",
   "dependencies": {
     "@angular/common": "^22.2.0",
     "@angular/compiler": "^22.2.0",

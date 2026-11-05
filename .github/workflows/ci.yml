@@ -13,18 +13,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Build Angular
-        run: npm run build
+        run: pnpm run build
       - name: Typecheck Worker
-        run: npm run typecheck:worker
+        run: pnpm run typecheck:worker
       - name: Test Angular
-        run: npm test
+        run: pnpm test
       - name: Test Worker and D1 integration
-        run: npm run test:worker
+        run: pnpm run test:worker
       - name: Validate Cloudflare bundle without deploying
-        run: npx wrangler deploy --dry-run
+        run: pnpm exec wrangler deploy --dry-run

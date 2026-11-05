@@ -4,7 +4,7 @@
     {
       "label": "Start Devs Who Move",
       "type": "shell",
-      "command": "npm start",
+      "command": "pnpm start",
       "isBackground": true,
       "problemMatcher": {
         "owner": "wrangler",
@@ -19,7 +19,7 @@
     {
       "label": "Test app and Worker",
       "type": "shell",
-      "command": "npm test && npm run test:worker",
+      "command": "pnpm test && pnpm run test:worker",
       "problemMatcher": []
     }
   ]
