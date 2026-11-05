@@ -23,14 +23,21 @@
 }
 html:root[data-theme='dark'] {
   color-scheme: dark;
+  /* Grayscale antialiasing renders light-on-dark text noticeably thinner on macOS. */
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
   --page: #111c17;
-  --text: #e4ece3;
+  --text: #f1f6f0;
   --surface: #19271f;
   --surface-raised: #15221b;
   --surface-soft: #253528;
-  --muted: #b5c1b8;
-  --border: #344438;
-  --border-hover: #536849;
+  --muted: #cdd7cf;
+  --border: #648168;
+  --border-hover: #7a9864;
+  --accent-text: #cde6ad;
+}
+html:root[data-theme='dark'] body {
+  font-weight: 450;
 }
 html:root[data-theme='dark'] :is(.sidebar, .topbar) {
   background: var(--surface-raised);
@@ -232,7 +239,7 @@ html:root[data-theme='dark'] .event-art .sport-label {
   color: #d3e8b9;
 }
 html:root[data-theme='dark'] .event-art-caption {
-  color: #c0cdb0;
+  color: #d6e1c9;
 }
 html:root[data-theme='dark'] .event-big-icon {
   color: #a4bf86;
@@ -262,7 +269,7 @@ html:root[data-theme='dark'] :is(input, select, textarea) {
   color: var(--text);
 }
 html:root[data-theme='dark'] :is(input, textarea)::placeholder {
-  color: #a6b3aa;
+  color: #b9c5bd;
 }
 html:root[data-theme='dark'] :is(button, a, input, select, textarea):focus-visible {
   outline-color: #bdd99b;

@@ -6,7 +6,7 @@
   min-height: 36px;
   margin: 0;
   padding: 7px 25px 7px 10px;
-  font-size: 11px;
+  font-size: 13px;
   cursor: pointer;
 }
 .mobile-signout {
@@ -61,7 +61,7 @@
   font-size: 23px;
 }
 .workspace-label {
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 1.55px;
   color: #7a857c;
   margin: 18px 0 42px 2px;
@@ -93,7 +93,7 @@ nav app-icon {
   font-size: 16px;
 }
 .nav-tag {
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 0.6px;
   padding: 3px 4px;
   border: 1px solid #dce5d6;
@@ -115,19 +115,19 @@ nav app-icon {
   margin: 12px 0;
 }
 .sidebar-manifesto p {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   line-height: 1.8;
 }
 .sidebar-manifesto .text-button {
-  font-size: 11px;
+  font-size: 13px;
   margin-top: 18px;
   gap: 14px;
 }
 .sidebar-bottom {
   margin-top: auto;
   padding-top: 38px;
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 0.65px;
   color: #7b847a;
   white-space: nowrap;
@@ -150,7 +150,7 @@ nav app-icon {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 8px;
-  font-size: 12px;
+  font-size: 13px;
   margin-top: 18px;
   letter-spacing: 0;
   font-weight: 600;
@@ -176,7 +176,7 @@ nav app-icon {
 }
 .account strong {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   color: #35443a;
   white-space: nowrap;
   overflow: hidden;
@@ -184,13 +184,13 @@ nav app-icon {
 }
 .account > div > span {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 3px;
 }
 .small.avatar {
   width: 32px;
   height: 32px;
-  font-size: 10px;
+  font-size: 12px;
 }
 .main-shell {
   margin-left: 246px;
@@ -207,7 +207,7 @@ nav app-icon {
   background: #fcfdf9;
 }
 .breadcrumb {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
 }
 .breadcrumb span {
@@ -220,7 +220,7 @@ nav app-icon {
   gap: 26px;
 }
 .today {
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 1px;
   color: #829078;
 }
@@ -235,7 +235,7 @@ nav app-icon {
   gap: 10px;
   min-height: 43px;
   padding: 11px 18px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   border-radius: 7px;
   line-height: 1.4;
@@ -264,7 +264,7 @@ nav app-icon {
 .compact {
   min-height: 36px;
   padding: 8px 13px;
-  font-size: 11px;
+  font-size: 13px;
 }
 .lime {
   background: var(--lime);
@@ -281,7 +281,7 @@ nav app-icon {
   gap: 7px;
   color: #3e6042;
   font-weight: 550;
-  font-size: 12px;
+  font-size: 13px;
 }
 .text-button:hover {
   text-decoration: underline;
@@ -317,19 +317,19 @@ main {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  font-size: 10px;
+  font-size: 12px;
   margin-bottom: 32px;
   color: #7b8574;
 }
 .preview-strip > span:first-child {
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 1.1px;
   white-space: nowrap;
 }
 .preview-strip button {
   background: transparent;
   color: #4e6838;
-  font-size: 10px;
+  font-size: 12px;
   padding: 0;
   margin-left: 5px;
   font-weight: 600;
@@ -345,7 +345,7 @@ main {
   margin: 12px 0 31px;
 }
 .eyebrow {
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 1.8px;
   font-weight: 650;
   color: #77826a;
@@ -360,7 +360,7 @@ h1 span {
 }
 .page-heading > div > p:last-child {
   color: #7c857c;
-  font-size: 12px;
+  font-size: 13px;
   margin-top: 13px;
   line-height: 1.6;
 }
@@ -391,7 +391,7 @@ h1 span {
   padding: 30px 28px;
 }
 .hero-label {
-  font-size: 7px;
+  font-size: 12px;
   letter-spacing: 1.4px;
   color: #d4e5bb;
   font-weight: 600;
@@ -411,13 +411,13 @@ h1 span {
 }
 .hero p {
   color: #c2d0c1;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.8;
 }
 .hero .button {
   margin-top: 22px;
   gap: 20px;
-  font-size: 10px;
+  font-size: 12px;
   min-height: 38px;
   padding: 10px 14px;
 }
@@ -435,7 +435,7 @@ h1 span {
   position: absolute;
   right: 18px;
   bottom: 18px;
-  font: 6px monospace;
+  font: 12px monospace;
   letter-spacing: 1px;
   color: #cadbb4;
   border: 1px solid #7895655c;
@@ -468,7 +468,7 @@ h1 span {
 .tabs button {
   background: transparent;
   padding: 14px 0 15px;
-  font-size: 12px;
+  font-size: 13px;
   color: #7e877d;
   border-bottom: 2px solid transparent;
 }
@@ -481,7 +481,7 @@ h1 span {
   color: var(--muted);
 }
 .small-text {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.7;
 }
 .sport-filters {
@@ -501,7 +501,7 @@ h1 span {
   padding: 6px 10px;
   border: 1px solid #e1e6dc;
   border-radius: 5px;
-  font-size: 10px;
+  font-size: 12px;
   color: #7c8578;
 }
 .sport-filters button.selected,
@@ -514,7 +514,7 @@ h1 span {
   border-color: #9bb085;
 }
 .sport-filters app-icon {
-  font-size: 12px;
+  font-size: 13px;
 }
 .activity-card {
   border: 1px solid var(--border);
@@ -549,7 +549,7 @@ h1 span {
   flex-shrink: 0;
   background: #e4edda;
   color: #4b6c3e;
-  font: 650 12px var(--heading);
+  font: 650 13px var(--heading);
   border: 1px solid #d8e4c9;
 }
 .avatar.orange {
@@ -564,12 +564,12 @@ h1 span {
 }
 .person strong {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 650;
 }
 .person small {
   display: block;
-  font-size: 9px;
+  font-size: 12px;
   color: #8a9286;
   margin-top: 4px;
 }
@@ -580,7 +580,7 @@ h1 span {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 9px;
+  font-size: 12px;
   color: #6d7f63;
   white-space: nowrap;
 }
@@ -593,7 +593,7 @@ h1 span {
   margin-top: 19px;
 }
 .activity-notes {
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.8;
   color: #7b847a;
   margin-top: 8px;
@@ -613,7 +613,7 @@ h1 span {
 .activity-metrics > div > span {
   display: block;
   color: #9aa18f;
-  font-size: 9px;
+  font-size: 12px;
   margin-bottom: 5px;
 }
 .activity-metrics strong {
@@ -623,7 +623,7 @@ h1 span {
 }
 .activity-metrics small {
   font:
-    450 10px 'DM Sans',
+    450 12px 'DM Sans',
     sans-serif;
   color: #88917c;
   letter-spacing: 0;
@@ -640,7 +640,7 @@ h1 span {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 8px;
+  font-size: 12px;
   color: #8c9586;
 }
 .activity-footer > span {
@@ -649,7 +649,7 @@ h1 span {
   gap: 5px;
 }
 .activity-footer app-icon {
-  font-size: 10px;
+  font-size: 12px;
 }
 .activity-footer .agent-label {
   margin-left: auto;
@@ -659,12 +659,12 @@ h1 span {
   padding: 4px 6px;
 }
 .activity-footer .text-button {
-  font-size: 9px;
+  font-size: 12px;
   margin-left: auto;
 }
 .feed-end {
   text-align: center;
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 1.7px;
   color: #a6af9b;
   padding: 30px 0;
@@ -689,7 +689,7 @@ h1 span {
 }
 .week-total span {
   font:
-    400 10px 'DM Sans',
+    400 12px 'DM Sans',
     sans-serif;
   letter-spacing: 0;
   color: #939c87;
@@ -726,7 +726,7 @@ h1 span {
 }
 .chart-day small {
   display: block;
-  font-size: 8px;
+  font-size: 12px;
   color: #939b8c;
   margin-top: 8px;
 }
@@ -736,12 +736,12 @@ h1 span {
   padding: 18px 0;
   margin-top: 19px;
   border-top: 1px solid var(--border);
-  font-size: 9px;
+  font-size: 12px;
   color: #8c9482;
 }
 .week-footer strong {
   color: #536b43;
-  font-size: 12px;
+  font-size: 13px;
   margin-right: 3px;
 }
 .upcoming-section {
@@ -774,7 +774,7 @@ h1 span {
 }
 .date-tile small {
   display: block;
-  font-size: 8px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -786,18 +786,18 @@ h1 span {
 }
 .mini-event > span:last-child > strong {
   display: block;
-  font: 650 12px/1.5 var(--heading);
+  font: 650 13px/1.5 var(--heading);
   margin: 4px 0;
 }
 .mini-sport {
   color: #909a86;
-  font-size: 8px;
+  font-size: 12px;
 }
 .mini-sport > span {
   margin: 0 3px;
 }
 .mini-event > span:last-child > small {
-  font-size: 9px;
+  font-size: 12px;
   color: #8b9482;
   display: flex;
   align-items: center;
@@ -808,7 +808,7 @@ h1 span {
   border-radius: 7px;
   background: transparent;
   width: 100%;
-  font-size: 10px;
+  font-size: 12px;
   color: #657b50;
   margin-top: 17px;
   padding: 13px;
@@ -853,7 +853,7 @@ h1 span {
   border: 2px solid #edf1e4;
 }
 .agent-promo > .eyebrow {
-  font-size: 7px;
+  font-size: 12px;
   letter-spacing: 1.1px;
 }
 .agent-promo h3 {
@@ -861,19 +861,19 @@ h1 span {
   letter-spacing: -0.5px;
 }
 .agent-promo p {
-  font-size: 10px;
+  font-size: 12px;
   color: #899575;
   margin-top: 7px;
 }
 .agent-promo .text-button {
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 18px;
   gap: 15px;
 }
 .right-footnote {
   text-align: center;
   color: #a1a995;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.8;
   margin-top: 23px;
 }
@@ -886,7 +886,7 @@ h1 span {
   margin-top: 44px;
   gap: 12px;
   color: #9ca68f;
-  font-size: 7px;
+  font-size: 12px;
   letter-spacing: 1px;
 }
 .footer-wordmark {
@@ -911,7 +911,7 @@ h1 span {
   font-size: 27px;
 }
 .events-banner p {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
 }
 .events-banner strong {
@@ -977,12 +977,12 @@ h1 span {
   position: absolute;
   left: 18px;
   bottom: 17px;
-  font-size: 6px;
+  font-size: 12px;
   letter-spacing: 1.4px;
   color: #7f906c;
 }
 .event-art .sport-label {
-  font-size: 9px;
+  font-size: 12px;
   background: #ffffff75;
   border-radius: 5px;
   padding: 5px 7px;
@@ -994,7 +994,7 @@ h1 span {
   flex: 1;
 }
 .event-date {
-  font-size: 9px;
+  font-size: 12px;
   color: #82946c;
   font-weight: 600;
 }
@@ -1007,7 +1007,7 @@ h1 span {
   margin: 11px 0;
 }
 .event-description {
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.8;
   color: #7b8673;
   margin-bottom: 20px;
@@ -1019,13 +1019,13 @@ h1 span {
   display: flex;
   gap: 7px;
   align-items: center;
-  font-size: 10px;
+  font-size: 12px;
   color: #7d8973;
   margin: 0 0 11px;
   flex-wrap: wrap;
 }
 .host-name {
-  font-size: 8px;
+  font-size: 12px;
 }
 .event-body > .button {
   margin-top: 13px;
@@ -1035,7 +1035,7 @@ h1 span {
   align-items: flex-start;
   gap: 7px;
   color: #8a9580;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.7;
   margin-top: 25px;
 }
@@ -1051,7 +1051,7 @@ h1 span {
   position: absolute;
   top: 30px;
   left: 30px;
-  font: 8px monospace;
+  font: 12px monospace;
   letter-spacing: 2px;
   color: #bacf9e;
 }
@@ -1105,13 +1105,13 @@ h1 span {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: 12px;
   color: #8a967b;
   text-transform: capitalize;
 }
 .profile-intro .eyebrow {
   margin-top: 20px;
-  font-size: 10px;
+  font-size: 12px;
 }
 .profile-intro h1 {
   font-size: 34px;
@@ -1120,7 +1120,7 @@ h1 span {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 13px;
   color: #7b8970;
   margin-top: 9px;
 }
@@ -1128,7 +1128,7 @@ h1 span {
   text-decoration: underline;
 }
 .profile-bio {
-  font-size: 12px;
+  font-size: 13px;
   color: #78856e;
   line-height: 1.9;
   max-width: 530px;
@@ -1142,13 +1142,13 @@ h1 span {
   gap: 5px;
   margin-top: 13px;
   color: #839175;
-  font-size: 11px;
+  font-size: 13px;
 }
 .profile-sports {
   margin-top: 18px;
 }
 .profile-sports > span {
-  font-size: 10px;
+  font-size: 12px;
 }
 .privacy-callout {
   display: flex;
@@ -1168,10 +1168,10 @@ h1 span {
   flex: 1;
 }
 .privacy-callout strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 .privacy-callout p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.7;
   color: #82916f;
   margin-top: 5px;
@@ -1196,7 +1196,7 @@ h1 span {
 }
 .profile-stats span {
   display: block;
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 1.3px;
   color: #98a18a;
 }
@@ -1246,7 +1246,7 @@ h1 span {
   justify-content: space-between;
   align-items: center;
   margin-top: 13px;
-  font-size: 8px;
+  font-size: 12px;
   color: #96a087;
 }
 .heatmap-legend > span:last-child {
@@ -1292,7 +1292,7 @@ h1 span {
   min-width: 0;
 }
 .profile-activity small {
-  font-size: 9px;
+  font-size: 12px;
   color: #96a085;
 }
 .profile-activity h3 {
@@ -1301,7 +1301,7 @@ h1 span {
   letter-spacing: -0.4px;
 }
 .profile-activity p {
-  font-size: 10px;
+  font-size: 12px;
   color: #8c9782;
   line-height: 1.7;
   overflow-wrap: anywhere;
@@ -1315,7 +1315,7 @@ h1 span {
   white-space: nowrap;
 }
 .profile-activity-metric > span {
-  font-size: 10px;
+  font-size: 12px;
   color: #9ba38f;
 }
 .profile-activity-actions {
@@ -1325,14 +1325,14 @@ h1 span {
   align-items: flex-end;
 }
 .profile-activity-actions > .text-button {
-  font-size: 9px;
+  font-size: 12px;
 }
 .beta-pill {
   border: 1px solid #dce6cc;
   padding: 8px 11px;
   border-radius: 5px;
   color: #7f9262;
-  font-size: 8px;
+  font-size: 12px;
   letter-spacing: 1px;
 }
 .agents-layout {
@@ -1369,11 +1369,11 @@ h1 span {
 .terminal-top small {
   margin-left: 14px;
   color: #8eaa78;
-  font-size: 9px;
+  font-size: 12px;
 }
 .terminal-content {
   padding: 30px;
-  font: 12px/2 monospace;
+  font: 13px/2 monospace;
 }
 .terminal-content p {
   margin-bottom: 25px;
@@ -1383,7 +1383,7 @@ h1 span {
 }
 .terminal-comment {
   color: #a0b38b;
-  font-size: 10px;
+  font-size: 12px;
 }
 .terminal-result {
   padding: 18px;
@@ -1393,14 +1393,14 @@ h1 span {
   display: flex;
   gap: 12px;
   align-items: center;
-  font-size: 11px;
+  font-size: 13px;
 }
 .terminal-result app-icon {
   color: #c7e89a;
 }
 .terminal-result small {
   color: #aabe91;
-  font-size: 9px;
+  font-size: 12px;
 }
 .agent-principles {
   padding: 28px 5px;
@@ -1410,7 +1410,7 @@ h1 span {
   letter-spacing: -0.7px;
 }
 .agent-principles > p {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
   color: #8a947e;
   margin: 13px 0 25px;
@@ -1418,7 +1418,7 @@ h1 span {
 .agent-principles > div {
   display: flex;
   gap: 13px;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.8;
   color: #8b977e;
   margin-top: 20px;
@@ -1429,7 +1429,7 @@ h1 span {
 }
 .agent-principles strong {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   color: #4c633c;
   margin-bottom: 3px;
 }
@@ -1445,7 +1445,7 @@ h1 span {
   letter-spacing: -0.7px;
 }
 .connect-card > p:not(.eyebrow) {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
   color: #8a957d;
   margin: 15px 0 25px;
@@ -1461,21 +1461,21 @@ h1 span {
   margin-top: 22px;
 }
 .token-reveal > strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 .token-reveal > p {
-  font-size: 10px;
+  font-size: 12px;
   color: #7a8c64;
   line-height: 1.7;
   margin: 8px 0;
 }
 .token-reveal textarea {
-  font: 10px/1.8 monospace;
+  font: 12px/1.8 monospace;
   resize: none;
   overflow-wrap: anywhere;
 }
 .token-reveal > .text-button {
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 10px;
 }
 .token-list {
@@ -1501,23 +1501,23 @@ h1 span {
 }
 .token-item strong {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
 }
 .token-item small {
   display: block;
-  font-size: 8px;
+  font-size: 12px;
   color: #8f9b81;
   line-height: 1.8;
 }
 .token-item > .text-button {
-  font-size: 10px;
+  font-size: 12px;
 }
 .banner {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 15px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
   padding: 13px 17px;
   border-radius: 8px;
@@ -1555,7 +1555,7 @@ h1 span {
 }
 .empty-state p {
   color: #8e9a80;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
   margin-bottom: 22px;
 }
@@ -1598,12 +1598,12 @@ dialog::backdrop {
   letter-spacing: -0.7px;
 }
 .modal-heading .eyebrow {
-  font-size: 8px;
+  font-size: 12px;
 }
 label,
 legend {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: #61734d;
   margin-bottom: 8px;
@@ -1619,7 +1619,7 @@ textarea {
   min-height: 41px;
   padding: 10px 12px;
   margin-bottom: 17px;
-  font-size: 12px;
+  font-size: 13px;
   outline-offset: 2px !important;
 }
 input::placeholder,
@@ -1644,7 +1644,7 @@ legend {
   gap: 9px;
   align-items: center;
   font-weight: 400;
-  font-size: 11px;
+  font-size: 13px;
   margin: 12px 0;
 }
 .checkbox-label > input {
@@ -1663,7 +1663,7 @@ legend {
   display: flex;
   gap: 7px;
   align-items: flex-start;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.8;
   color: #89967b;
   margin-bottom: 17px;
@@ -1681,7 +1681,7 @@ legend {
   margin-top: 10px;
 }
 .modal-footer .button {
-  font-size: 11px;
+  font-size: 13px;
 }
 fieldset .sport-filters {
   margin: 0;
@@ -1717,7 +1717,7 @@ fieldset .sport-filters {
     font-size: 38px;
   }
   .hero p {
-    font-size: 12px;
+    font-size: 13px;
   }
   .activity-card {
     padding: 26px 28px 0;
@@ -1726,7 +1726,7 @@ fieldset .sport-filters {
     font-size: 20px;
   }
   .activity-notes {
-    font-size: 12px;
+    font-size: 13px;
   }
   .weekly-card {
     padding: 25px 24px 0;
@@ -1798,16 +1798,16 @@ fieldset .sport-filters {
   }
   .terminal-content {
     padding: 22px;
-    font-size: 11px;
+    font-size: 13px;
   }
   .topbar-actions {
     gap: 15px;
   }
   .today {
-    font-size: 8px;
+    font-size: 12px;
   }
   .activity-header .sport-label {
-    font-size: 8px;
+    font-size: 12px;
   }
 }
 @media (max-width: 1050px) {
@@ -1825,16 +1825,16 @@ fieldset .sport-filters {
     font-size: 20px;
   }
   .workspace-label {
-    font-size: 6px;
+    font-size: 12px;
     letter-spacing: 1.3px;
   }
   nav a {
     padding: 12px 11px;
-    font-size: 12px;
+    font-size: 13px;
     gap: 10px;
   }
   .nav-tag {
-    font-size: 6px;
+    font-size: 12px;
     padding: 3px;
   }
   .sidebar-manifesto {
@@ -1845,7 +1845,7 @@ fieldset .sport-filters {
     font-size: 14px;
   }
   .sidebar-bottom {
-    font-size: 6px;
+    font-size: 12px;
   }
   .main-shell {
     margin-left: 190px;
@@ -1865,16 +1865,16 @@ fieldset .sport-filters {
     font-size: 25px;
   }
   .hero p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .hero {
     min-height: 270px;
   }
   .hero-label {
-    font-size: 6px;
+    font-size: 12px;
   }
   .section-top h2 {
-    font-size: 12px;
+    font-size: 13px;
   }
   .weekly-card {
     padding-left: 17px;
@@ -1884,7 +1884,7 @@ fieldset .sport-filters {
     font-size: 36px;
   }
   .week-total > span {
-    font-size: 9px;
+    font-size: 12px;
   }
   .feed-tabs > .small-text {
     display: none;
@@ -1908,7 +1908,7 @@ fieldset .sport-filters {
     align-items: flex-start;
   }
   .person small {
-    font-size: 8px;
+    font-size: 12px;
   }
   .sport-label {
     gap: 3px;
@@ -1917,7 +1917,7 @@ fieldset .sport-filters {
     gap: 5px;
   }
   .sport-filters button {
-    font-size: 9px;
+    font-size: 12px;
     padding: 5px 7px;
   }
   .preview-strip {
@@ -1925,16 +1925,16 @@ fieldset .sport-filters {
   }
   .preview-strip > span:last-child {
     text-align: right;
-    font-size: 9px;
+    font-size: 12px;
   }
   .preview-strip > span:first-child {
-    font-size: 7px;
+    font-size: 12px;
   }
   .profile-actions {
     top: 65px;
   }
   .profile-actions .button {
-    font-size: 10px;
+    font-size: 12px;
   }
   .agents-layout {
     grid-template-columns: 1fr;
@@ -1951,17 +1951,17 @@ fieldset .sport-filters {
     font-size: 20px;
   }
   .agent-principles > p {
-    font-size: 11px;
+    font-size: 13px;
   }
   .agent-principles > div {
-    font-size: 10px;
+    font-size: 12px;
     margin-top: 16px;
   }
   .terminal-content {
-    font-size: 10px;
+    font-size: 12px;
   }
   .breadcrumb {
-    font-size: 10px;
+    font-size: 12px;
   }
   .today {
     display: none;
@@ -1973,7 +1973,7 @@ fieldset .sport-filters {
     padding: 0 18px;
   }
   .profile-stats span {
-    font-size: 7px;
+    font-size: 12px;
     letter-spacing: 1px;
   }
 }
@@ -2045,7 +2045,7 @@ fieldset .sport-filters {
     margin-left: 38px;
   }
   .page-heading > div > p:last-child {
-    font-size: 11px;
+    font-size: 13px;
   }
 }
 @media (max-width: 700px) {
@@ -2104,10 +2104,10 @@ fieldset .sport-filters {
     padding: 28px;
   }
   .hero p {
-    font-size: 12px;
+    font-size: 13px;
   }
   .hero-label {
-    font-size: 7px;
+    font-size: 12px;
   }
   .hero-art svg {
     opacity: 0.8;
@@ -2128,26 +2128,26 @@ fieldset .sport-filters {
     padding-left: 24px;
   }
   .person small {
-    font-size: 9px;
+    font-size: 12px;
   }
   .person strong {
-    font-size: 12px;
+    font-size: 13px;
   }
   .activity-card h3 {
     font-size: 19px;
   }
   .activity-notes {
-    font-size: 12px;
+    font-size: 13px;
   }
   .sport-filters button {
-    font-size: 10px;
+    font-size: 12px;
     padding: 7px 9px;
   }
   .profile-actions {
     top: 67px;
   }
   .profile-actions .visibility-pill {
-    font-size: 10px;
+    font-size: 12px;
   }
   .profile-intro {
     padding: 0 10px;
@@ -2157,7 +2157,7 @@ fieldset .sport-filters {
   }
   .profile-stats span {
     letter-spacing: 0.5px;
-    font-size: 6px;
+    font-size: 12px;
   }
   .profile-stats strong {
     font-size: 27px;
@@ -2194,13 +2194,13 @@ fieldset .sport-filters {
     font-size: 17px;
   }
   .event-detail {
-    font-size: 9px;
+    font-size: 12px;
   }
   .host-name {
-    font-size: 8px;
+    font-size: 12px;
   }
   .event-body .button {
-    font-size: 10px;
+    font-size: 12px;
     padding: 10px;
   }
   .event-art {
@@ -2215,7 +2215,7 @@ fieldset .sport-filters {
     max-width: 400px;
   }
   .page-heading > .button {
-    font-size: 10px;
+    font-size: 12px;
     padding: 10px 12px;
   }
 }
@@ -2230,7 +2230,7 @@ fieldset .sport-filters {
   }
   .theme-control select {
     max-width: 140px;
-    font-size: 12px;
+    font-size: 13px;
   }
   .sidebar {
     width: 100%;
@@ -2261,7 +2261,7 @@ fieldset .sport-filters {
   }
   nav a > span:not(.nav-tag) {
     display: block;
-    font-size: 8px;
+    font-size: 12px;
   }
   nav app-icon {
     font-size: 18px;
@@ -2274,7 +2274,7 @@ fieldset .sport-filters {
     padding: 0 19px;
   }
   .breadcrumb {
-    font-size: 9px;
+    font-size: 12px;
   }
   .breadcrumb span {
     display: block;
@@ -2282,7 +2282,7 @@ fieldset .sport-filters {
     margin-top: 3px;
   }
   .topbar .button {
-    font-size: 10px;
+    font-size: 12px;
     padding: 8px 12px;
   }
   main {
@@ -2291,28 +2291,28 @@ fieldset .sport-filters {
   .preview-strip {
     gap: 12px;
     margin-bottom: 26px;
-    font-size: 8px;
+    font-size: 12px;
   }
   .preview-strip > span:first-child {
-    font-size: 6px;
+    font-size: 12px;
     letter-spacing: 0.7px;
     white-space: normal;
     line-height: 1.9;
     max-width: 135px;
   }
   .preview-strip > span:last-child {
-    font-size: 8px;
+    font-size: 12px;
     line-height: 1.8;
     max-width: 160px;
   }
   .preview-strip button {
-    font-size: 8px;
+    font-size: 12px;
     margin-left: 0;
     display: block;
     margin-left: auto;
   }
   .eyebrow {
-    font-size: 7px;
+    font-size: 12px;
     letter-spacing: 1.4px;
     margin-bottom: 10px;
   }
@@ -2326,7 +2326,7 @@ fieldset .sport-filters {
     gap: 10px;
   }
   .page-heading > div > p:last-child {
-    font-size: 11px;
+    font-size: 13px;
     line-height: 1.8;
     margin-top: 12px;
   }
@@ -2340,10 +2340,10 @@ fieldset .sport-filters {
     font-size: 30px;
   }
   .hero p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .hero-label {
-    font-size: 6px;
+    font-size: 12px;
     letter-spacing: 1px;
   }
   .hero-art svg {
@@ -2369,37 +2369,37 @@ fieldset .sport-filters {
     font-size: 23px;
   }
   .activity-metrics small {
-    font-size: 9px;
+    font-size: 12px;
   }
   .activity-glyph {
     display: none;
   }
   .person strong {
-    font-size: 11px;
+    font-size: 13px;
   }
   .person small {
-    font-size: 8px;
+    font-size: 12px;
   }
   .activity-header > .sport-label {
-    font-size: 8px;
+    font-size: 12px;
   }
   .avatar {
     width: 34px;
     height: 34px;
-    font-size: 11px;
+    font-size: 13px;
   }
   .activity-notes {
-    font-size: 11px;
+    font-size: 13px;
   }
   .activity-footer {
-    font-size: 7px;
+    font-size: 12px;
     gap: 5px;
   }
   .activity-footer .agent-label {
-    font-size: 7px;
+    font-size: 12px;
   }
   .activity-footer .text-button {
-    font-size: 8px;
+    font-size: 12px;
   }
   .right-column {
     grid-template-columns: 1fr;
@@ -2417,7 +2417,7 @@ fieldset .sport-filters {
     font-size: 42px;
   }
   .week-total > span {
-    font-size: 11px;
+    font-size: 13px;
   }
   .section-top h2 {
     font-size: 14px;
@@ -2426,7 +2426,7 @@ fieldset .sport-filters {
     margin-top: 4px;
   }
   .small-text {
-    font-size: 11px;
+    font-size: 13px;
   }
   .agent-promo {
     margin-top: 5px;
@@ -2437,7 +2437,7 @@ fieldset .sport-filters {
     gap: 20px;
   }
   .page-footer > span:nth-child(2) {
-    font-size: 6px;
+    font-size: 12px;
     line-height: 1.9;
     text-align: right;
     max-width: 160px;
@@ -2447,7 +2447,7 @@ fieldset .sport-filters {
     gap: 13px;
   }
   .events-banner p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .events-banner > app-icon {
     font-size: 24px;
@@ -2471,27 +2471,27 @@ fieldset .sport-filters {
     font-size: 21px;
   }
   .event-description {
-    font-size: 12px;
+    font-size: 13px;
   }
   .event-detail {
-    font-size: 11px;
+    font-size: 13px;
   }
   .event-body .button {
-    font-size: 12px;
+    font-size: 13px;
   }
   .page-heading:has(+ .events-banner) {
     flex-direction: column;
     gap: 17px;
   }
   .page-heading > .button {
-    font-size: 11px;
+    font-size: 13px;
   }
   .profile-cover {
     height: 155px;
     margin-top: 2px;
   }
   .profile-cover > span {
-    font-size: 6px;
+    font-size: 12px;
     left: 22px;
     top: 22px;
     letter-spacing: 1px;
@@ -2511,7 +2511,7 @@ fieldset .sport-filters {
     padding: 0 5px;
   }
   .profile-intro .eyebrow {
-    font-size: 10px;
+    font-size: 12px;
     margin-top: 25px;
   }
   .profile-intro h1 {
@@ -2522,28 +2522,28 @@ fieldset .sport-filters {
     gap: 8px;
   }
   .profile-actions > .button {
-    font-size: 9px;
+    font-size: 12px;
     padding: 8px 10px;
     min-height: 34px;
   }
   .profile-actions > .visibility-pill {
-    font-size: 10px;
+    font-size: 12px;
   }
   .profile-bio {
-    font-size: 11px;
+    font-size: 13px;
   }
   .privacy-callout {
     padding: 16px;
     gap: 12px;
   }
   .privacy-callout p {
-    font-size: 9px;
+    font-size: 12px;
   }
   .privacy-callout strong {
-    font-size: 11px;
+    font-size: 13px;
   }
   .privacy-callout > .text-button {
-    font-size: 10px;
+    font-size: 12px;
     margin-left: 32px;
   }
   .profile-stats {
@@ -2553,7 +2553,7 @@ fieldset .sport-filters {
     padding: 0 9px;
   }
   .profile-stats span {
-    font-size: 5px;
+    font-size: 12px;
     letter-spacing: 0.5px;
   }
   .profile-stats strong {
@@ -2563,10 +2563,10 @@ fieldset .sport-filters {
     padding: 18px;
   }
   .consistency-card h2 {
-    font-size: 12px;
+    font-size: 13px;
   }
   .consistency-card .small-text {
-    font-size: 9px;
+    font-size: 12px;
   }
   .heatmap {
     gap: 3px;
@@ -2576,7 +2576,7 @@ fieldset .sport-filters {
     border-radius: 2px;
   }
   .heatmap-legend {
-    font-size: 6px;
+    font-size: 12px;
   }
   .heatmap-legend i {
     width: 7px;
@@ -2595,13 +2595,13 @@ fieldset .sport-filters {
     font-size: 13px;
   }
   .profile-activity p {
-    font-size: 9px;
+    font-size: 12px;
   }
   .profile-activity-metric strong {
     font-size: 18px;
   }
   .profile-activity small {
-    font-size: 8px;
+    font-size: 12px;
   }
   .profile-activity-metric {
     align-self: flex-start;
@@ -2614,10 +2614,10 @@ fieldset .sport-filters {
   }
   .terminal-content {
     padding: 24px;
-    font-size: 11px;
+    font-size: 13px;
   }
   .terminal-result {
-    font-size: 10px;
+    font-size: 12px;
   }
   dialog {
     padding: 23px;
@@ -2628,14 +2628,14 @@ fieldset .sport-filters {
     font-size: 21px;
   }
   .modal-heading .eyebrow {
-    font-size: 6px;
+    font-size: 12px;
   }
   .form-row {
     gap: 12px;
   }
   label,
   legend {
-    font-size: 10px;
+    font-size: 12px;
   }
   input,
   select,
@@ -2645,13 +2645,13 @@ fieldset .sport-filters {
     min-width: 0;
   }
   .form-help {
-    font-size: 9px;
+    font-size: 12px;
   }
   .sport-filters {
     gap: 6px;
   }
   .sport-filters button {
-    font-size: 9px;
+    font-size: 12px;
     padding: 6px 8px;
   }
 }
@@ -2699,10 +2699,10 @@ fieldset .sport-filters {
   gap: 3px;
 }
 .photo-picker-label strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 .photo-picker-label small {
-  font-size: 10px;
+  font-size: 12px;
   color: #89967b;
 }
 .photo-picker.has-photo .photo-picker-label {
@@ -2726,7 +2726,7 @@ fieldset .sport-filters {
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
-  font-size: 10px;
+  font-size: 12px;
   color: #89967b;
 }
 .photo-preview figcaption > span {
@@ -2765,7 +2765,7 @@ fieldset .sport-filters {
 
 .theme-control select {
   min-height: 44px;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 nav a {
@@ -2783,7 +2783,7 @@ nav a {
 .heatmap-details {
   margin-top: 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .heatmap-details summary {
@@ -2805,20 +2805,42 @@ nav a {
 
 @media (max-width: 520px) {
   .sidebar {
-    height: calc(65px + env(safe-area-inset-bottom));
+    height: calc(72px + env(safe-area-inset-bottom));
     padding-bottom: env(safe-area-inset-bottom);
   }
 
   nav a {
-    min-height: 56px;
+    min-height: 64px;
+    gap: 4px;
+    padding: 6px 2px;
   }
 
   nav a > span:not(.nav-tag) {
-    font-size: 10px;
+    font-size: 12px;
+    line-height: 1.15;
+    text-align: center;
   }
 
   main {
     padding-bottom: calc(82px + env(safe-area-inset-bottom));
+  }
+
+  .activity-metrics {
+    flex-wrap: wrap;
+    gap: 12px 16px;
+  }
+
+  .activity-metrics > div + div {
+    padding-left: 16px;
+  }
+
+  .profile-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 18px;
+  }
+
+  .profile-stats > div + div:nth-child(odd) {
+    border-left: 0;
   }
 
   .heatmap-details ul {
@@ -2863,13 +2885,13 @@ nav a {
 .photo-preview figcaption,
 .form-help {
   color: var(--muted);
-  font-size: max(10px, 0.8em);
+  font-size: max(12px, 0.85em);
 }
 
 .terminal-comment,
 .terminal-result small {
   color: #c2d0b1;
-  font-size: max(10px, 0.8em);
+  font-size: max(12px, 0.85em);
 }
 
 .activity-card:hover,
@@ -2877,4 +2899,16 @@ nav a {
 .profile-activity:hover {
   border-color: var(--border-hover);
   box-shadow: 0 8px 24px rgb(34 54 40 / 7%);
+}
+
+/* Global dark overrides lose to these encapsulated selectors' higher specificity. */
+:host-context([data-theme='dark']) .page-heading > div > p:last-child,
+:host-context([data-theme='dark']) .mini-event > span:last-child > small,
+:host-context([data-theme='dark']) .empty-state p {
+  color: var(--muted);
+}
+
+:host-context([data-theme='dark']) .terminal-comment,
+:host-context([data-theme='dark']) .terminal-result small {
+  color: #e8f0df;
 }
