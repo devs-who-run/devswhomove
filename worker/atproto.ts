@@ -194,6 +194,11 @@ async function deserializeDpopValue<T extends { dpopKey: Key }>(
   return { ...rest, dpopKey: await JoseKey.fromJWK(dpopJwk) } as unknown as T;
 }
 
+/** Map OAuth client digest names (e.g. `sha256`) to WebCrypto names (e.g. `SHA-256`). */
+export function webCryptoDigest(name: string): string {
+  return name.toUpperCase().replace(/^SHA-?(\d+)$/, 'SHA-$1');
+}
+
 /** Create the AT Protocol OAuth client with encrypted D1 stores and Worker WebCrypto. */
 export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
   const origin = oauthOrigin(env);
@@ -294,7 +299,7 @@ export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
       createKey: (algs) => JoseKey.generate(algs),
       getRandomValues: (length) => crypto.getRandomValues(new Uint8Array(length)),
       digest: async (bytes, algorithm) =>
-        new Uint8Array(await crypto.subtle.digest(algorithm.name.toUpperCase(), bytes)),
+        new Uint8Array(await crypto.subtle.digest(webCryptoDigest(algorithm.name), bytes)),
       requestLock: (name, work) => acquireLock(env, name, async () => await work()),
     },
     stateStore,
