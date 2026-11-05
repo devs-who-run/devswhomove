@@ -653,6 +653,24 @@ describe('Worker with real D1 storage', () => {
     expect(result.events[0]).toMatchObject({ attendees: 1, joined: true });
   });
 
+  it('lets only the host see event attendee names', async () => {
+    expect(
+      (await request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob)).status,
+    ).toBe(200);
+    expect((await request(`/api/events/${eventId}/attendees`)).status).toBe(401);
+    expect((await request(`/api/events/${eventId}/attendees`, 'GET', undefined, bob)).status).toBe(
+      403,
+    );
+    const response = await request(`/api/events/${eventId}/attendees`, 'GET', undefined, alice);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      attendees: [
+        { name: 'Alice', avatar: '' },
+        { name: 'bob', avatar: '' },
+      ],
+    });
+  });
+
   it('enforces capacity atomically, treats repeat joins as idempotent and allows leaving', async () => {
     const results = await Promise.all([
       request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob),

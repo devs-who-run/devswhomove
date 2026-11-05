@@ -13,6 +13,7 @@ import {
   type AgentScope,
   type AgentToken,
   type Bootstrap,
+  type EventAttendee,
   type Profile,
   type Sport,
   type SportEvent,
@@ -68,6 +69,9 @@ export class App {
   readonly photoBusy = signal(false);
   readonly publicDisclosure = signal(false);
   readonly editingEvent = signal<string | null>(null);
+  readonly attendeeEvent = signal<string | null>(null);
+  readonly eventAttendees = signal<EventAttendee[]>([]);
+  readonly loadingAttendees = signal<string | null>(null);
   preparePhoto = preparePhoto;
   private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('dialog');
   private routeRequest = 0;
@@ -476,6 +480,30 @@ export class App {
       );
       await this.load();
     });
+  }
+
+  async toggleAttendees(event: SportEvent): Promise<void> {
+    if (this.attendeeEvent() === event.id) {
+      this.attendeeEvent.set(null);
+      return;
+    }
+    this.attendeeEvent.set(event.id);
+    this.eventAttendees.set([]);
+    this.loadingAttendees.set(event.id);
+    this.error.set('');
+    try {
+      const result = await this.api<{ attendees: EventAttendee[] }>(
+        `/api/events/${encodeURIComponent(event.id)}/attendees`,
+      );
+      if (this.attendeeEvent() === event.id) this.eventAttendees.set(result.attendees);
+    } catch (error) {
+      if (this.attendeeEvent() === event.id) {
+        this.error.set(this.message(error));
+        this.attendeeEvent.set(null);
+      }
+    } finally {
+      if (this.loadingAttendees() === event.id) this.loadingAttendees.set(null);
+    }
   }
 
   editEvent(event: SportEvent): void {

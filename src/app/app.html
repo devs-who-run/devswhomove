@@ -548,6 +548,36 @@
                     <span class="host-name">· Hosted by {{ event.hostName }}</span>
                   </p>
                   @if (event.hostId === viewer()?.id) {
+                    <button
+                      class="button outline full"
+                      (click)="toggleAttendees(event)"
+                      [disabled]="loadingAttendees() === event.id"
+                      [attr.aria-expanded]="attendeeEvent() === event.id"
+                    >
+                      {{
+                        loadingAttendees() === event.id
+                          ? 'Loading attendees…'
+                          : attendeeEvent() === event.id
+                            ? 'Hide attendees'
+                            : 'View attendees'
+                      }}
+                    </button>
+                    @if (attendeeEvent() === event.id && loadingAttendees() !== event.id) {
+                      <ul class="attendee-list" aria-live="polite">
+                        @for (attendee of eventAttendees(); track $index) {
+                          <li class="attendee">
+                            @if (attendee.avatar) {
+                              <img [src]="attendee.avatar" alt="" referrerpolicy="no-referrer" />
+                            } @else {
+                              <app-icon name="user" />
+                            }
+                            <span>{{ attendee.name }}</span>
+                          </li>
+                        } @empty {
+                          <li>No one has joined yet.</li>
+                        }
+                      </ul>
+                    }
                     <div class="host-actions">
                       <button
                         class="button primary"

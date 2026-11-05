@@ -55,6 +55,11 @@ export interface SportEvent {
   joined: boolean;
 }
 
+export interface EventAttendee {
+  name: string;
+  avatar: string;
+}
+
 export interface AgentToken {
   id: string;
   name: string;
