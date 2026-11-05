@@ -10,6 +10,7 @@ import {
   type StateStore,
 } from '@atproto/oauth-client';
 import { JoseKey } from '@atproto/jwk-jose';
+import { HttpError } from './validation';
 
 export const PROFILE_COLLECTION = 'dev.devswhorun.profile';
 export const ACTIVITY_COLLECTION = 'dev.devswhorun.activity';
@@ -47,6 +48,29 @@ function decodeBase64(value: string): Uint8Array {
   return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 }
 
+/** Normalize a pasted secret by trimming whitespace, wrapping quotes, and escaped newlines. */
+function normalizeSecret(value: string): string {
+  return value
+    .trim()
+    .replace(/^(["'])([\s\S]*)\1$/, '$2')
+    .replace(/\\n/g, '\n')
+    .trim();
+}
+
+/** Signal a misconfigured AT Protocol Worker secret without exposing its value. */
+function configError(message: string): HttpError {
+  return new HttpError(503, `AT Protocol sign-in is misconfigured: ${message} See README.md.`);
+}
+
+/** Decode a base64 secret, reporting malformed values as configuration errors. */
+function decodeSecret(value: string, name: string): Uint8Array {
+  try {
+    return decodeBase64(normalizeSecret(value).replace(/\s/g, ''));
+  } catch {
+    throw configError(`${name} is not valid base64.`);
+  }
+}
+
 /** Encode bytes as base64 for encrypted values stored in D1. */
 function base64(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes));
@@ -57,10 +81,9 @@ async function encryptionKey(
   env: AtprotoEnv,
   usage: ('encrypt' | 'decrypt')[],
 ): Promise<CryptoKey> {
-  if (!env.ATPROTO_SESSION_KEY)
-    throw new Error('ATPROTO_SESSION_KEY is required for AT Protocol sessions.');
-  const raw = decodeBase64(env.ATPROTO_SESSION_KEY);
-  if (raw.byteLength !== 32) throw new Error('ATPROTO_SESSION_KEY must decode to 32 bytes.');
+  if (!env.ATPROTO_SESSION_KEY) throw configError('ATPROTO_SESSION_KEY is missing.');
+  const raw = decodeSecret(env.ATPROTO_SESSION_KEY, 'ATPROTO_SESSION_KEY');
+  if (raw.byteLength !== 32) throw configError('ATPROTO_SESSION_KEY must decode to 32 bytes.');
   return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, usage);
 }
 
@@ -97,12 +120,22 @@ function oauthOrigin(env: AtprotoEnv): string {
   return new URL(env.APP_URL).origin;
 }
 
-/** Load the confidential OAuth signing key from its configured PKCS#8 value. */
+/** Load the confidential OAuth signing key from a base64-encoded or raw PKCS#8 PEM. */
 async function privateKey(env: AtprotoEnv): Promise<JoseKey> {
-  if (!env.ATPROTO_OAUTH_PRIVATE_KEY)
-    throw new Error('ATPROTO_OAUTH_PRIVATE_KEY is required for AT Protocol sign-in.');
-  const pem = new TextDecoder().decode(decodeBase64(env.ATPROTO_OAUTH_PRIVATE_KEY));
-  return JoseKey.fromPKCS8(pem, 'ES256', 'devswhomove-atproto-oauth');
+  if (!env.ATPROTO_OAUTH_PRIVATE_KEY) throw configError('ATPROTO_OAUTH_PRIVATE_KEY is missing.');
+  const value = normalizeSecret(env.ATPROTO_OAUTH_PRIVATE_KEY);
+  const pem = value.includes('-----BEGIN')
+    ? value
+    : new TextDecoder().decode(decodeSecret(value, 'ATPROTO_OAUTH_PRIVATE_KEY')).trim();
+  if (pem.includes('BEGIN EC PRIVATE KEY'))
+    throw configError(
+      'ATPROTO_OAUTH_PRIVATE_KEY is a SEC1 EC key; convert it to PKCS#8 with `openssl pkcs8 -topk8 -nocrypt`.',
+    );
+  try {
+    return await JoseKey.fromPKCS8(pem, 'ES256', 'devswhomove-atproto-oauth');
+  } catch {
+    throw configError('ATPROTO_OAUTH_PRIVATE_KEY must be a P-256 (prime256v1) PKCS#8 private key.');
+  }
 }
 
 /** Serialize concurrent OAuth refreshes for a named session using a D1 lock. */
@@ -165,6 +198,7 @@ async function deserializeDpopValue<T extends { dpopKey: Key }>(
 export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
   const origin = oauthOrigin(env);
   const key = await privateKey(env);
+  await encryptionKey(env, ['encrypt']);
   const isLoopback = new URL(origin).protocol === 'http:';
   const callback = new URL('/auth/atproto/callback', origin);
   if (isLoopback) callback.hostname = '127.0.0.1';
