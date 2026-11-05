@@ -1,4 +1,5 @@
 import type { AgentScope } from '../src/app/models';
+import { HttpError } from './validation';
 
 const PROTOCOL_VERSION = '2026-07-28';
 const SERVER_INFO = { name: 'devs-who-move', version: '0.0.0' };
@@ -160,14 +161,19 @@ function apiRequest(
 }
 
 async function callApi(dispatchApi: ApiDispatcher, request: Request) {
-  const result = await dispatchApi(request);
-  const payload: unknown = await result.json();
-  const data = isRecord(payload) ? payload : {};
-  return {
-    ok: result.ok,
-    data,
-    message: typeof data['error'] === 'string' ? data['error'] : 'The API request failed.',
-  };
+  try {
+    const result = await dispatchApi(request);
+    const payload: unknown = await result.json();
+    const data = isRecord(payload) ? payload : {};
+    return {
+      ok: result.ok,
+      data,
+      message: typeof data['error'] === 'string' ? data['error'] : 'The API request failed.',
+    };
+  } catch (error) {
+    if (!(error instanceof HttpError)) throw error;
+    return { ok: false, data: { error: error.message }, message: error.message };
+  }
 }
 
 function toolResult(id: RequestId, data: Record<string, unknown>, isError = false): Response {

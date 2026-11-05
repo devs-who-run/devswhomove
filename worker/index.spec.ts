@@ -404,6 +404,27 @@ describe('Worker with real D1 storage', () => {
       source: 'agent',
     });
 
+    const invalidActivity = await mcpRequest(
+      'tools/call',
+      {
+        name: 'create_activity',
+        arguments: {
+          title: 'Invalid MCP activity',
+          sport: 'Running',
+          occurredAt: new Date(Date.now() - 60_000).toISOString(),
+          duration: 0,
+        },
+      },
+      mcpToken.token,
+    );
+    expect(invalidActivity.status).toBe(200);
+    expect(await invalidActivity.json()).toMatchObject({
+      result: {
+        isError: true,
+        structuredContent: { error: 'Duration in minutes must be between 1 and 1440.' },
+      },
+    });
+
     const listedActivities = await mcpRequest(
       'tools/call',
       { name: 'list_activities' },
