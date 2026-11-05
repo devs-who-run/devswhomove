@@ -2757,3 +2757,120 @@ fieldset .sport-filters {
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+
+.icon-button {
+  width: 44px;
+  height: 44px;
+}
+
+.theme-control select {
+  min-height: 44px;
+  font-size: 12px;
+}
+
+nav a {
+  min-height: 46px;
+}
+
+.sport-filters button {
+  min-height: 44px;
+}
+
+.activity-footer {
+  flex-wrap: wrap;
+}
+
+.heatmap-details {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.heatmap-details summary {
+  width: fit-content;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.heatmap-details ul {
+  columns: 2;
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.8;
+}
+
+@media (max-width: 520px) {
+  .sidebar {
+    height: calc(65px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  nav a {
+    min-height: 56px;
+  }
+
+  nav a > span:not(.nav-tag) {
+    font-size: 10px;
+  }
+
+  main {
+    padding-bottom: calc(82px + env(safe-area-inset-bottom));
+  }
+
+  .heatmap-details ul {
+    columns: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
+.workspace-label,
+.sidebar-bottom,
+.today,
+.eyebrow,
+.preview-strip,
+.route-label,
+.hero-label,
+.sport-label,
+.nav-tag,
+.activity-footer,
+.feed-end,
+.chart-day small,
+.mini-sport,
+.right-footnote,
+.page-footer,
+.event-date,
+.event-art-caption,
+.event-detail,
+.profile-cover > span,
+.profile-stats span,
+.heatmap-legend,
+.profile-activity small,
+.profile-activity-metric > span,
+.visibility-pill,
+.beta-pill,
+.terminal-top small,
+.terminal-comment,
+.terminal-result small,
+.token-item small,
+.photo-picker-label small,
+.photo-preview figcaption,
+.form-help {
+  color: var(--muted);
+  font-size: max(10px, 0.8em);
+}
+
+.activity-card:hover,
+.event-card:hover,
+.profile-activity:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 8px 24px rgb(34 54 40 / 7%);
+}
