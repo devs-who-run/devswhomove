@@ -128,6 +128,9 @@ html:root[data-theme='dark']
 html:root[data-theme='dark'] :is(.account strong, .breadcrumb span, .events-banner strong, dialog) {
   color: var(--text);
 }
+html:root[data-theme='dark'] :is(label, legend) {
+  color: var(--accent-text);
+}
 html:root[data-theme='dark']
   :is(
     h1 span,
@@ -138,8 +141,6 @@ html:root[data-theme='dark']
     .host-button,
     .agent-principles strong,
     .footer-wordmark,
-    label,
-    legend,
     .loading-state
   ) {
   color: var(--accent-text);
