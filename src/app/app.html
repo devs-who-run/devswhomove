@@ -810,12 +810,14 @@
                   </p>
                   <p>
                     <span class="terminal-prompt">agent ›</span>
-                    <span class="terminal-comment">With a connected API tool, your agent can:</span>
+                    <span class="terminal-comment"
+                      >With a connected MCP client or API tool, your agent can:</span
+                    >
                   </p>
                   <div class="terminal-result">
                     <app-icon name="check" /><span
                       >Create an activity on your account<br /><small
-                        >5.0 km · 31 min · Visibility depends on your sign-in provider</small
+                        >5.0 km · 31 min · MCP-created activities are always private</small
                       ></span
                     >
                   </div>
@@ -841,9 +843,9 @@
                 </div>
                 <div>
                   <app-icon name="terminal" /><span
-                    ><strong>API ready, MCP next</strong>Use bearer tokens with an HTTP-capable
-                    agent today. Interactive OAuth and MCP connections are planned, not enabled
-                    yet.</span
+                    ><strong>MCP is ready to connect</strong>Use a scoped agent token with the
+                    Streamable HTTP endpoint. Tools are enabled by the token’s permissions;
+                    interactive OAuth is not supported.</span
                   >
                 </div>
               </div>
@@ -949,6 +951,35 @@
               }
             </section>
           </div>
+          <section class="connect-card mcp-setup" aria-labelledby="mcp-setup-title">
+            <div>
+              <p class="eyebrow">MODEL CONTEXT PROTOCOL</p>
+              <h2 id="mcp-setup-title">Bring your agent along.</h2>
+              <p>
+                This endpoint supports MCP protocol version <code>2026-07-28</code> only. Configure
+                your client to use this version, then add the server below. Replace
+                <code>YOUR_AGENT_TOKEN</code> with a token you create above and keep it in your
+                client’s secret storage.
+              </p>
+              <p class="small-text muted">
+                Available tools depend on the token’s scopes: read your activities, log private
+                activities, and discover upcoming public events. MCP uses your existing token;
+                interactive OAuth is not available.
+              </p>
+            </div>
+            <div class="terminal-window">
+              <pre class="terminal-content"><code>{{ '{' }}
+  "mcpServers": {{ '{' }}
+    "devs-who-move": {{ '{' }}
+      "url": "https://devswhorun.dev/mcp",
+      "headers": {{ '{' }}
+        "Authorization": "Bearer YOUR_AGENT_TOKEN"
+      {{ '}' }}
+    {{ '}' }}
+  {{ '}' }}
+{{ '}' }}</code></pre>
+            </div>
+          </section>
         }
       }
       <footer class="page-footer">
