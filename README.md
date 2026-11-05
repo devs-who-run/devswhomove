@@ -15,9 +15,9 @@ pnpm start
 
 Commit dependency changes with `pnpm-lock.yaml`. Native dependency build scripts are explicitly allowed in `pnpm-workspace.yaml`; review new build-script requests before approving them with `pnpm approve-builds`.
 
-Open http://127.0.0.1:8787. An empty anonymous community shows **explicitly labelled sample content**, never inserted into the database. After sign-in, the app uses only persisted data. API failures display errors rather than falling back to samples.
+Open http://127.0.0.1:8787. `pnpm start` configures `APP_URL` for this loopback origin. An empty anonymous community shows **explicitly labelled sample content**, never inserted into the database. After sign-in, the app uses only persisted data. API failures display errors rather than falling back to samples.
 
-For frontend hot reload, run `pnpm run dev:api` and `pnpm run dev:ui` in separate terminals. Open http://127.0.0.1:4200. OAuth redirects return to `APP_URL` (port 8787 by default); use that origin for testing the full authentication flow. Browser mutations intentionally require the configured `APP_URL` origin, so use port 8787 for mutations, or set `APP_URL` to `http://127.0.0.1:4200` locally when using the proxy. Use `127.0.0.1` rather than `localhost` for AT Protocol loopback OAuth.
+For frontend hot reload, run `pnpm run dev:api` and `pnpm run dev:ui` in separate terminals. `dev:api` configures `APP_URL` as `http://127.0.0.1:4200` for the proxy; open http://127.0.0.1:4200. Use the same `127.0.0.1` host for the app and OAuth callback so the state cookie is sent on the loopback redirect.
 
 ## GitHub sign-in
 
@@ -47,7 +47,7 @@ Put each result in `.dev.vars` beside `wrangler.jsonc`; never commit either key.
 
 An AT Protocol personal data server (PDS) is public storage. Profiles, activities, and hosted events for AT Protocol accounts are public records; a public record can be copied, indexed, or cached by others and deleting it cannot guarantee those copies disappear. Do not publish precise home/work locations, live location or routes, private contact details, health or other sensitive notes, attendance identities, or information you would not want permanently public. The app warns users and requires confirmation before public writes. Photos are not supported for these accounts. RSVP identities and agent tokens remain in Cloudflare and are not written to the PDS.
 
-The PDS is canonical for AT Protocol profiles, activities, and hosted events. Cloudflare D1 holds a validated, bounded read projection for the community feed; synchronization is capped at 1,000 records per collection per request. OAuth state and refresh sessions are encrypted in D1. Never put OAuth signing keys, session-encryption keys, agent tokens, or credentials in PDS records.
+The PDS is canonical for AT Protocol profiles, activities, and hosted events. Cloudflare D1 holds a validated, bounded read projection for the community feed; synchronization is throttled to once every five minutes and capped at 1,000 records per collection per sync. OAuth state and refresh sessions are encrypted in D1. Never put OAuth signing keys, session-encryption keys, agent tokens, or credentials in PDS records.
 
 ## Included in this slice
 
@@ -70,6 +70,7 @@ Activity lists and summaries currently cover the latest 100 visible sessions. Ev
 Sign in, open **Your agents**, choose permissions and create a token. Copy it once into the agent's secret manager. Tokens expire in 90 days; at most 10 unexpired tokens per account. Token management, publication, profile privacy and event mutations require a browser session.
 
 Supported scopes: `activities:read`, `activities:write`, `events:read`.
+AT Protocol agent tokens are read-only for activities; public PDS writes are not available to agents.
 
 An HTTP-capable agent can upload a session:
 

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 
 describe('Worker with real D1 storage', () => {
   let runtime: Miniflare;
@@ -11,6 +11,11 @@ describe('Worker with real D1 storage', () => {
   const alice = 'a'.repeat(64);
   const bob = 'b'.repeat(64);
   const charlie = 'c'.repeat(64);
+  const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const atprotoSigningKey = Buffer.from(
+    privateKey.export({ type: 'pkcs8', format: 'pem' }),
+  ).toString('base64');
+  const atprotoSessionKey = Buffer.alloc(32, 7).toString('base64');
   const hash = (value: string) => createHash('sha256').update(value).digest('hex');
   const activity = {
     title: 'Before standup',
@@ -131,22 +136,102 @@ describe('Worker with real D1 storage', () => {
         compatibilityDate: '2026-11-03',
         d1Databases: ['DB'],
         r2Buckets: ['PHOTOS'],
-        bindings: { APP_URL: origin },
+        bindings: {
+          APP_URL: origin,
+          ATPROTO_OAUTH_PRIVATE_KEY: atprotoSigningKey,
+          ATPROTO_SESSION_KEY: atprotoSessionKey,
+        },
       }),
     );
     db = await runtime.getD1Database('DB');
-    const migration = (
-      await Promise.all(
-        ['0001_initial.sql', '0002_activity_photos.sql', '0003_atproto.sql'].map((file) =>
-          readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'),
-        ),
+    const migrations = await Promise.all(
+      [
+        '0001_initial.sql',
+        '0002_activity_photos.sql',
+        '0003_atproto.sql',
+        '0004_atproto_handle_index.sql',
+      ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
+    );
+    for (const migration of migrations.slice(0, 3)) {
+      for (const statement of migration
+        .split(';')
+        .map((part) => part.trim())
+        .filter(Boolean))
+        await db.prepare(statement).run();
+    }
+    await db
+      .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+      .bind('did:plc:migration', 'migration.example', 'Migration', '2026-01-01')
+      .run();
+    await db
+      .prepare('INSERT INTO atproto_sessions (token_hash, did, expires_at) VALUES (?, ?, ?)')
+      .bind('migration-session', 'did:plc:migration', '2099-01-01')
+      .run();
+    await db
+      .prepare(
+        'INSERT INTO atproto_activities (uri, did, rkey, record_json, indexed_at) VALUES (?, ?, ?, ?, ?)',
       )
-    ).join(';');
-    for (const statement of migration
+      .bind(
+        'at://did:plc:migration/dev.devswhorun.activity/a',
+        'did:plc:migration',
+        'a',
+        '{}',
+        '2026-01-01',
+      )
+      .run();
+    await db
+      .prepare(
+        'INSERT INTO atproto_events (uri, did, rkey, record_json, title, sport, starts_at, location, level, capacity, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .bind(
+        'at://did:plc:migration/dev.devswhorun.event/e',
+        'did:plc:migration',
+        'e',
+        '{}',
+        'Event',
+        'Running',
+        '2099-01-01',
+        'Park',
+        'All',
+        2,
+        '2026-01-01',
+      )
+      .run();
+    await db
+      .prepare('INSERT INTO atproto_event_attendees (event_uri, attendee_id) VALUES (?, ?)')
+      .bind('at://did:plc:migration/dev.devswhorun.event/e', 'github:alice')
+      .run();
+    await db
+      .prepare(
+        'INSERT INTO atproto_agent_tokens (id, did, token_hash, name, scopes, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .bind(
+        'migration-token',
+        'did:plc:migration',
+        'migration-hash',
+        'Migration',
+        '[]',
+        '2026-01-01',
+        '2099-01-01',
+      )
+      .run();
+    for (const statement of migrations[3]
       .split(';')
       .map((part) => part.trim())
       .filter(Boolean))
       await db.prepare(statement).run();
+    for (const table of [
+      'atproto_sessions',
+      'atproto_activities',
+      'atproto_events',
+      'atproto_event_attendees',
+      'atproto_agent_tokens',
+    ]) {
+      expect(
+        await db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first<{ count: number }>(),
+      ).toEqual({ count: 1 });
+    }
+    await db.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind('did:plc:migration').run();
     for (const [id, session, visibility] of [
       ['alice', alice, 'public'],
       ['bob', bob, 'private'],
@@ -597,5 +682,94 @@ describe('Worker with real D1 storage', () => {
     expect(response.status).toBe(204);
     expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
     expect((await request('/api/activities', 'GET', undefined, alice)).status).toBe(401);
+  });
+
+  it('serves all public AT Protocol activities and resolves duplicate handles deterministically', async () => {
+    const accounts = [
+      ['did:plc:older', 'duplicate.example', 'Older', '2026-01-01T00:00:00.000Z'],
+      ['did:plc:newer', 'duplicate.example', 'Newer', '2026-02-01T00:00:00.000Z'],
+    ];
+    for (const [did, handle, name, updatedAt] of accounts) {
+      await db
+        .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+        .bind(did, handle, name, updatedAt)
+        .run();
+      const occurredAt = did.endsWith('newer')
+        ? '2026-02-01T08:00:00.000Z'
+        : '2026-01-01T08:00:00.000Z';
+      const uri = `at://${did}/dev.devswhorun.activity/activity`;
+      await db
+        .prepare(
+          `INSERT INTO atproto_activities (uri, did, rkey, record_json, indexed_at)
+          VALUES (?, ?, 'activity', ?, ?)`,
+        )
+        .bind(
+          uri,
+          did,
+          JSON.stringify({
+            $type: 'dev.devswhorun.activity',
+            title: name,
+            sport: 'Running',
+            occurredAt,
+            duration: 30,
+            notes: '',
+            source: 'web',
+          }),
+          updatedAt,
+        )
+        .run();
+    }
+
+    const feed = await (
+      await request('/api/bootstrap')
+    ).json<{
+      activities: { id: string; title: string }[];
+    }>();
+    expect(feed.activities.map(({ title }) => title)).toContain('Older');
+    expect(feed.activities.map(({ title }) => title)).toContain('Newer');
+
+    const profile = await (
+      await request('/api/profiles/duplicate.example')
+    ).json<{ profile: { id: string; name: string }; activities: { title: string }[] }>();
+    expect(profile.profile).toMatchObject({ id: 'did:plc:newer', name: 'Newer' });
+    expect(profile.activities.map(({ title }) => title)).toEqual(['Newer']);
+  });
+
+  it('keeps anonymous browsing available for expired AT Protocol authorization and preserves transient failures', async () => {
+    const did = 'did:plc:session-test';
+    const browserSession = 'atproto-browser-session';
+    await db
+      .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+      .bind(did, 'session.example', 'Session Test', '1970-01-01T00:00:00.000Z')
+      .run();
+    await db
+      .prepare('INSERT INTO atproto_sessions (token_hash, did, expires_at) VALUES (?, ?, ?)')
+      .bind(hash(browserSession), did, '2099-01-01T00:00:00.000Z')
+      .run();
+    await db
+      .prepare(
+        'INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)',
+      )
+      .bind(did, 'invalid-encrypted-data', new Date().toISOString())
+      .run();
+
+    expect((await request('/api/bootstrap', 'GET', undefined, browserSession)).status).toBe(503);
+    expect(
+      await db
+        .prepare('SELECT 1 FROM atproto_sessions WHERE token_hash = ?')
+        .bind(hash(browserSession))
+        .first(),
+    ).toBeTruthy();
+
+    await db.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(did).run();
+    const anonymous = await request('/api/bootstrap', 'GET', undefined, browserSession);
+    expect(anonymous.status).toBe(200);
+    expect(await anonymous.json()).toMatchObject({ viewer: null });
+    expect(
+      await db
+        .prepare('SELECT 1 FROM atproto_sessions WHERE token_hash = ?')
+        .bind(hash(browserSession))
+        .first(),
+    ).toBeNull();
   });
 });

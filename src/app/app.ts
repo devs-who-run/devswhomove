@@ -515,7 +515,7 @@ export class App {
     await this.action(async () => {
       const scopes: AgentScope[] = [];
       if (this.agentRead) scopes.push('activities:read');
-      if (this.agentWrite) scopes.push('activities:write');
+      if (this.agentWrite && this.viewer()?.provider !== 'atproto') scopes.push('activities:write');
       if (this.agentEvents) scopes.push('events:read');
       const result = await this.api<{ token: string }>('/api/tokens', 'POST', {
         name: this.agentName,

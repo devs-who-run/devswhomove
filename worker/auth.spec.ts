@@ -3,6 +3,7 @@ import { convertV4MiniflareOptions, Miniflare, Response } from 'miniflare';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
 import { createHash, generateKeyPairSync } from 'node:crypto';
+import { oauthClient } from './atproto';
 
 describe('GitHub OAuth protocol with mocked GitHub responses', () => {
   let runtime: Miniflare;
@@ -76,9 +77,12 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
     db = await runtime.getD1Database('DB');
     const migration = (
       await Promise.all(
-        ['0001_initial.sql', '0002_activity_photos.sql', '0003_atproto.sql'].map((file) =>
-          readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'),
-        ),
+        [
+          '0001_initial.sql',
+          '0002_activity_photos.sql',
+          '0003_atproto.sql',
+          '0004_atproto_handle_index.sql',
+        ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
       )
     ).join(';');
     for (const statement of migration
@@ -114,9 +118,7 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
   });
 
   it('publishes AT Protocol OAuth metadata and only the signing key’s public material', async () => {
-    const metadataResponse = await runtime.dispatchFetch(
-      `${origin}/oauth/client-metadata.json`,
-    );
+    const metadataResponse = await runtime.dispatchFetch(`${origin}/oauth/client-metadata.json`);
     const metadata = await metadataResponse.json<{
       client_id: string;
       redirect_uris: string[];
@@ -134,6 +136,22 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
     expect(jwks.keys[0]).toMatchObject({ kty: 'EC', crv: 'P-256' });
     expect(jwks.keys[0]).not.toHaveProperty('d');
     expect(JSON.stringify(jwks)).not.toContain(atprotoSigningKey);
+  });
+
+  it('uses the public loopback-client metadata for HTTP development origins', async () => {
+    const client = await oauthClient({
+      DB: db,
+      APP_URL: 'http://localhost:8787',
+      ATPROTO_OAUTH_PRIVATE_KEY: atprotoSigningKey,
+      ATPROTO_SESSION_KEY: atprotoSessionKey,
+    });
+    expect(client.clientMetadata).toMatchObject({
+      client_id: 'http://localhost',
+      redirect_uris: ['http://127.0.0.1:8787/auth/atproto/callback'],
+      scope: 'atproto',
+      token_endpoint_auth_method: 'none',
+    });
+    expect(client.clientMetadata).not.toHaveProperty('jwks_uri');
   });
 
   it('rejects missing or mismatched state before exchanging any GitHub code', async () => {

@@ -1,4 +1,11 @@
-import { SPORTS, type Activity, type AgentScope, type Profile, type Sport, type SportEvent } from '../src/app/models';
+import {
+  SPORTS,
+  type Activity,
+  type AgentScope,
+  type Profile,
+  type Sport,
+  type SportEvent,
+} from '../src/app/models';
 import {
   ACTIVITY_COLLECTION,
   atprotoAgent,
@@ -6,6 +13,12 @@ import {
   oauthClient,
   PROFILE_COLLECTION,
 } from './atproto';
+import {
+  OAuthResponseError,
+  TokenInvalidError,
+  TokenRefreshError,
+  TokenRevokedError,
+} from '@atproto/oauth-client';
 import type { Agent } from '@atproto/api';
 import { MAX_PHOTO_BYTES, sanitizeImage } from './images';
 import { handleMcp } from './mcp';
@@ -33,6 +46,7 @@ interface Identity {
   atprotoAgent?: Agent;
 }
 const ALL_SCOPES: AgentScope[] = ['activities:read', 'activities:write', 'events:read'];
+const ATPROTO_SYNC_INTERVAL_MS = 5 * 60_000;
 const ACTIVITY_SELECT = `SELECT a.id, a.user_id AS userId, u.username, u.name, u.avatar,
   a.title, a.sport, a.occurred_at AS occurredAt, a.duration, a.distance, a.notes,
   a.visibility, a.source,
@@ -43,17 +57,20 @@ const ACTIVITY_SELECT = `SELECT a.id, a.user_id AS userId, u.username, u.name, u
 const json = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 
+/** Hash opaque browser sessions and bearer tokens before storage or lookup. */
 async function hash(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/** Generate a cryptographically random opaque session or token. */
 function secret(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
     byte.toString(16).padStart(2, '0'),
   ).join('');
 }
 
+/** Read one named cookie from a request without exposing unrelated cookie values. */
 function cookie(request: Request, name: string): string | undefined {
   return request.headers
     .get('Cookie')
@@ -63,6 +80,7 @@ function cookie(request: Request, name: string): string | undefined {
     ?.slice(name.length + 1);
 }
 
+/** Decode one URL path segment and reject malformed percent-encoding. */
 function decodedPathPart(value: string): string {
   try {
     return decodeURIComponent(value);
@@ -71,6 +89,7 @@ function decodedPathPart(value: string): string {
   }
 }
 
+/** Extract a record key only when the AT URI belongs to the expected DID and collection. */
 function recordKey(uri: string, did: string, collection: string): string {
   const prefix = `at://${did}/${collection}/`;
   if (!uri.startsWith(prefix)) throw new HttpError(404, 'Record not found.');
@@ -79,12 +98,14 @@ function recordKey(uri: string, did: string, collection: string): string {
   return key;
 }
 
+/** Check that a PDS record URI belongs to the expected repository and collection. */
 function validRecordUri(uri: string, did: string, collection: string): boolean {
   const prefix = `at://${did}/${collection}/`;
   const rkey = uri.startsWith(prefix) ? uri.slice(prefix.length) : '';
   return Boolean(rkey) && !rkey.includes('/');
 }
 
+/** Normalize public PDS profile fields before storing them in the application projection. */
 function atprotoProfile(
   handle: string,
   nativeProfile: unknown,
@@ -117,14 +138,17 @@ function atprotoProfile(
   return { name, bio, sports };
 }
 
+/** Create an HTTP-only session cookie with the configured origin's secure policy. */
 function setCookie(env: Env, name: string, value: string, age: number): string {
   return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${new URL(env.APP_URL).protocol === 'https:' ? '; Secure' : ''}`;
 }
 
+/** Parse a stored user row's JSON sports list into the API profile shape. */
 function profile(row: UserRow): Profile {
   return { ...row, sports: JSON.parse(row.sports) };
 }
 
+/** Authenticate a request using a scoped bearer token or a browser session cookie. */
 async function identity(request: Request, env: Env): Promise<Identity | null> {
   const authorization = request.headers.get('Authorization');
   // Any Authorization header (even empty) bypasses the Origin check, so it must never fall back to the session cookie.
@@ -156,12 +180,14 @@ async function identity(request: Request, env: Env): Promise<Identity | null> {
       .bind(await hash(match[1]), new Date().toISOString())
       .first<{ did: string; scopes: string }>();
     if (!atprotoToken) throw new HttpError(401, 'Agent token expired or revoked.');
-    return atprotoIdentity(
+    const identity = await atprotoIdentity(
       env,
       atprotoToken.did,
       true,
       JSON.parse(atprotoToken.scopes),
     );
+    if (!identity) throw new HttpError(401, 'AT Protocol authorization has expired.');
+    return identity;
   }
   const session = cookie(request, 'dwm_session');
   if (!session) return null;
@@ -171,24 +197,22 @@ async function identity(request: Request, env: Env): Promise<Identity | null> {
   )
     .bind(await hash(session), new Date().toISOString())
     .first<UserRow>();
-  if (row)
-    return { user: profile(row), agent: false, scopes: ALL_SCOPES, provider: 'github' };
+  if (row) return { user: profile(row), agent: false, scopes: ALL_SCOPES, provider: 'github' };
   const atprotoSession = await env.DB.prepare(
     `SELECT did FROM atproto_sessions WHERE token_hash = ? AND expires_at > ?`,
   )
     .bind(await hash(session), new Date().toISOString())
     .first<{ did: string }>();
-  return atprotoSession
-    ? atprotoIdentity(env, atprotoSession.did, false, ALL_SCOPES)
-    : null;
+  return atprotoSession ? atprotoIdentity(env, atprotoSession.did, false, ALL_SCOPES) : null;
 }
 
+/** Restore an AT Protocol identity, treating removed OAuth sessions as expired authorization. */
 async function atprotoIdentity(
   env: Env,
   did: string,
   agent: boolean,
   scopes: AgentScope[],
-): Promise<Identity> {
+): Promise<Identity | null> {
   const row = await env.DB.prepare(
     `SELECT did AS id, handle AS username, name, avatar, bio, '' AS location,
       sports, 'public' AS visibility FROM atproto_accounts WHERE did = ?`,
@@ -196,8 +220,40 @@ async function atprotoIdentity(
     .bind(did)
     .first<UserRow>();
   if (!row) throw new HttpError(401, 'AT Protocol account no longer exists.');
-  const client = await oauthClient(env);
-  const session = await client.restore(did);
+  const storedBefore = await env.DB.prepare(
+    'SELECT 1 AS found FROM atproto_oauth_sessions WHERE did = ?',
+  )
+    .bind(did)
+    .first();
+  if (!storedBefore) {
+    await env.DB.prepare('DELETE FROM atproto_sessions WHERE did = ?').bind(did).run();
+    if (agent) throw new HttpError(401, 'AT Protocol authorization has expired.');
+    return null;
+  }
+  let session;
+  try {
+    const client = await oauthClient(env);
+    session = await client.restore(did);
+  } catch (error) {
+    const storedAfter = await env.DB.prepare(
+      'SELECT 1 AS found FROM atproto_oauth_sessions WHERE did = ?',
+    )
+      .bind(did)
+      .first();
+    if (storedAfter)
+      throw new HttpError(503, 'AT Protocol authorization is temporarily unavailable.');
+    await env.DB.prepare('DELETE FROM atproto_sessions WHERE did = ?').bind(did).run();
+    const oauthError = causeOfType(error, OAuthResponseError);
+    const permanentlyRejected =
+      (oauthError instanceof OAuthResponseError && oauthError.error === 'invalid_grant') ||
+      error instanceof TokenRefreshError ||
+      error instanceof TokenRevokedError ||
+      error instanceof TokenInvalidError;
+    if (!permanentlyRejected)
+      throw new HttpError(503, 'AT Protocol authorization is temporarily unavailable.');
+    if (agent) throw new HttpError(401, 'AT Protocol authorization has expired.');
+    return null;
+  }
   return {
     user: { ...profile(row), provider: 'atproto' },
     agent,
@@ -207,6 +263,19 @@ async function atprotoIdentity(
   };
 }
 
+/** Find a typed error in a nested cause chain returned by the OAuth client. */
+function causeOfType<T extends Error>(
+  error: unknown,
+  ErrorType: new (...args: never[]) => T,
+): T | undefined {
+  let current = error;
+  while (current instanceof Error) {
+    if (current instanceof ErrorType) return current;
+    current = current.cause;
+  }
+}
+
+/** Enforce authentication, scope, and browser-only requirements for an endpoint. */
 function requireIdentity(auth: Identity | null, scope?: AgentScope, browserOnly = false): Identity {
   if (!auth) throw new HttpError(401, 'Sign in to continue.');
   if (browserOnly && auth.agent)
@@ -216,6 +285,7 @@ function requireIdentity(auth: Identity | null, scope?: AgentScope, browserOnly 
   return auth;
 }
 
+/** Read a bounded request body and reject oversized payloads while streaming. */
 async function readLimited(request: Request, limit: number): Promise<Uint8Array> {
   if (Number(request.headers.get('Content-Length') || 0) > limit)
     throw new HttpError(413, 'Request is too large.');
@@ -242,6 +312,7 @@ async function readLimited(request: Request, limit: number): Promise<Uint8Array>
   return bytes;
 }
 
+/** Parse a JSON object request body and return a client error for invalid input. */
 async function body(request: Request): Promise<Record<string, unknown>> {
   if (!request.headers.get('Content-Type')?.includes('application/json')) {
     throw new HttpError(415, 'Use application/json.');
@@ -258,10 +329,11 @@ async function body(request: Request): Promise<Record<string, unknown>> {
   return data as Record<string, unknown>;
 }
 
+/** Combine the public community feed with the signed-in GitHub user's own activities. */
 async function activities(env: Env, userId?: string): Promise<Activity[]> {
   const [github, atproto] = await Promise.all([
     env.DB.prepare(
-    `${ACTIVITY_SELECT}
+      `${ACTIVITY_SELECT}
     WHERE (a.user_id = ? OR (a.visibility = 'public' AND u.visibility = 'public'))
     ORDER BY a.occurred_at DESC LIMIT 100`,
     )
@@ -278,22 +350,41 @@ async function activities(env: Env, userId?: string): Promise<Activity[]> {
         'public' AS visibility, json_extract(a.record_json, '$.source') AS source,
         NULL AS photo
       FROM atproto_activities a JOIN atproto_accounts u ON u.did = a.did
-      WHERE (? = '' OR a.did = ?)`,
-    )
-      .bind(userId || '', userId || '')
-      .all<Activity>(),
+      ORDER BY json_extract(a.record_json, '$.occurredAt') DESC LIMIT 100`,
+    ).all<Activity>(),
   ]);
   return [...github.results, ...atproto.results]
     .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
     .slice(0, 100);
 }
 
+/** Return the latest indexed activities owned by one AT Protocol DID. */
+async function atprotoActivitiesByDid(env: Env, did: string): Promise<Activity[]> {
+  const result = await env.DB.prepare(
+    `SELECT a.uri AS id, a.did AS userId, u.handle AS username, u.name, u.avatar,
+      json_extract(a.record_json, '$.title') AS title,
+      json_extract(a.record_json, '$.sport') AS sport,
+      json_extract(a.record_json, '$.occurredAt') AS occurredAt,
+      json_extract(a.record_json, '$.duration') AS duration,
+      json_extract(a.record_json, '$.distance') AS distance,
+      json_extract(a.record_json, '$.notes') AS notes,
+      'public' AS visibility, json_extract(a.record_json, '$.source') AS source,
+      NULL AS photo
+    FROM atproto_activities a JOIN atproto_accounts u ON u.did = a.did
+    WHERE a.did = ? ORDER BY json_extract(a.record_json, '$.occurredAt') DESC LIMIT 100`,
+  )
+    .bind(did)
+    .all<Activity>();
+  return result.results;
+}
+
+/** Return activities visible on a GitHub profile or all public activities for a DID. */
 async function profileActivities(
   env: Env,
   profileId: string,
   viewerId: string,
 ): Promise<Activity[]> {
-  if (profileId.startsWith('did:')) return activities(env, profileId);
+  if (profileId.startsWith('did:')) return atprotoActivitiesByDid(env, profileId);
   const result = await env.DB.prepare(
     `${ACTIVITY_SELECT} WHERE a.user_id = ?
     AND (a.visibility = 'public' OR a.user_id = ?) ORDER BY a.occurred_at DESC LIMIT 100`,
@@ -303,10 +394,11 @@ async function profileActivities(
   return result.results;
 }
 
+/** Combine upcoming GitHub and AT Protocol events without exposing attendee identities. */
 async function events(env: Env, userId?: string): Promise<SportEvent[]> {
   const [github, atproto] = await Promise.all([
     env.DB.prepare(
-    `SELECT e.id, e.host_id AS hostId, u.name AS hostName,
+      `SELECT e.id, e.host_id AS hostId, u.name AS hostName,
     e.title, e.sport, e.starts_at AS startsAt, e.location, e.description, e.level, e.capacity,
     (SELECT COUNT(*) FROM event_attendees WHERE event_id = e.id) +
     (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = e.id) AS attendees,
@@ -343,6 +435,7 @@ async function events(env: Env, userId?: string): Promise<SportEvent[]> {
     .slice(0, 100);
 }
 
+/** Build the public activity lexicon record for a validated application activity. */
 function activityRecord(row: Record<string, unknown>, source: 'web' | 'agent') {
   return {
     $type: ACTIVITY_COLLECTION,
@@ -356,6 +449,7 @@ function activityRecord(row: Record<string, unknown>, source: 'web' | 'agent') {
   };
 }
 
+/** Build the public event lexicon record from validated event fields. */
 function eventRecord(fields: readonly [string, string, string, string, string, string, number]) {
   const [title, eventSport, startsAt, location, description, level, capacity] = fields;
   return {
@@ -370,6 +464,7 @@ function eventRecord(fields: readonly [string, string, string, string, string, s
   };
 }
 
+/** Publish a validated public activity to the user's PDS and index it in D1. */
 async function saveAtprotoActivity(
   env: Env,
   actor: Identity,
@@ -407,6 +502,7 @@ async function saveAtprotoActivity(
   return created.data.uri;
 }
 
+/** Publish a hosted event to the host's PDS and index it for community discovery. */
 async function saveAtprotoEvent(
   env: Env,
   actor: Identity,
@@ -423,7 +519,7 @@ async function saveAtprotoEvent(
   const uri = created.data.uri;
   await env.DB.batch([
     env.DB.prepare(
-    `INSERT INTO atproto_events
+      `INSERT INTO atproto_events
     (uri, did, rkey, record_json, title, sport, starts_at, location, description, level, capacity, indexed_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
@@ -441,6 +537,7 @@ async function saveAtprotoEvent(
   return uri;
 }
 
+/** Read a bounded set of pages from a PDS collection and report whether it is complete. */
 async function listAtprotoRecords(
   agent: Agent,
   did: string,
@@ -457,12 +554,12 @@ async function listAtprotoRecords(
     });
     records.push(...response.data.records.map(({ uri, value }) => ({ uri, value })));
     cursor = response.data.cursor;
-    if (records.length >= 1000)
-      return { records: records.slice(0, 1000), complete: !cursor };
+    if (records.length >= 1000) return { records: records.slice(0, 1000), complete: !cursor };
   } while (cursor);
   return { records, complete: true };
 }
 
+/** Validate an external activity record before indexing it in D1. */
 function atprotoActivityRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const record = value as Record<string, unknown>;
@@ -503,6 +600,7 @@ function atprotoActivityRecord(value: unknown): Record<string, unknown> | undefi
   };
 }
 
+/** Validate an external event record before indexing it in D1. */
 function atprotoEventRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const record = value as Record<string, unknown>;
@@ -544,6 +642,7 @@ function atprotoEventRecord(value: unknown): Record<string, unknown> | undefined
   };
 }
 
+/** Remove projection rows absent from a complete PDS listing, in bounded D1 batches. */
 async function removeStaleAtprotoRecords(
   env: Env,
   table: 'atproto_activities' | 'atproto_events',
@@ -551,9 +650,7 @@ async function removeStaleAtprotoRecords(
   liveUris: string[],
   startedAt: string,
 ): Promise<void> {
-  const existing = await env.DB.prepare(
-    `SELECT uri FROM ${table} WHERE did = ? AND indexed_at < ?`,
-  )
+  const existing = await env.DB.prepare(`SELECT uri FROM ${table} WHERE did = ? AND indexed_at < ?`)
     .bind(did, startedAt)
     .all<{ uri: string }>();
   const live = new Set(liveUris);
@@ -571,9 +668,14 @@ async function removeStaleAtprotoRecords(
     await env.DB.batch(deletions.slice(offset, offset + 50));
 }
 
+/** Refresh the bounded D1 projection from the user's PDS when its sync interval has elapsed. */
 async function syncAtprotoData(env: Env, auth: Identity): Promise<void> {
   const agent = auth.atprotoAgent;
   if (!agent || auth.provider !== 'atproto') return;
+  const account = await env.DB.prepare('SELECT updated_at FROM atproto_accounts WHERE did = ?')
+    .bind(auth.user.id)
+    .first<{ updated_at: string }>();
+  if (account && Date.now() - Date.parse(account.updated_at) < ATPROTO_SYNC_INTERVAL_MS) return;
   const startedAt = new Date().toISOString();
   const [repo, profiles, profileRecords, activitiesResult, eventsResult] = await Promise.all([
     agent.com.atproto.repo.describeRepo({ repo: auth.user.id }).then((response) => response.data),
@@ -587,17 +689,7 @@ async function syncAtprotoData(env: Env, auth: Identity): Promise<void> {
     listAtprotoRecords(agent, auth.user.id, EVENT_COLLECTION),
   ]);
   const appProfile = profileRecords.records.find((record) => record.uri.endsWith('/self'))?.value;
-  const { name, bio, sports } = atprotoProfile(
-    repo.handle,
-    profiles.records[0]?.value,
-    appProfile,
-  );
-  await env.DB.prepare(
-    `UPDATE atproto_accounts SET handle = ?, name = ?, bio = ?, sports = ?, updated_at = ?
-    WHERE did = ?`,
-  )
-    .bind(repo.handle, name, bio, JSON.stringify(sports), new Date().toISOString(), auth.user.id)
-    .run();
+  const { name, bio, sports } = atprotoProfile(repo.handle, profiles.records[0]?.value, appProfile);
   auth.user = { ...auth.user, username: repo.handle, name, bio, sports };
 
   const validActivities = activitiesResult.records.flatMap((item) => {
@@ -670,8 +762,15 @@ async function syncAtprotoData(env: Env, auth: Identity): Promise<void> {
       validEvents.map((item) => item.uri),
       startedAt,
     );
+  await env.DB.prepare(
+    `UPDATE atproto_accounts SET handle = ?, name = ?, bio = ?, sports = ?, updated_at = ?
+    WHERE did = ?`,
+  )
+    .bind(repo.handle, name, bio, JSON.stringify(sports), new Date().toISOString(), auth.user.id)
+    .run();
 }
 
+/** Validate hosted-event input fields and enforce the supported capacity range. */
 function eventFields(data: Record<string, unknown>) {
   const capacity = number(data['capacity'], 'Capacity', 2, 200);
   if (!Number.isInteger(capacity)) throw new HttpError(400, 'Capacity must be a whole number.');
@@ -686,6 +785,7 @@ function eventFields(data: Record<string, unknown>) {
   ] as const;
 }
 
+/** Start or complete GitHub OAuth sign-in and create a private account session. */
 async function githubAuth(request: Request, env: Env, url: URL): Promise<Response> {
   if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) {
     throw new HttpError(
@@ -779,6 +879,7 @@ async function githubAuth(request: Request, env: Env, url: URL): Promise<Respons
   return new Response(null, { status: 302, headers });
 }
 
+/** Start AT Protocol OAuth or validate its callback and create a browser session. */
 async function atprotoAuth(request: Request, env: Env, url: URL): Promise<Response> {
   if (!env.ATPROTO_OAUTH_PRIVATE_KEY || !env.ATPROTO_SESSION_KEY)
     throw new HttpError(
@@ -809,9 +910,7 @@ async function atprotoAuth(request: Request, env: Env, url: URL): Promise<Respon
   }
 
   const agent = atprotoAgent(result.session);
-  const repo = (
-    await agent.com.atproto.repo.describeRepo({ repo: result.session.did })
-  ).data;
+  const repo = (await agent.com.atproto.repo.describeRepo({ repo: result.session.did })).data;
   const [profiles, appProfiles] = await Promise.all([
     agent.com.atproto.repo
       .listRecords({
@@ -829,11 +928,7 @@ async function atprotoAuth(request: Request, env: Env, url: URL): Promise<Respon
       .then((response) => response.data),
   ]);
   const appProfile = appProfiles.records.find((record) => record.uri.endsWith('/self'))?.value;
-  const { name, bio, sports } = atprotoProfile(
-    repo.handle,
-    profiles.records[0]?.value,
-    appProfile,
-  );
+  const { name, bio, sports } = atprotoProfile(repo.handle, profiles.records[0]?.value, appProfile);
   await env.DB.prepare(
     `INSERT INTO atproto_accounts (did, handle, name, avatar, bio, sports, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -848,7 +943,7 @@ async function atprotoAuth(request: Request, env: Env, url: URL): Promise<Respon
       '',
       bio,
       JSON.stringify(sports),
-      new Date().toISOString(),
+      '1970-01-01T00:00:00.000Z',
     )
     .run();
 
@@ -871,6 +966,7 @@ async function atprotoAuth(request: Request, env: Env, url: URL): Promise<Respon
   return new Response(null, { status: 302, headers });
 }
 
+/** Route Worker requests to authentication, API, MCP, or static asset handlers. */
 async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const method = request.method;
@@ -906,7 +1002,13 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/bootstrap' && method === 'GET') {
     if (auth?.agent)
       throw new HttpError(403, 'Use the scoped /api/activities and /api/events endpoints.');
-    if (auth) await syncAtprotoData(env, auth);
+    if (auth?.provider === 'atproto') {
+      try {
+        await syncAtprotoData(env, auth);
+      } catch {
+        console.warn('AT Protocol sync failed; serving the cached community projection.');
+      }
+    }
     const [feed, upcoming] = await Promise.all([
       activities(env, auth?.user.id),
       events(env, auth?.user.id),
@@ -993,7 +1095,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const identity = requireIdentity(auth, 'activities:read');
     if (identity.provider === 'atproto') {
       await syncAtprotoData(env, identity);
-      return json({ activities: await activities(env, identity.user.id) });
+      return json({ activities: await atprotoActivitiesByDid(env, identity.user.id) });
     }
     const result = await env.DB.prepare(
       `${ACTIVITY_SELECT} WHERE a.user_id = ? ORDER BY a.occurred_at DESC LIMIT 100`,
@@ -1006,8 +1108,13 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const actor = requireIdentity(auth, 'activities:write');
     const data = await body(request);
     if (actor.provider === 'atproto') {
+      if (actor.agent)
+        throw new HttpError(403, 'Agent writes cannot publish public AT Protocol activities.');
       if (visibility(data['visibility'] ?? 'public') !== 'public')
-        throw new HttpError(400, 'AT Protocol activities are public; private activities are not supported.');
+        throw new HttpError(
+          400,
+          'AT Protocol activities are public; private activities are not supported.',
+        );
       const id = await saveAtprotoActivity(env, actor, data);
       return json({ id }, 201);
     }
@@ -1088,10 +1195,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (photoMatch && (method === 'PUT' || method === 'DELETE')) {
     const actor = requireIdentity(auth, 'activities:write');
     if (actor.provider === 'atproto')
-      throw new HttpError(
-        400,
-        'Activity photos are not supported for AT Protocol accounts yet.',
-      );
+      throw new HttpError(400, 'Activity photos are not supported for AT Protocol accounts yet.');
     const activityId = decodedPathPart(photoMatch[1]);
     const current = await env.DB.prepare(
       'SELECT photo_key AS key, visibility FROM activities WHERE id = ? AND user_id = ?',
@@ -1143,10 +1247,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       } else {
         const data = await body(request);
         if (visibility(data['visibility']) !== 'public')
-          throw new HttpError(
-            400,
-            'AT Protocol activities are public and cannot be made private.',
-          );
+          throw new HttpError(400, 'AT Protocol activities are public and cannot be made private.');
         const exists = await env.DB.prepare(
           'SELECT 1 AS found FROM atproto_activities WHERE uri = ? AND did = ?',
         )
@@ -1533,7 +1634,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
       });
     const atprotoRow = await env.DB.prepare(
       `SELECT did AS id, handle AS username, name, avatar, bio, '' AS location,
-        sports, 'public' AS visibility FROM atproto_accounts WHERE handle = ? OR did = ?`,
+        sports, 'public' AS visibility
+      FROM atproto_accounts WHERE handle = ? OR did = ?
+      ORDER BY updated_at DESC, did LIMIT 1`,
     )
       .bind(username, username)
       .first<UserRow>();

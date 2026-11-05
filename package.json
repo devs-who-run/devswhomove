@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "pnpm run build && wrangler dev",
+    "start": "pnpm run build && wrangler dev --var APP_URL:http://127.0.0.1:8787",
     "dev:ui": "ng serve --proxy-config proxy.conf.json",
-    "dev:api": "wrangler dev",
+    "dev:api": "wrangler dev --var APP_URL:http://127.0.0.1:4200",
     "build": "ng build",
     "deploy": "pnpm run build && wrangler deploy",
     "db:local": "wrangler d1 migrations apply devs-who-move --local",

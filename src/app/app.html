@@ -257,10 +257,16 @@
                   <div class="activity-header">
                     <a
                       class="person"
-                      [routerLink]="[
-                        '/profile',
-                        activity.userId.startsWith('did:') ? activity.userId : activity.username,
-                      ]"
+                      [routerLink]="
+                        activity.userId === viewer()?.id
+                          ? ['/profile']
+                          : [
+                              '/profile',
+                              activity.userId.startsWith('did:')
+                                ? activity.userId
+                                : activity.username,
+                            ]
+                      "
                       ><span
                         class="avatar"
                         [class.orange]="activity.sport === 'Cycling'"
@@ -869,15 +875,18 @@
                   />
                   <fieldset>
                     <legend>What can it do?</legend>
+                    @if (viewer()?.provider === 'atproto') {
+                      <p class="small-text muted">
+                        AT Protocol agent tokens cannot write public activities.
+                      </p>
+                    } @else {
+                      <label class="checkbox-label"
+                        ><input type="checkbox" name="agentWrite" [(ngModel)]="agentWrite" /><span
+                          >Log private activities</span
+                        ></label
+                      >
+                    }
                     <label class="checkbox-label"
-                      ><input type="checkbox" name="agentWrite" [(ngModel)]="agentWrite" /><span
-                        >{{
-                          viewer()?.provider === 'atproto'
-                            ? 'Log public activities'
-                            : 'Log private activities'
-                        }}</span
-                      ></label
-                    ><label class="checkbox-label"
                       ><input type="checkbox" name="agentRead" [(ngModel)]="agentRead" /><span
                         >Read your activity history</span
                       ></label
@@ -890,7 +899,12 @@
                   <button
                     class="button primary full"
                     type="submit"
-                    [disabled]="saving() || (!agentRead && !agentWrite && !agentEvents)"
+                    [disabled]="
+                      saving() ||
+                      (!agentRead &&
+                        (viewer()?.provider === 'atproto' || !agentWrite) &&
+                        !agentEvents)
+                    "
                   >
                     {{ saving() ? 'Creating…' : 'Create agent token' }}<app-icon name="plus" />
                   </button>

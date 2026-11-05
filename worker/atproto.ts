@@ -22,14 +22,17 @@ export interface AtprotoEnv {
   ATPROTO_SESSION_KEY?: string;
 }
 
+/** Decode a base64-encoded secret into bytes. */
 function decodeBase64(value: string): Uint8Array {
   return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 }
 
+/** Encode bytes as base64 for encrypted values stored in D1. */
 function base64(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes));
 }
 
+/** Import the configured AES-GCM key for OAuth state and session storage. */
 async function encryptionKey(
   env: AtprotoEnv,
   usage: ('encrypt' | 'decrypt')[],
@@ -41,6 +44,7 @@ async function encryptionKey(
   return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, usage);
 }
 
+/** Encrypt a stored OAuth value and bind it to its state or DID. */
 async function encrypt(env: AtprotoEnv, value: unknown, context: string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await encryptionKey(env, ['encrypt']);
@@ -52,6 +56,7 @@ async function encrypt(env: AtprotoEnv, value: unknown, context: string): Promis
   return `${base64(iv)}.${base64(new Uint8Array(ciphertext))}`;
 }
 
+/** Decrypt an OAuth value only when its associated state or DID matches. */
 async function decrypt<T>(env: AtprotoEnv, value: string, context: string): Promise<T> {
   const [encodedIv, encodedCiphertext] = value.split('.');
   if (!encodedIv || !encodedCiphertext) throw new Error('Invalid encrypted AT Protocol data.');
@@ -67,10 +72,12 @@ async function decrypt<T>(env: AtprotoEnv, value: string, context: string): Prom
   return JSON.parse(new TextDecoder().decode(plaintext)) as T;
 }
 
+/** Return the canonical origin used to construct OAuth metadata and callbacks. */
 function oauthOrigin(env: AtprotoEnv): string {
   return new URL(env.APP_URL).origin;
 }
 
+/** Load the confidential OAuth signing key from its configured PKCS#8 value. */
 async function privateKey(env: AtprotoEnv): Promise<JoseKey> {
   if (!env.ATPROTO_OAUTH_PRIVATE_KEY)
     throw new Error('ATPROTO_OAUTH_PRIVATE_KEY is required for AT Protocol sign-in.');
@@ -78,7 +85,12 @@ async function privateKey(env: AtprotoEnv): Promise<JoseKey> {
   return JoseKey.fromPKCS8(pem, 'ES256', 'devswhomove-atproto-oauth');
 }
 
-async function acquireLock<T>(env: AtprotoEnv, name: string, work: () => T | Promise<T>): Promise<T> {
+/** Serialize concurrent OAuth refreshes for a named session using a D1 lock. */
+async function acquireLock<T>(
+  env: AtprotoEnv,
+  name: string,
+  work: () => T | Promise<T>,
+): Promise<T> {
   const owner = crypto.randomUUID();
   for (let attempt = 0; attempt < 150; attempt++) {
     const now = new Date();
@@ -104,6 +116,7 @@ async function acquireLock<T>(env: AtprotoEnv, name: string, work: () => T | Pro
   throw new Error('Could not acquire the AT Protocol session lock.');
 }
 
+/** Encrypt an OAuth state or session while persisting its private DPoP key. */
 async function serializeDpopValue<T extends { dpopKey: Key }>(
   env: AtprotoEnv,
   context: string,
@@ -115,23 +128,26 @@ async function serializeDpopValue<T extends { dpopKey: Key }>(
   return encrypt(env, { ...rest, dpopJwk }, context);
 }
 
+/** Restore an OAuth state or session and its private DPoP key from encrypted storage. */
 async function deserializeDpopValue<T extends { dpopKey: Key }>(
   env: AtprotoEnv,
   context: string,
   value: string,
 ): Promise<T> {
-  const stored = await decrypt<Record<string, unknown> & { dpopJwk: NonNullable<Key['privateJwk']> }>(
-    env,
-    value,
-    context,
-  );
+  const stored = await decrypt<
+    Record<string, unknown> & { dpopJwk: NonNullable<Key['privateJwk']> }
+  >(env, value, context);
   const { dpopJwk, ...rest } = stored;
   return { ...rest, dpopKey: await JoseKey.fromJWK(dpopJwk) } as unknown as T;
 }
 
+/** Create the AT Protocol OAuth client with encrypted D1 stores and Worker WebCrypto. */
 export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
   const origin = oauthOrigin(env);
   const key = await privateKey(env);
+  const isLoopback = new URL(origin).protocol === 'http:';
+  const callback = new URL('/auth/atproto/callback', origin);
+  if (isLoopback) callback.hostname = '127.0.0.1';
   const stateStore: StateStore = {
     async set(state: string, value: InternalStateData) {
       const now = new Date().toISOString();
@@ -185,20 +201,33 @@ export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
   };
 
   return new OAuthClient({
-    clientMetadata: {
-      client_id: `${origin}/oauth/client-metadata.json`,
-      client_name: 'Devs Who Move',
-      client_uri: origin,
-      redirect_uris: [`${origin}/auth/atproto/callback`],
-      grant_types: ['authorization_code', 'refresh_token'],
-      scope: 'atproto',
-      response_types: ['code'],
-      application_type: 'web',
-      token_endpoint_auth_method: 'private_key_jwt',
-      token_endpoint_auth_signing_alg: 'ES256',
-      dpop_bound_access_tokens: true,
-      jwks_uri: `${origin}/oauth/jwks.json`,
-    } as OAuthClientMetadataInput,
+    clientMetadata: (isLoopback
+      ? {
+          client_id: 'http://localhost',
+          client_name: 'Devs Who Move',
+          client_uri: 'http://localhost',
+          redirect_uris: [callback.toString()],
+          grant_types: ['authorization_code', 'refresh_token'],
+          scope: 'atproto',
+          response_types: ['code'],
+          application_type: 'native',
+          token_endpoint_auth_method: 'none',
+          dpop_bound_access_tokens: true,
+        }
+      : {
+          client_id: `${origin}/oauth/client-metadata.json`,
+          client_name: 'Devs Who Move',
+          client_uri: origin,
+          redirect_uris: [callback.toString()],
+          grant_types: ['authorization_code', 'refresh_token'],
+          scope: 'atproto',
+          response_types: ['code'],
+          application_type: 'web',
+          token_endpoint_auth_method: 'private_key_jwt',
+          token_endpoint_auth_signing_alg: 'ES256',
+          dpop_bound_access_tokens: true,
+          jwks_uri: `${origin}/oauth/jwks.json`,
+        }) as OAuthClientMetadataInput,
     keyset: [key],
     handleResolver: new AtprotoDohHandleResolver({
       dohEndpoint: 'https://cloudflare-dns.com/dns-query',
@@ -216,6 +245,7 @@ export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
   });
 }
 
+/** Create an AT Protocol API agent backed by the restored OAuth session. */
 export function atprotoAgent(session: Awaited<ReturnType<OAuthClient['restore']>>): Agent {
   return new Agent(session);
 }

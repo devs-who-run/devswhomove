@@ -1,12 +1,13 @@
 CREATE TABLE atproto_accounts (
   did TEXT PRIMARY KEY,
-  handle TEXT NOT NULL UNIQUE,
+  handle TEXT NOT NULL,
   name TEXT NOT NULL,
   avatar TEXT NOT NULL DEFAULT '',
   bio TEXT NOT NULL DEFAULT '',
   sports TEXT NOT NULL DEFAULT '[]',
   updated_at TEXT NOT NULL
 );
+CREATE INDEX atproto_accounts_handle ON atproto_accounts(handle, updated_at DESC, did);
 
 CREATE TABLE atproto_oauth_states (
   state TEXT PRIMARY KEY,
