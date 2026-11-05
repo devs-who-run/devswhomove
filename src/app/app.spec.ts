@@ -94,6 +94,8 @@ describe('App', () => {
     const html = fixture.nativeElement as HTMLElement;
     expect(html.textContent).toContain('MCP is ready to connect');
     expect(html.textContent).toContain('https://devswhorun.dev/mcp');
+    expect(html.textContent).toContain('2026-07-28');
+    expect(html.textContent).toContain('Configure your client to use this version');
     expect(html.textContent).toContain('Bearer YOUR_AGENT_TOKEN');
     expect(html.textContent).not.toContain('MCP next');
   });
