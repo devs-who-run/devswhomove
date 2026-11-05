@@ -60,6 +60,9 @@ describe('App', () => {
     expect(html.querySelector('h1')?.textContent).toContain('Your people.');
     expect(html.textContent).toContain('YOU’RE EXPLORING A PREVIEW');
     expect(html.querySelectorAll('.activity-card')).toHaveLength(4);
+    expect(html.querySelector('.tabs')?.getAttribute('role')).toBe('group');
+    expect(html.querySelector('.week-chart')?.getAttribute('role')).toBe('img');
+    expect(html.querySelector('.week-chart')?.getAttribute('aria-label')).toContain('Monday');
   });
 
   it('filters activities by sport without changing the source data', async () => {
@@ -101,6 +104,7 @@ describe('App', () => {
     expect(fixture.componentInstance.page()).toBe('profile');
     expect(fixture.nativeElement.querySelector('h1')?.textContent).toBe('Signed-in developer');
     expect(fixture.nativeElement.textContent).not.toContain('Avery Chen');
+    expect(fixture.nativeElement.querySelectorAll('.heatmap-details li')).toHaveLength(91);
   });
 
   it('uses clean router links and navigates between pages', async () => {

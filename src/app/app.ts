@@ -110,12 +110,28 @@ export class App {
     for (const activity of this.weekly())
       minutes[(new Date(activity.occurredAt).getDay() + 6) % 7] += activity.duration;
     const max = Math.max(60, ...minutes);
+    const days = [
+      ['Monday', 'M'],
+      ['Tuesday', 'T'],
+      ['Wednesday', 'W'],
+      ['Thursday', 'T'],
+      ['Friday', 'F'],
+      ['Saturday', 'S'],
+      ['Sunday', 'S'],
+    ] as const;
     return minutes.map((value, index) => ({
-      day: ['M', 'T', 'W', 'T', 'F', 'S', 'S'][index],
+      day: days[index][0],
+      shortDay: days[index][1],
       minutes: value,
       height: (value / max) * 100,
     }));
   });
+  readonly weekChartLabel = computed(
+    () =>
+      `Activity minutes this week: ${this.weekBars()
+        .map((bar) => `${bar.day}, ${bar.minutes} minutes`)
+        .join('; ')}.`,
+  );
   readonly profileStats = computed(() => {
     const activities = this.profileActivities();
     return {

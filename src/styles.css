@@ -10,8 +10,9 @@
   -webkit-font-smoothing: antialiased;
   --green: #234d3c;
   --lime: #d8f294;
-  --muted: #758079;
+  --muted: #5f6b62;
   --border: #e5e9e1;
+  --border-hover: #cbd7c1;
   --heading: 'Manrope', system-ui, sans-serif;
   --page: #f8f9f6;
   --text: #25342e;
@@ -27,8 +28,9 @@ html:root[data-theme='dark'] {
   --surface: #19271f;
   --surface-raised: #15221b;
   --surface-soft: #253528;
-  --muted: #a6b3aa;
+  --muted: #b5c1b8;
   --border: #344438;
+  --border-hover: #536849;
 }
 html:root[data-theme='dark'] :is(.sidebar, .topbar) {
   background: var(--surface-raised);

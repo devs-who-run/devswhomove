@@ -204,7 +204,7 @@
                 </div>
               </div>
               <div class="section-top feed-tabs">
-                <div class="tabs" aria-label="Feed filter">
+                <div class="tabs" role="group" aria-label="Feed filter">
                   <button
                     [class.selected]="feedMode() === 'community'"
                     [attr.aria-pressed]="feedMode() === 'community'"
@@ -222,7 +222,7 @@
                 </div>
                 <span class="muted small-text">A little progress, shared.</span>
               </div>
-              <div class="sport-filters" aria-label="Filter activities by sport">
+              <div class="sport-filters" role="group" aria-label="Filter activities by sport">
                 <button
                   [class.selected]="selectedSport() === 'All'"
                   [attr.aria-pressed]="selectedSport() === 'All'"
@@ -360,16 +360,16 @@
                 <div class="week-total">
                   {{ weeklyMinutes() | number: '1.0-0' }}<span>min outside the scroll</span>
                 </div>
-                <div class="week-chart" aria-label="Activity minutes by day, Monday to Sunday">
+                <div class="week-chart" role="img" [attr.aria-label]="weekChartLabel()">
                   @for (bar of weekBars(); track $index) {
-                    <div class="chart-day" [title]="bar.minutes + ' minutes'">
+                    <div class="chart-day" [title]="bar.day + ': ' + bar.minutes + ' minutes'">
                       <div class="bar-track">
                         <span
                           [style.height.%]="bar.height"
                           [class.has-value]="bar.minutes > 0"
                         ></span>
                       </div>
-                      <small>{{ bar.day }}</small>
+                      <small>{{ bar.shortDay }}</small>
                     </div>
                   }
                 </div>
@@ -452,7 +452,7 @@
               move. Every starting point is welcome.
             </p>
           </div>
-          <div class="sport-filters event-filters" aria-label="Filter events by sport">
+          <div class="sport-filters event-filters" role="group" aria-label="Filter events by sport">
             <button
               [class.selected]="selectedSport() === 'All'"
               [attr.aria-pressed]="selectedSport() === 'All'"
@@ -647,7 +647,11 @@
                 </div>
                 <app-icon name="spark" />
               </div>
-              <div class="heatmap" aria-label="Activity calendar, last 91 days">
+              <div
+                class="heatmap"
+                role="img"
+                aria-label="Activity calendar for the past 13 weeks. Darker squares show days with more sessions."
+              >
                 @for (day of heatmap(); track $index) {
                   <span
                     [class.moved]="day.count > 0"
@@ -656,6 +660,16 @@
                   ></span>
                 }
               </div>
+              <details class="heatmap-details">
+                <summary>View daily activity details</summary>
+                <ul>
+                  @for (day of heatmap(); track $index) {
+                    <li>
+                      {{ day.date }}: {{ day.count }} {{ day.count === 1 ? 'session' : 'sessions' }}
+                    </li>
+                  }
+                </ul>
+              </details>
               <div class="heatmap-legend">
                 <span>Every little move counts.</span
                 ><span>Rest <i></i><i class="moved"></i><i class="more"></i> Movement</span>
@@ -1133,7 +1147,7 @@
       />
       <fieldset>
         <legend>Your ways to move</legend>
-        <div class="sport-filters">
+        <div class="sport-filters" role="group" aria-label="Choose your sports">
           @for (sport of sports; track sport) {
             <button
               type="button"
