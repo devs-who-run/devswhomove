@@ -90,7 +90,32 @@ curl -X PUT "$DWM_URL/api/activities/$ACTIVITY_ID/photo" \
 | `DELETE /api/activities/:id/photo` | `activities:write` — own private sessions only |
 | `GET /api/events`                  | `events:read` — upcoming public events         |
 
-This is **bearer-token integration**, not an MCP server. Interactive OAuth authorisation for agents, MCP discovery and tool transport are future work. The GitHub identity/session foundation is implemented, but does not pretend to provide those protocols yet.
+## MCP server
+
+The app also exposes a stateless MCP server at `POST /mcp`, using the
+2026-07-28 Streamable HTTP protocol. Configure an MCP client with the app URL
+and an existing scoped agent token:
+
+```json
+{
+  "mcpServers": {
+    "devs-who-move": {
+      "url": "https://devswhorun.dev/mcp",
+      "headers": {
+        "Authorization": "Bearer dwm_YOUR_TOKEN"
+      }
+    }
+  }
+}
+```
+
+The server implements `server/discover`, `tools/list` and `tools/call`. It
+exposes `list_activities` (`activities:read`), `create_activity`
+(`activities:write`) and `list_upcoming_events` (`events:read`) according to
+the token's scopes. Agent-created activities are always private; activity
+validation, idempotency and token revocation use the same API and storage as
+other agents. MCP connections use the existing bearer tokens; MCP OAuth
+authorization is not implemented.
 
 ## Deploy
 
@@ -123,6 +148,6 @@ Worker integration tests run in an isolated Miniflare runtime with real D1 SQL, 
 
 ## Deliberately not yet included
 
-Following/follower approvals, reactions, notifications, multiple photos or video, GPS/routes, wearable imports, event waitlists/recurrence, configurable goals, and agent OAuth/MCP. Public/private means **everyone or only you**, not followers-only. Before a public launch, add abuse/rate controls, account deletion/export and operational retention policies.
+Following/follower approvals, reactions, notifications, multiple photos or video, GPS/routes, wearable imports, event waitlists/recurrence, configurable goals, and agent OAuth. Public/private means **everyone or only you**, not followers-only. Before a public launch, add abuse/rate controls, account deletion/export and operational retention policies.
 
 Cloudflare C3's Angular template currently assumes SSR during its final configuration. This app deliberately uses static Angular assets and a dedicated API Worker; its Wrangler entry point and output directory are configured explicitly.
