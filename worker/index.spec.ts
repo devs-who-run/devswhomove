@@ -391,9 +391,10 @@ describe('Worker with real D1 storage', () => {
     const headers = { 'Idempotency-Key': 'first-run' };
     const first = await request('/api/activities', 'POST', activity, undefined, token, headers);
     expect(first.status).toBe(201);
+    const firstResult = await first.json();
     const second = await request('/api/activities', 'POST', activity, undefined, token, headers);
     expect(second.status).toBe(200);
-    expect(await first.json()).toEqual(await second.json());
+    expect(firstResult).toEqual(await second.json());
     expect(
       (
         await request(
