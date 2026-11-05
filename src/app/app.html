@@ -997,13 +997,15 @@
       <p class="eyebrow">EVERY LITTLE MOVE COUNTS.</p>
       <h2 id="modal-title">
         {{
-          modal() === 'activity'
-            ? 'A little progress, logged.'
-            : modal() === 'event'
-              ? editingEvent()
-                ? 'Fine-tune your event.'
-                : 'Good company starts here.'
-              : 'Make this space yours.'
+          modal() === 'atproto-login'
+            ? 'Connect with AT Protocol.'
+            : modal() === 'activity'
+              ? 'A little progress, logged.'
+              : modal() === 'event'
+                ? editingEvent()
+                  ? 'Fine-tune your event.'
+                  : 'Good company starts here.'
+                : 'Make this space yours.'
         }}
       </h2>
     </div>
@@ -1020,8 +1022,32 @@
   @if (error() && modal()) {
     <div class="banner error" role="alert">{{ error() }}</div>
   }
-  <form ngNativeValidate (ngSubmit)="save()">
-    @if (modal() === 'activity') {
+  <form ngNativeValidate (ngSubmit)="modal() === 'atproto-login' ? beginAtprotoLogin() : save()">
+    @if (modal() === 'atproto-login') {
+      <p class="small-text">
+        Sign in with the handle or DID for your Bluesky account. We’ll send you to your account’s
+        hosting provider to review and approve access.
+      </p>
+      <label for="atproto-handle">Bluesky handle or DID</label>
+      <input
+        id="atproto-handle"
+        name="atprotoHandle"
+        type="text"
+        [(ngModel)]="atprotoHandle"
+        autocomplete="username"
+        autocapitalize="none"
+        spellcheck="false"
+        maxlength="253"
+        placeholder="you.bsky.social"
+        required
+        autofocus
+      />
+      <div class="banner public-data-warning" role="note">
+        This app can write your profile, activities, and hosted events to your public AT Protocol
+        repository. Those records can be copied by others. Review the requested access on the next
+        screen before approving.
+      </div>
+    } @else if (modal() === 'activity') {
       @if (viewer()?.provider === 'atproto') {
         <div class="banner public-data-warning" role="note">
           This activity will be written to your public PDS repository. Its title, sport, exact
@@ -1305,15 +1331,17 @@
         Not now</button
       ><button class="button primary" type="submit" [disabled]="saving() || photoBusy()">
         {{
-          saving()
-            ? 'Saving…'
-            : modal() === 'activity'
-              ? 'Save my session'
-              : modal() === 'event'
-                ? editingEvent()
-                  ? 'Save changes'
-                  : 'Create event'
-                : 'Save profile'
+          modal() === 'atproto-login'
+            ? 'Continue to Bluesky'
+            : saving()
+              ? 'Saving…'
+              : modal() === 'activity'
+                ? 'Save my session'
+                : modal() === 'event'
+                  ? editingEvent()
+                    ? 'Save changes'
+                    : 'Create event'
+                  : 'Save profile'
         }}<app-icon name="arrow" />
       </button>
     </div>

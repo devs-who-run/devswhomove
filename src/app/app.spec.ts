@@ -158,6 +158,24 @@ describe('App', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it('opens an in-app AT Protocol sign-in form instead of a browser prompt', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const app = fixture.componentInstance;
+    app.atprotoConfigured.set(true);
+    app.loginAtproto();
+    fixture.detectChanges();
+    expect(app.modal()).toBe('atproto-login');
+    expect(fixture.nativeElement.querySelector('#atproto-handle')).toMatchObject({
+      required: true,
+      maxLength: 253,
+      placeholder: 'you.bsky.social',
+    });
+    expect(fixture.nativeElement.textContent).toContain('review and approve access');
+    expect(fixture.nativeElement.textContent).toContain('Continue to Bluesky');
+  });
+
   it('does not replace a failed API with successful-looking demo data', async () => {
     vi.mocked(fetch).mockRejectedValue(new Error('Network unavailable'));
     const fixture = TestBed.createComponent(App);
