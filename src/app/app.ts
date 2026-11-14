@@ -62,6 +62,9 @@ export class App {
   readonly newToken = signal('');
   readonly remoteProfile = signal<Profile | null>(null);
   readonly remoteActivities = signal<Activity[]>([]);
+  readonly ownProfileActivities = signal<Activity[]>([]);
+  readonly profileMonth = signal('All');
+  readonly profileSport = signal<Sport | 'All'>('All');
   readonly profileLoading = signal(false);
   readonly profileError = signal('');
   readonly photo = signal<Blob | null>(null);
@@ -86,9 +89,26 @@ export class App {
     return !!viewer && viewer.provider !== 'atproto' && viewer.visibility === 'private';
   });
   readonly profileActivities = computed(() =>
-    this.remoteProfile()
-      ? this.remoteActivities()
-      : this.activities().filter((activity) => activity.userId === this.displayedProfile()?.id),
+    this.remoteProfile() ? this.remoteActivities() : this.ownProfileActivities(),
+  );
+  readonly profileMonths = computed(() =>
+    [
+      ...new Set(
+        this.profileActivities().map((activity) =>
+          localDate(new Date(activity.occurredAt)).slice(0, 7),
+        ),
+      ),
+    ]
+      .sort()
+      .reverse(),
+  );
+  readonly filteredProfileActivities = computed(() =>
+    this.profileActivities().filter(
+      (activity) =>
+        (this.profileSport() === 'All' || activity.sport === this.profileSport()) &&
+        (this.profileMonth() === 'All' ||
+          localDate(new Date(activity.occurredAt)).slice(0, 7) === this.profileMonth()),
+    ),
   );
   readonly filteredActivities = computed(() =>
     this.activities().filter(
@@ -162,19 +182,52 @@ export class App {
       sports: new Set(activities.map((activity) => activity.sport)).size,
     };
   });
-  readonly heatmap = computed(() => {
-    const activities = this.profileActivities();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return Array.from({ length: 91 }, (_, index) => {
-      const date = new Date(today);
-      date.setDate(date.getDate() - 90 + index);
-      const count = activities.filter(
-        (activity) => new Date(activity.occurredAt).toDateString() === date.toDateString(),
-      ).length;
+  readonly heatmapMonths = computed(() => {
+    const activitiesByDay = new Map<string, Activity[]>();
+    for (const activity of this.filteredProfileActivities()) {
+      const day = localDate(new Date(activity.occurredAt)).slice(0, 10);
+      const activities = activitiesByDay.get(day) ?? [];
+      activities.push(activity);
+      activitiesByDay.set(day, activities);
+    }
+    const months =
+      this.profileMonth() === 'All'
+        ? [...new Set([...activitiesByDay.keys()].map((day) => day.slice(0, 7)))].sort().reverse()
+        : [this.profileMonth()];
+    return months.map((month) => {
+      const [year, monthNumber] = month.split('-').map(Number);
+      const length = new Date(year, monthNumber, 0).getDate();
       return {
-        date: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-        count,
+        month,
+        offset: Array.from({ length: (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7 }),
+        label: new Date(year, monthNumber - 1, 1).toLocaleDateString(undefined, {
+          month: 'long',
+          year: 'numeric',
+        }),
+        days: Array.from({ length }, (_, index) => {
+          const date = new Date(year, monthNumber - 1, index + 1);
+          const activities = activitiesByDay.get(localDate(date).slice(0, 10)) ?? [];
+          const count = activities.length;
+          const minutes = activities.reduce((sum, activity) => sum + activity.duration, 0);
+          const distances = activities.flatMap((activity) =>
+            activity.distance === null ? [] : [activity.distance],
+          );
+          const sports = [...new Set(activities.map((activity) => activity.sport))];
+          const dateLabel = date.toLocaleDateString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+          });
+          const format = (value: number) =>
+            value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+          return {
+            date: dateLabel,
+            count,
+            summary: `${dateLabel}: ${count} ${count === 1 ? 'session' : 'sessions'}${
+              count ? ` · ${sports.join(', ')} · ${format(minutes)} min` : ''
+            }${distances.length ? ` · ${format(distances.reduce((sum, distance) => sum + distance, 0))} km recorded` : ''}`,
+          };
+        }),
       };
     });
   });
@@ -249,6 +302,9 @@ export class App {
       this.githubConfigured.set(data.githubConfigured);
       this.atprotoConfigured.set(data.atprotoConfigured ?? false);
       this.preview.set(!data.viewer && data.activities.length === 0 && data.events.length === 0);
+      if (this.page() === 'profile' && data.viewer && !this.remoteProfile()) {
+        await this.loadOwnProfileActivities(this.routeRequest, data.viewer);
+      }
     } catch (error) {
       this.error.set(this.message(error));
     } finally {
@@ -272,6 +328,9 @@ export class App {
     this.selectedSport.set('All');
     this.remoteProfile.set(null);
     this.remoteActivities.set([]);
+    this.ownProfileActivities.set([]);
+    this.profileMonth.set('All');
+    this.profileSport.set('All');
     this.profileError.set('');
     this.profileLoading.set(false);
     if (
@@ -294,8 +353,27 @@ export class App {
       } finally {
         if (request === this.routeRequest) this.profileLoading.set(false);
       }
+    } else if (page === 'profile') {
+      const viewer = this.viewer();
+      if (viewer) await this.loadOwnProfileActivities(request, viewer);
     }
     if (page === 'agents' && this.viewer()) await this.loadTokens();
+  }
+
+  private async loadOwnProfileActivities(request: number, viewer: Profile): Promise<void> {
+    this.profileLoading.set(true);
+    this.profileError.set('');
+    try {
+      const identifier = viewer.provider === 'atproto' ? viewer.id : viewer.username;
+      const data = await this.api<{ activities: Activity[] }>(
+        `/api/profiles/${encodeURIComponent(identifier)}`,
+      );
+      if (request === this.routeRequest) this.ownProfileActivities.set(data.activities);
+    } catch (error) {
+      if (request === this.routeRequest) this.profileError.set(this.message(error));
+    } finally {
+      if (request === this.routeRequest) this.profileLoading.set(false);
+    }
   }
 
   login(): void {
@@ -593,7 +671,11 @@ export class App {
   }
 
   selectAllProfileActivities(): void {
-    this.selectedActivityIds.set(this.profileActivities().map((activity) => activity.id));
+    this.selectedActivityIds.set(
+      this.filteredProfileActivities()
+        .slice(0, 100)
+        .map((activity) => activity.id),
+    );
   }
 
   clearActivitySelection(): void {

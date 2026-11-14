@@ -58,6 +58,7 @@ The PDS is canonical for AT Protocol profiles, activities, and hosted events. Cl
 - Profiles with sports, editable bio, visibility controls, summaries and a 13-week activity calendar.
 - Clean Angular routes: `/feed`, `/events`, `/profile`, and `/agents`. `/profile` shows your account or a sign-in prompt, never a sample identity.
 - Public profiles have a **Copy profile link** button. GitHub links use `/profile/GITHUB_USERNAME` and AT Protocol links use the account DID. Private profiles return 404 to other users. Cloudflare's SPA fallback supports direct links and refreshes.
+- Profile statistics include all visible indexed activities. Month and activity filters apply to the activity list and calendar; the community feed remains limited to recent activities.
 - Public events with local-time display, capacity, host RSVP, joining/leaving, host editing and host cancellation. Hosts cannot lower capacity below the number of people already going. Capacity is enforced in one database statement.
 - GitHub OAuth sign-in, D1-backed sessions and origin checks for cookie-authenticated mutations.
 - AT Protocol OAuth sign-in with PDS-backed public profiles, activities and hosted events; private RSVP identities and agent tokens remain in Cloudflare.
