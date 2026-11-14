@@ -24,6 +24,13 @@ type Page = 'feed' | 'events' | 'profile' | 'agents';
 type Modal = 'activity' | 'event' | 'profile' | 'atproto-login' | null;
 const localDate = (date: Date) =>
   new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+const formatMonth = (month: string) => {
+  const [year, monthNumber] = month.split('-').map(Number);
+  return new Date(year, monthNumber - 1, 1).toLocaleDateString(undefined, {
+    month: 'short',
+    year: '2-digit',
+  });
+};
 
 @Component({
   imports: [DatePipe, DecimalPipe, FormsModule, Icon, RouterLink, RouterOutlet],
@@ -100,7 +107,8 @@ export class App {
       ),
     ]
       .sort()
-      .reverse(),
+      .reverse()
+      .map((month) => ({ value: month, label: formatMonth(month) })),
   );
   readonly filteredProfileActivities = computed(() =>
     this.profileActivities().filter(
@@ -200,10 +208,7 @@ export class App {
       return {
         month,
         offset: Array.from({ length: (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7 }),
-        label: new Date(year, monthNumber - 1, 1).toLocaleDateString(undefined, {
-          month: 'long',
-          year: 'numeric',
-        }),
+        label: formatMonth(month),
         days: Array.from({ length }, (_, index) => {
           const date = new Date(year, monthNumber - 1, index + 1);
           const activities = activitiesByDay.get(localDate(date).slice(0, 10)) ?? [];
