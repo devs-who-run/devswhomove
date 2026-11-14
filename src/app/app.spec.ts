@@ -255,6 +255,11 @@ describe('App', () => {
     ) as NodeListOf<HTMLSelectElement>;
     expect(selects[0].options[1].textContent).toBe('Feb 25');
     expect(fixture.nativeElement.querySelector('.heatmap-month h3')?.textContent).toBe('Feb 25');
+    const activityMetric = fixture.nativeElement.querySelector(
+      '.profile-activity-metric',
+    ) as HTMLElement;
+    expect(activityMetric.querySelector('strong')?.textContent).toContain('5.2 km');
+    expect(activityMetric.querySelector('span')?.textContent).toContain('34 min');
     const graph = fixture.nativeElement.querySelector('.heatmap-toggle') as HTMLDetailsElement;
     expect(graph.open).toBe(true);
     (graph.querySelector('summary') as HTMLElement).click();

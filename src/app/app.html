@@ -897,9 +897,11 @@
                   }
                 </div>
                 <div class="profile-activity-metric">
-                  <strong>{{ activity.duration }} <small>min</small></strong>
                   @if (activity.distance !== null) {
-                    <span>{{ activity.distance }} km</span>
+                    <strong>{{ activity.distance }} <small>km</small></strong>
+                    <span>{{ activity.duration }} min</span>
+                  } @else {
+                    <strong>{{ activity.duration }} <small>min</small></strong>
                   }
                 </div>
                 @if (activity.userId === viewer()?.id) {
