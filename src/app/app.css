@@ -1114,12 +1114,11 @@ h1 span {
   position: relative;
 }
 .profile-actions {
-  position: absolute;
-  right: 0;
-  top: 65px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 14px;
+  margin-top: 16px;
 }
 .visibility-pill {
   display: inline-flex;
@@ -1998,9 +1997,6 @@ fieldset .sport-filters {
   .preview-strip > span:first-child {
     font-size: 12px;
   }
-  .profile-actions {
-    top: 65px;
-  }
   .profile-actions .button {
     font-size: 12px;
   }
@@ -2213,9 +2209,6 @@ fieldset .sport-filters {
   .sport-filters button {
     font-size: 12px;
     padding: 7px 9px;
-  }
-  .profile-actions {
-    top: 67px;
   }
   .profile-actions .visibility-pill {
     font-size: 12px;
@@ -2590,7 +2583,6 @@ fieldset .sport-filters {
     font-size: 30px;
   }
   .profile-actions {
-    top: 55px;
     gap: 8px;
   }
   .profile-actions > .button {

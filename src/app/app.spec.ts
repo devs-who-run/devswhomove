@@ -247,6 +247,92 @@ describe('App', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Avery Chen');
   });
 
+  it('lets a private GitHub profile become public only after saving', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+    const viewer = { ...DEMO_PROFILE, visibility: 'private', provider: 'github' };
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path === '/api/me' && init?.method === 'PATCH') {
+        viewer.visibility = 'public';
+        return Response.json({ ok: true });
+      }
+      return Response.json({ ...bootstrap, viewer });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const buttons = [...(fixture.nativeElement as HTMLElement).querySelectorAll('button')];
+    expect(buttons.some((button) => button.textContent?.includes('Copy profile link'))).toBe(false);
+    buttons.find((button) => button.textContent?.includes('Make profile public'))!.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.profileForm.visibility).toBe('public');
+    expect(viewer.visibility).toBe('private');
+    await fixture.componentInstance.save();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/me',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: expect.stringContaining('"visibility":"public"'),
+      }),
+    );
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Copy profile link');
+  });
+
+  it('copies a public profile link and reports clipboard failures with a manual link', async () => {
+    const viewer = { ...DEMO_PROFILE, username: 'alice', visibility: 'public' as const };
+    vi.mocked(fetch).mockResolvedValue(Response.json({ ...bootstrap, viewer }));
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const button = [...(fixture.nativeElement as HTMLElement).querySelectorAll('button')].find(
+      (item) => item.textContent?.includes('Copy profile link'),
+    )!;
+    button.click();
+    await fixture.whenStable();
+    const url = `${window.location.origin}/profile/alice`;
+    expect(writeText).toHaveBeenCalledWith(url);
+    expect(fixture.componentInstance.notice()).toBe('Profile link copied.');
+    writeText.mockRejectedValueOnce(new Error('Clipboard unavailable'));
+    await fixture.componentInstance.copyProfileLink(viewer);
+    expect(fixture.componentInstance.error()).toContain(url);
+  });
+
+  it('opens and shares encoded AT Protocol DID links without signing in', async () => {
+    const profile = {
+      ...DEMO_PROFILE,
+      id: 'did:plc:example',
+      username: 'alice.example',
+      visibility: 'public' as const,
+      provider: 'atproto' as const,
+    };
+    const fetchMock = vi.fn(async (path: string) =>
+      path === '/api/bootstrap'
+        ? Response.json(bootstrap)
+        : Response.json({ profile, activities: [] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/profile/did%3Aplc%3Aexample');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fetchMock).toHaveBeenCalledWith('/api/profiles/did%3Aplc%3Aexample', expect.any(Object));
+    expect(fixture.componentInstance.remoteProfile()).toEqual(profile);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    await fixture.componentInstance.copyProfileLink(profile);
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/profile/did%3Aplc%3Aexample`);
+  });
+
   it('requires sign-in rather than pretending to save guest activities', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();

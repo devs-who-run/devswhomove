@@ -57,7 +57,7 @@ The PDS is canonical for AT Protocol profiles, activities, and hosted events. Cl
 - One optional photo per activity, stored in Cloudflare R2. The browser resizes photos to at most 2048px and re-encodes them as JPEG. The Worker also strips EXIF/GPS, XMP and text metadata from JPEG, PNG and WebP uploads. Photos are only served to people who can see the activity.
 - Profiles with sports, editable bio, visibility controls, summaries and a 13-week activity calendar.
 - Clean Angular routes: `/feed`, `/events`, `/profile`, and `/agents`. `/profile` shows your account or a sign-in prompt, never a sample identity.
-- Public profile links: `/profile/GITHUB_USERNAME`. Private profiles return 404 to other users. Cloudflare's SPA fallback supports direct links and refreshes.
+- Public profiles have a **Copy profile link** button. GitHub links use `/profile/GITHUB_USERNAME` and AT Protocol links use the account DID. Private profiles return 404 to other users. Cloudflare's SPA fallback supports direct links and refreshes.
 - Public events with local-time display, capacity, host RSVP, joining/leaving, host editing and host cancellation. Hosts cannot lower capacity below the number of people already going. Capacity is enforced in one database statement.
 - GitHub OAuth sign-in, D1-backed sessions and origin checks for cookie-authenticated mutations.
 - AT Protocol OAuth sign-in with PDS-backed public profiles, activities and hosted events; private RSVP identities and agent tokens remain in Cloudflare.
