@@ -166,6 +166,38 @@ describe('App', () => {
     expect(html.textContent).not.toContain('MCP next');
   });
 
+  it('lets AT Protocol accounts grant public activity writes to agents', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      Response.json({
+        ...bootstrap,
+        viewer: { ...DEMO_PROFILE, provider: 'atproto' },
+      }),
+    );
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    vi.mocked(fetch).mockResolvedValue(Response.json({ tokens: [] }));
+    await TestBed.inject(Router).navigateByUrl('/agents');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Log public activities');
+    expect(fixture.nativeElement.querySelector('[name="agentWrite"]')).not.toBeNull();
+    fixture.componentInstance.agentName = 'Activity importer';
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(Response.json({ token: 'new-agent-token' }))
+      .mockResolvedValueOnce(Response.json({ tokens: [] }));
+    await fixture.componentInstance.createToken();
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/tokens',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Activity importer',
+          scopes: ['activities:read', 'activities:write'],
+        }),
+      }),
+    );
+  });
+
   it('loads the signed-in identity on a direct /profile route', async () => {
     vi.mocked(fetch).mockResolvedValue(
       Response.json({
