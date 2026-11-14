@@ -737,39 +737,73 @@
                 <span>WAYS TO MOVE</span><strong>{{ profileStats().sports }}</strong>
               </div>
             </div>
+            <div class="profile-filters">
+              <label>
+                Month
+                <select [ngModel]="profileMonth()" (ngModelChange)="profileMonth.set($event)">
+                  <option value="All">All months</option>
+                  @for (month of profileMonths(); track month) {
+                    <option [value]="month">{{ month }}</option>
+                  }
+                </select>
+              </label>
+              <label>
+                Activity
+                <select [ngModel]="profileSport()" (ngModelChange)="profileSport.set($event)">
+                  <option value="All">All activities</option>
+                  @for (sport of sports; track sport) {
+                    <option [value]="sport">{{ sport }}</option>
+                  }
+                </select>
+              </label>
+            </div>
             <section class="consistency-card">
               <div class="section-top">
                 <div>
                   <h2>A different kind of contribution.</h2>
                   <p class="muted small-text">
-                    Your last 13 weeks in motion. Consistency over competition.
+                    Your movement over time. Months without matching activities are omitted.
                   </p>
                 </div>
                 <app-icon name="spark" />
               </div>
-              <div
-                class="heatmap"
-                role="img"
-                aria-label="Activity calendar for the past 13 weeks. Darker squares show days with more sessions."
-              >
-                @for (day of heatmap(); track $index) {
-                  <span
-                    [class.moved]="day.count > 0"
-                    [class.more]="day.count > 1"
-                    [title]="day.date + ': ' + day.count + ' sessions'"
-                  ></span>
-                }
-              </div>
-              <details class="heatmap-details">
-                <summary>View daily activity details</summary>
-                <ul>
-                  @for (day of heatmap(); track $index) {
-                    <li>
-                      {{ day.date }}: {{ day.count }} {{ day.count === 1 ? 'session' : 'sessions' }}
-                    </li>
-                  }
-                </ul>
-              </details>
+              @for (month of heatmapMonths(); track month.month) {
+                <div class="heatmap-month">
+                  <h3>{{ month.label }}</h3>
+                  <div
+                    class="heatmap"
+                    role="img"
+                    [attr.aria-label]="
+                      'Activity calendar for ' +
+                      month.label +
+                      '. Darker squares show days with more sessions.'
+                    "
+                  >
+                    @for (_ of month.offset; track $index) {
+                      <span style="visibility: hidden" aria-hidden="true"></span>
+                    }
+                    @for (day of month.days; track day.date) {
+                      <span
+                        [class.moved]="day.count > 0"
+                        [class.more]="day.count > 1"
+                        [title]="day.summary"
+                      ></span>
+                    }
+                  </div>
+                  <details class="heatmap-details">
+                    <summary>View daily activity details for {{ month.label }}</summary>
+                    <ul>
+                      @for (day of month.days; track day.date) {
+                        <li>
+                          {{ day.summary }}
+                        </li>
+                      }
+                    </ul>
+                  </details>
+                </div>
+              } @empty {
+                <p class="muted small-text">No activities match these filters.</p>
+              }
               <div class="heatmap-legend">
                 <span>Every little move counts.</span
                 ><span>Rest <i></i><i class="moved"></i><i class="more"></i> Movement</span>
@@ -778,10 +812,15 @@
             <div class="section-top profile-recent">
               <h2>Recent movement</h2>
               <div class="profile-bulk-actions">
-                @if (viewer() && !remoteProfile() && profileActivities().length) {
+                @if (
+                  viewer() &&
+                  viewer()?.provider !== 'atproto' &&
+                  !remoteProfile() &&
+                  profileActivities().length
+                ) {
                   @if (bulkVisibilityMode()) {
                     <button class="text-button" (click)="selectAllProfileActivities()">
-                      Select all
+                      Select up to 100 matching activities
                     </button>
                     @if (selectedProfileActivityCount()) {
                       <span>{{ selectedProfileActivityCount() }} selected</span>
@@ -815,7 +854,7 @@
                 }
               </div>
             </div>
-            @for (activity of profileActivities(); track activity.id) {
+            @for (activity of filteredProfileActivities(); track activity.id) {
               <article
                 class="profile-activity"
                 [class.bulk-selected]="selectedActivityIds().includes(activity.id)"
@@ -826,7 +865,11 @@
                       type="checkbox"
                       [checked]="selectedActivityIds().includes(activity.id)"
                       [attr.aria-label]="'Select ' + activity.title"
-                      [disabled]="saving()"
+                      [disabled]="
+                        saving() ||
+                        (!selectedActivityIds().includes(activity.id) &&
+                          selectedProfileActivityCount() >= 100)
+                      "
                       (change)="toggleActivitySelection(activity.id)"
                     />
                   </label>
@@ -882,13 +925,16 @@
             } @empty {
               <div class="empty-state">
                 <app-icon name="move" />
-                <h3>The best starting point is yours.</h3>
-                <p>Log your first activity and give your progress a home.</p>
+                <h3>No matching activities.</h3>
+                <p>Try another month or activity filter, or log a new activity.</p>
               </div>
             }
             <p class="privacy-note">
-              Progress summaries reflect the latest 100 visible sessions. Rest days belong here,
-              too.
+              Progress summaries include all visible indexed sessions. Rest days belong here, too.
+              @if (profile.provider === 'atproto') {
+                AT Protocol history is limited to the records indexed from the PDS, currently up to
+                1,000 per sync.
+              }
             </p>
           } @else {
             <div class="empty-state">

@@ -199,7 +199,7 @@ describe('App', () => {
   });
 
   it('loads the signed-in identity on a direct /profile route', async () => {
-    vi.mocked(fetch).mockResolvedValue(
+    vi.mocked(fetch).mockImplementation(async () =>
       Response.json({
         ...bootstrap,
         viewer: {
@@ -217,7 +217,97 @@ describe('App', () => {
     expect(fixture.componentInstance.page()).toBe('profile');
     expect(fixture.nativeElement.querySelector('h1')?.textContent).toBe('Signed-in developer');
     expect(fixture.nativeElement.textContent).not.toContain('Avery Chen');
-    expect(fixture.nativeElement.querySelectorAll('.heatmap-details li')).toHaveLength(91);
+    expect(fixture.nativeElement.textContent).toContain('No activities match these filters.');
+  });
+
+  it('loads all profile activities separately from the feed and filters the calendar and list', async () => {
+    const viewer = { ...DEMO_PROFILE, id: 'me', username: 'me' };
+    const activities = Array.from({ length: 102 }, (_, index) => ({
+      ...DEMO_ACTIVITIES[0],
+      id: `activity-${index}`,
+      userId: 'me',
+      sport: index === 101 ? 'Cycling' : 'Running',
+      occurredAt: index === 101 ? '2024-01-15T12:00:00.000Z' : '2025-02-15T12:00:00.000Z',
+    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string) =>
+        path === '/api/bootstrap'
+          ? Response.json({ ...bootstrap, viewer, activities: activities.slice(0, 100) })
+          : Response.json({ profile: viewer, activities }),
+      ),
+    );
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const app = fixture.componentInstance;
+    expect(app.profileStats().sessions).toBe(102);
+    expect(app.heatmapMonths().find((month) => month.month === '2024-01')?.days[14].count).toBe(1);
+    expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(102);
+    app.selectAllProfileActivities();
+    expect(app.selectedActivityIds()).toHaveLength(100);
+    app.clearActivitySelection();
+
+    const selects = fixture.nativeElement.querySelectorAll(
+      '.profile-filters select',
+    ) as NodeListOf<HTMLSelectElement>;
+    selects[0].value = '2024-01';
+    selects[0].dispatchEvent(new Event('change'));
+    selects[1].value = 'Cycling';
+    selects[1].dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(1);
+    expect(app.heatmapMonths()[0].days[14].count).toBe(1);
+    app.profileSport.set('Running');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(0);
+    expect(app.heatmapMonths()[0].days[14].count).toBe(0);
+    expect(app.profileStats().sessions).toBe(102);
+  });
+
+  it('shows a daily summary in the graph and accessible details, respecting activity filters', async () => {
+    const viewer = { ...DEMO_PROFILE, id: 'me', username: 'me' };
+    const activities = [
+      {
+        ...DEMO_ACTIVITIES[0],
+        id: 'run',
+        userId: 'me',
+        sport: 'Running',
+        duration: 30,
+        distance: 5,
+        occurredAt: '2025-02-15T12:00:00.000Z',
+      },
+      {
+        ...DEMO_ACTIVITIES[0],
+        id: 'swim',
+        userId: 'me',
+        sport: 'Swimming',
+        duration: 20,
+        distance: null,
+        occurredAt: '2025-02-15T12:00:00.000Z',
+      },
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ ...bootstrap, viewer, activities })),
+    );
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const summary = fixture.nativeElement.querySelector('.heatmap .more')?.getAttribute('title');
+    expect(summary).toContain('2 sessions · Running, Swimming · 50 min · 5 km recorded');
+    expect(fixture.nativeElement.querySelector('.heatmap-details').textContent).toContain(summary);
+
+    fixture.componentInstance.profileSport.set('Swimming');
+    fixture.detectChanges();
+    const filtered = fixture.nativeElement.querySelector('.heatmap .moved')?.getAttribute('title');
+    expect(filtered).toContain('1 session · Swimming · 20 min');
+    expect(filtered).not.toContain('km');
   });
 
   it('uses clean router links and navigates between pages', async () => {
@@ -285,7 +375,7 @@ describe('App', () => {
 
   it('copies a public profile link and reports clipboard failures with a manual link', async () => {
     const viewer = { ...DEMO_PROFILE, username: 'alice', visibility: 'public' as const };
-    vi.mocked(fetch).mockResolvedValue(Response.json({ ...bootstrap, viewer }));
+    vi.mocked(fetch).mockImplementation(async () => Response.json({ ...bootstrap, viewer }));
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     await TestBed.inject(Router).navigateByUrl('/profile');

@@ -360,8 +360,12 @@ async function activities(env: Env, userId?: string): Promise<Activity[]> {
     .slice(0, 100);
 }
 
-/** Return the latest indexed activities owned by one AT Protocol DID. */
-async function atprotoActivitiesByDid(env: Env, did: string): Promise<Activity[]> {
+/** Return indexed activities owned by one AT Protocol DID. */
+async function atprotoActivitiesByDid(
+  env: Env,
+  did: string,
+  recentOnly = false,
+): Promise<Activity[]> {
   const result = await env.DB.prepare(
     `SELECT a.uri AS id, a.did AS userId, u.handle AS username, u.name, u.avatar,
       json_extract(a.record_json, '$.title') AS title,
@@ -373,7 +377,7 @@ async function atprotoActivitiesByDid(env: Env, did: string): Promise<Activity[]
       'public' AS visibility, json_extract(a.record_json, '$.source') AS source,
       NULL AS photo
     FROM atproto_activities a JOIN atproto_accounts u ON u.did = a.did
-    WHERE a.did = ? ORDER BY json_extract(a.record_json, '$.occurredAt') DESC LIMIT 100`,
+    WHERE a.did = ? ORDER BY json_extract(a.record_json, '$.occurredAt') DESC${recentOnly ? ' LIMIT 100' : ''}`,
   )
     .bind(did)
     .all<Activity>();
@@ -389,7 +393,7 @@ async function profileActivities(
   if (profileId.startsWith('did:')) return atprotoActivitiesByDid(env, profileId);
   const result = await env.DB.prepare(
     `${ACTIVITY_SELECT} WHERE a.user_id = ?
-    AND (a.visibility = 'public' OR a.user_id = ?) ORDER BY a.occurred_at DESC LIMIT 100`,
+    AND (a.visibility = 'public' OR a.user_id = ?) ORDER BY a.occurred_at DESC`,
   )
     .bind(profileId, viewerId)
     .all<Activity>();
@@ -1164,7 +1168,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const identity = requireIdentity(auth, 'activities:read');
     if (identity.provider === 'atproto') {
       await syncAtprotoData(env, identity);
-      return json({ activities: await atprotoActivitiesByDid(env, identity.user.id) });
+      return json({ activities: await atprotoActivitiesByDid(env, identity.user.id, true) });
     }
     const result = await env.DB.prepare(
       `${ACTIVITY_SELECT} WHERE a.user_id = ? ORDER BY a.occurred_at DESC LIMIT 100`,

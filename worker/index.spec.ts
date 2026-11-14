@@ -348,6 +348,75 @@ describe('Worker with real D1 storage', () => {
     expect(other.activities).toHaveLength(0);
   });
 
+  it('returns more than 100 visible profile activities without exposing private ones', async () => {
+    await db
+      .prepare(
+        "INSERT INTO users (id, github_id, username, name, visibility) VALUES ('history', 999, 'history', 'History', 'public')",
+      )
+      .run();
+    await db.batch(
+      Array.from({ length: 105 }, (_, index) =>
+        db
+          .prepare(
+            'INSERT INTO activities (id, user_id, title, sport, occurred_at, duration, visibility, source, payload_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          )
+          .bind(
+            `history-${index}`,
+            'history',
+            'Walk',
+            'Walking',
+            '2020-01-01T12:00:00.000Z',
+            30,
+            index === 104 ? 'private' : 'public',
+            'web',
+            '',
+          ),
+      ),
+    );
+    const publicProfile = await (
+      await request('/api/profiles/history')
+    ).json<{ activities: { id: string }[] }>();
+    expect(publicProfile.activities).toHaveLength(104);
+    expect(publicProfile.activities.some((item) => item.id === 'history-104')).toBe(false);
+    await db
+      .prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+      .bind(hash('history-session'), 'history', '2099-01-01')
+      .run();
+    const ownProfile = await (
+      await request('/api/profiles/history', 'GET', undefined, 'history-session')
+    ).json<{ activities: { id: string }[] }>();
+    expect(ownProfile.activities).toHaveLength(105);
+    await db.prepare("DELETE FROM users WHERE id = 'history'").run();
+  });
+
+  it('returns more than 100 indexed AT Protocol profile activities', async () => {
+    const did = 'did:plc:history';
+    await db
+      .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+      .bind(did, 'history.example', 'History', '2026-01-01')
+      .run();
+    await db.batch(
+      Array.from({ length: 105 }, (_, index) =>
+        db
+          .prepare(
+            'INSERT INTO atproto_activities (uri, did, rkey, record_json, indexed_at) VALUES (?, ?, ?, ?, ?)',
+          )
+          .bind(
+            `at://${did}/dev.devswhorun.activity/${index}`,
+            did,
+            String(index),
+            JSON.stringify({ ...activity, visibility: 'public' }),
+            '2026-01-01',
+          ),
+      ),
+    );
+    const profile = await (
+      await request(`/api/profiles/${encodeURIComponent(did)}`)
+    ).json<{ activities: unknown[] }>();
+    expect(profile.activities).toHaveLength(105);
+    await db.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind(did).run();
+  });
+
   it('changes visibility for a batch of owned activities atomically', async () => {
     const secondResponse = await request('/api/activities', 'POST', activity, alice);
     const secondId = (await secondResponse.json<{ id: string }>()).id;
