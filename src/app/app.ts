@@ -262,9 +262,9 @@ export class App {
 
   async route(): Promise<void> {
     const request = ++this.routeRequest;
-    const [page, username] = new URL(this.router.url, window.location.origin).pathname
-      .slice(1)
-      .split('/');
+    const [page, username] = (
+      this.router.parseUrl(this.router.url).root.children['primary']?.segments ?? []
+    ).map((segment) => segment.path);
     this.page.set(this.nav.some((item) => item.page === page) ? (page as Page) : 'feed');
     this.bulkVisibilityMode.set(false);
     this.selectedActivityIds.set([]);
@@ -274,7 +274,12 @@ export class App {
     this.remoteActivities.set([]);
     this.profileError.set('');
     this.profileLoading.set(false);
-    if (page === 'profile' && username && username !== this.viewer()?.username) {
+    if (
+      page === 'profile' &&
+      username &&
+      username !== this.viewer()?.username &&
+      username !== this.viewer()?.id
+    ) {
       this.profileLoading.set(true);
       try {
         const data = await this.api<{ profile: Profile; activities: Activity[] }>(
@@ -360,6 +365,25 @@ export class App {
     }
     this.modal.set(modal);
     this.dialog()?.nativeElement.showModal();
+  }
+
+  makeProfilePublic(): void {
+    this.openModal('profile');
+    if (this.modal() === 'profile') this.profileForm.visibility = 'public';
+  }
+
+  async copyProfileLink(profile: Profile): Promise<void> {
+    if (profile.visibility !== 'public') return;
+    const identifier = profile.provider === 'atproto' ? profile.id : profile.username;
+    const url = new URL(`/profile/${encodeURIComponent(identifier)}`, window.location.origin).href;
+    this.error.set('');
+    try {
+      await navigator.clipboard.writeText(url);
+      this.notice.set('Profile link copied.');
+    } catch {
+      this.notice.set('');
+      this.error.set(`Could not copy the profile link. Copy it manually: ${url}`);
+    }
   }
 
   closeModal(): void {

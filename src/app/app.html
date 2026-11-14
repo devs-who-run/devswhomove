@@ -271,7 +271,7 @@
                       activities with the community.
                     </p>
                   </div>
-                  <button class="text-button" (click)="openModal('profile')">
+                  <button class="text-button" (click)="makeProfilePublic()">
                     Make profile public <app-icon name="arrow" />
                   </button>
                 </div>
@@ -672,6 +672,11 @@
                     <app-icon name="edit" /> Edit profile
                   </button>
                 }
+                @if (profile.visibility === 'public') {
+                  <button class="button outline" (click)="copyProfileLink(profile)">
+                    Copy profile link
+                  </button>
+                }
               </div>
               <p class="eyebrow">DEVELOPER. HUMAN. WORK IN PROGRESS.</p>
               <h1>{{ profile.name }}</h1>
@@ -711,8 +716,8 @@
                     when marked public. Events you host or join are still public.
                   </p>
                 </div>
-                <button class="text-button" (click)="openModal('profile')">
-                  Manage privacy <app-icon name="arrow" />
+                <button class="text-button" (click)="makeProfilePublic()">
+                  Make profile public <app-icon name="arrow" />
                 </button>
               </div>
             }
