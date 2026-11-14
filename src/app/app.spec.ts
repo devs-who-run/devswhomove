@@ -253,6 +253,14 @@ describe('App', () => {
     const selects = fixture.nativeElement.querySelectorAll(
       '.profile-filters select',
     ) as NodeListOf<HTMLSelectElement>;
+    expect(selects[0].options[1].textContent).toBe('Feb 25');
+    expect(fixture.nativeElement.querySelector('.heatmap-month h3')?.textContent).toBe('Feb 25');
+    const graph = fixture.nativeElement.querySelector('.heatmap-toggle') as HTMLDetailsElement;
+    expect(graph.open).toBe(true);
+    (graph.querySelector('summary') as HTMLElement).click();
+    expect(graph.open).toBe(false);
+    (graph.querySelector('summary') as HTMLElement).click();
+    expect(graph.open).toBe(true);
     selects[0].value = '2024-01';
     selects[0].dispatchEvent(new Event('change'));
     selects[1].value = 'Cycling';
