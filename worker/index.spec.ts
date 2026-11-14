@@ -17,7 +17,33 @@ describe('Worker with real D1 storage', () => {
     privateKey.export({ type: 'pkcs8', format: 'pem' }),
   ).toString('base64');
   const atprotoSessionKey = Buffer.alloc(32, 7).toString('base64');
+  const publishedAtprotoRecords: Record<string, unknown>[] = [];
   const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+  function encryptedAtprotoSession(did: string): string {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', Buffer.from(atprotoSessionKey, 'base64'), iv);
+    cipher.setAAD(Buffer.from(`session:${did}`));
+    const ciphertext = Buffer.concat([
+      cipher.update(
+        JSON.stringify({
+          dpopJwk: privateKey.export({ format: 'jwk' }),
+          authMethod: { method: 'none' },
+          tokenSet: {
+            sub: did,
+            iss: 'https://auth.example',
+            aud: 'https://pds.example',
+            scope: ATPROTO_OAUTH_SCOPE,
+            token_type: 'DPoP',
+            access_token: 'test-access-token',
+            expires_at: '2099-01-01T00:00:00.000Z',
+          },
+        }),
+      ),
+      cipher.final(),
+      cipher.getAuthTag(),
+    ]);
+    return `${iv.toString('base64')}.${ciphertext.toString('base64')}`;
+  }
   const activity = {
     title: 'Before standup',
     sport: 'Running',
@@ -143,6 +169,18 @@ describe('Worker with real D1 storage', () => {
           ATPROTO_SESSION_KEY: atprotoSessionKey,
         },
         outboundService: async (request) => {
+          if (request.url === 'https://pds.example/xrpc/com.atproto.repo.createRecord') {
+            const data = await request.json<{
+              repo: string;
+              collection: string;
+              record: Record<string, unknown>;
+            }>();
+            publishedAtprotoRecords.push(data.record);
+            return WorkerResponse.json({
+              uri: `at://${data.repo}/${data.collection}/record${publishedAtprotoRecords.length}`,
+              cid: 'bafyreie5cvnrvd6gd3wmqx5r3gkqjfwq3fvmsk6i3q4c2av4d6sp6j5sja',
+            });
+          }
           if (request.url === 'https://auth.example/.well-known/oauth-authorization-server')
             return WorkerResponse.json({
               issuer: 'https://auth.example',
@@ -459,7 +497,7 @@ describe('Worker with real D1 storage', () => {
     expect(listing).not.toContain('token_hash');
   });
 
-  it('lets agents upload private activities idempotently but never publish', async () => {
+  it('makes agent activities public, preserves idempotency and supports owned photos', async () => {
     const headers = { 'Idempotency-Key': 'first-run' };
     const first = await request('/api/activities', 'POST', activity, undefined, token, headers);
     expect(first.status).toBe(201);
@@ -489,21 +527,145 @@ describe('Worker with real D1 storage', () => {
           token,
         )
       ).status,
-    ).toBe(403);
+    ).toBe(201);
     const stored = await db
       .prepare("SELECT source, visibility FROM activities WHERE idempotency_key = 'first-run'")
       .first();
-    expect(stored).toMatchObject({ source: 'agent', visibility: 'private' });
+    expect(stored).toMatchObject({ source: 'agent', visibility: 'public' });
     const agentActivity = (await db
       .prepare("SELECT id FROM activities WHERE idempotency_key = 'first-run'")
       .first<{ id: string }>())!.id;
     expect((await upload(agentActivity, photo, undefined, token)).status).toBe(200);
-    expect((await upload(activityId, photo, undefined, token)).status).toBe(403);
+    expect((await upload(activityId, photo, undefined, token)).status).toBe(200);
+    expect(
+      (await request(`/api/activities/${activityId}/photo`, 'DELETE', undefined, undefined, token))
+        .status,
+    ).toBe(200);
+    const foreign = await request('/api/activities', 'POST', activity, bob);
+    const foreignId = (await foreign.json<{ id: string }>()).id;
+    expect((await upload(foreignId, photo, undefined, token)).status).toBe(404);
     expect(await storedPhotos()).toBe(1);
     expect(
       (await request(`/api/activities/${agentActivity}`, 'DELETE', undefined, alice)).status,
     ).toBe(200);
     expect(await storedPhotos()).toBe(0);
+  });
+
+  it('imports valid bulk items while returning validation and idempotency errors per item', async () => {
+    const firstItem = { ...activity, idempotencyKey: 'bulk-run' };
+    const response = await request(
+      '/api/activities/bulk',
+      'POST',
+      {
+        activities: [
+          firstItem,
+          { ...activity, duration: 0 },
+          null,
+          firstItem,
+          { ...firstItem, duration: 40 },
+          { ...activity, idempotencyKey: 'bulk-last-run' },
+        ],
+      },
+      undefined,
+      token,
+    );
+    expect(response.status).toBe(200);
+    const { results } = await response.json<{
+      results: { index: number; status: number; id?: string; error?: string }[];
+    }>();
+    expect(results).toEqual([
+      { index: 0, status: 201, id: expect.any(String) },
+      { index: 1, status: 400, error: 'Duration in minutes must be between 1 and 1440.' },
+      { index: 2, status: 400, error: 'Expected an activity object.' },
+      { index: 3, status: 200, id: results[0].id },
+      {
+        index: 4,
+        status: 409,
+        error: 'Idempotency key was already used with a different activity.',
+      },
+      { index: 5, status: 201, id: expect.any(String) },
+    ]);
+    expect(
+      await db
+        .prepare(
+          "SELECT visibility, source FROM activities WHERE idempotency_key IN ('bulk-run', 'bulk-last-run')",
+        )
+        .all(),
+    ).toMatchObject({
+      results: [
+        { visibility: 'public', source: 'agent' },
+        { visibility: 'public', source: 'agent' },
+      ],
+    });
+    const replay = await request('/api/activities', 'POST', activity, undefined, token, {
+      'Idempotency-Key': 'bulk-run',
+    });
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual({ id: results[0].id });
+    const feed = await (await request('/api/bootstrap')).json<{ activities: { id: string }[] }>();
+    expect(feed.activities).not.toContainEqual(expect.objectContaining({ id: results[0].id }));
+    await db.prepare("UPDATE users SET visibility = 'public' WHERE id = 'alice'").run();
+    try {
+      const publicFeed = await (
+        await request('/api/bootstrap')
+      ).json<{ activities: { id: string }[] }>();
+      expect(publicFeed.activities).toContainEqual(
+        expect.objectContaining({ id: results[0].id, visibility: 'public', source: 'agent' }),
+      );
+    } finally {
+      await db.prepare("UPDATE users SET visibility = 'private' WHERE id = 'alice'").run();
+    }
+  });
+
+  it('enforces bulk authentication, scopes, shape, count and byte limits before saving', async () => {
+    const path = '/api/activities/bulk';
+    const payload = { activities: [activity] };
+    expect((await request(path, 'POST', payload)).status).toBe(401);
+    const readToken = await (
+      await request('/api/tokens', 'POST', { name: 'Reader', scopes: ['activities:read'] }, alice)
+    ).json<{ id: string; token: string }>();
+    expect((await request(path, 'POST', payload, undefined, readToken.token)).status).toBe(403);
+    for (const data of [
+      {},
+      { activities: [] },
+      { activities: 'invalid' },
+      {
+        activities: Array.from({ length: 101 }, () => activity),
+      },
+    ])
+      expect((await request(path, 'POST', data, undefined, token)).status).toBe(400);
+    expect(
+      (await request(path, 'POST', payload, undefined, token, { 'Idempotency-Key': 'batch' }))
+        .status,
+    ).toBe(400);
+    expect(
+      (
+        await request(
+          path,
+          'POST',
+          { padding: 'x'.repeat(1_048_576), ...payload },
+          undefined,
+          token,
+        )
+      ).status,
+    ).toBe(413);
+    const batch = Array.from({ length: 100 }, (_, i) => ({
+      ...activity,
+      title: `Large import ${i}`,
+      notes: 'x'.repeat(2000),
+    }));
+    const imported = await request(path, 'POST', { activities: batch }, undefined, token);
+    expect(imported.status).toBe(200);
+    const { results } = await imported.json<{ results: { status: number; id: string }[] }>();
+    expect(results).toHaveLength(100);
+    expect(results.every(({ status }) => status === 201)).toBe(true);
+    expect(
+      await db
+        .prepare("SELECT COUNT(*) AS count FROM activities WHERE title LIKE 'Large import %'")
+        .first(),
+    ).toEqual({ count: 100 });
+    await db.prepare("DELETE FROM activities WHERE title LIKE 'Large import %'").run();
+    await request(`/api/tokens/${readToken.id}`, 'DELETE', undefined, alice);
   });
 
   it('serves the current stateless MCP protocol through scoped agent tokens', async () => {
@@ -537,6 +699,7 @@ describe('Worker with real D1 storage', () => {
     expect(availableTools.result.tools.map(({ name }) => name)).toEqual([
       'list_activities',
       'create_activity',
+      'create_activities',
       'list_upcoming_events',
     ]);
     expect(availableTools.result).toMatchObject({ cacheScope: 'private', ttlMs: 60_000 });
@@ -558,7 +721,7 @@ describe('Worker with real D1 storage', () => {
       result: { structuredContent: { id: string; visibility: string; source: string } };
     }>();
     expect(createdResult.result.structuredContent).toMatchObject({
-      visibility: 'private',
+      visibility: 'public',
       source: 'agent',
     });
 
@@ -595,15 +758,44 @@ describe('Worker with real D1 storage', () => {
       expect.objectContaining({
         id: createdResult.result.structuredContent.id,
         title: 'MCP activity',
+        visibility: 'public',
       }),
     );
+
+    const bulkArgs = {
+      activities: [
+        { ...activityArgs, idempotencyKey: 'mcp-bulk-1' },
+        { ...activityArgs, duration: 0 },
+      ],
+    };
+    const bulkCreated = await mcpRequest(
+      'tools/call',
+      { name: 'create_activities', arguments: bulkArgs },
+      mcpToken.token,
+    );
+    expect(await bulkCreated.json()).toMatchObject({
+      result: {
+        isError: false,
+        structuredContent: {
+          results: [
+            { index: 0, status: 201, id: expect.any(String) },
+            { index: 1, status: 400, error: expect.any(String) },
+          ],
+        },
+      },
+    });
+    expect(
+      await db
+        .prepare("SELECT source, visibility FROM activities WHERE idempotency_key = 'mcp-bulk-1'")
+        .first(),
+    ).toEqual({ source: 'agent', visibility: 'public' });
 
     const writeOnly = await mcpRequest('tools/list', {}, token);
     expect(
       (await writeOnly.json<{ result: { tools: { name: string }[] } }>()).result.tools.map(
         ({ name }) => name,
       ),
-    ).toEqual(['create_activity']);
+    ).toEqual(['create_activity', 'create_activities']);
 
     const unsupportedVersion = await mcpRequest('tools/list', {}, mcpToken.token, '1900-01-01');
     expect(unsupportedVersion.status).toBe(400);
@@ -647,6 +839,79 @@ describe('Worker with real D1 storage', () => {
     expect((await request('/api/activities', 'POST', activity, undefined, token)).status).toBe(401);
   });
 
+  it('lets AT Protocol agents publish single and bulk activities without pretending to support idempotency', async () => {
+    const did = 'did:plc:7sagqfh4v4t6zl7bdwbikdc2';
+    const browserSession = 'atproto-activity-session';
+    await db.batch([
+      db
+        .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+        .bind(did, 'activity.example', 'AT Protocol Activity', new Date().toISOString()),
+      db
+        .prepare('INSERT INTO atproto_sessions (token_hash, did, expires_at) VALUES (?, ?, ?)')
+        .bind(hash(browserSession), did, '2099-01-01T00:00:00.000Z'),
+      db
+        .prepare(
+          'INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)',
+        )
+        .bind(did, encryptedAtprotoSession(did), new Date().toISOString()),
+    ]);
+    try {
+      const response = await request(
+        '/api/tokens',
+        'POST',
+        { name: 'AT Protocol writer', scopes: ['activities:write'] },
+        browserSession,
+      );
+      expect(response.status).toBe(201);
+      const writer = await response.json<{ token: string }>();
+      const single = await request('/api/activities', 'POST', activity, undefined, writer.token);
+      expect(single.status).toBe(201);
+      expect(publishedAtprotoRecords).toHaveLength(1);
+      expect(publishedAtprotoRecords[0]).toMatchObject({
+        title: activity.title,
+        source: 'agent',
+        $type: 'dev.devswhorun.activity',
+      });
+      const bulk = await request(
+        '/api/activities/bulk',
+        'POST',
+        {
+          activities: [
+            { ...activity, duration: 0 },
+            { ...activity, idempotencyKey: 'unsupported' },
+            { ...activity, title: 'AT Protocol bulk activity' },
+          ],
+        },
+        undefined,
+        writer.token,
+      );
+      expect(await bulk.json()).toMatchObject({
+        results: [
+          { index: 0, status: 400 },
+          {
+            index: 1,
+            status: 400,
+            error: 'Idempotency keys are not supported for AT Protocol activities.',
+          },
+          { index: 2, status: 201, id: expect.stringContaining(`at://${did}/`) },
+        ],
+      });
+      expect(publishedAtprotoRecords).toHaveLength(2);
+      const indexed = await db
+        .prepare('SELECT record_json FROM atproto_activities WHERE did = ?')
+        .bind(did)
+        .all<{ record_json: string }>();
+      expect(indexed.results).toHaveLength(2);
+      expect(indexed.results.map(({ record_json }) => JSON.parse(record_json).source)).toEqual([
+        'agent',
+        'agent',
+      ]);
+    } finally {
+      await db.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind(did).run();
+      await db.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(did).run();
+    }
+  });
+
   it('creates public events and counts the host as an attendee', async () => {
     const response = await request(
       '/api/events',
@@ -671,9 +936,9 @@ describe('Worker with real D1 storage', () => {
   });
 
   it('lets only the host see event attendee names', async () => {
-    expect(
-      (await request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob)).status,
-    ).toBe(200);
+    expect((await request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob)).status).toBe(
+      200,
+    );
     expect((await request(`/api/events/${eventId}/attendees`)).status).toBe(401);
     expect((await request(`/api/events/${eventId}/attendees`, 'GET', undefined, bob)).status).toBe(
       403,
@@ -693,28 +958,6 @@ describe('Worker with real D1 storage', () => {
     const uri = `at://${did}/dev.devswhorun.event/attendees`;
     const session = 'atproto-attendee-host-session';
     const path = `/api/events/${encodeURIComponent(uri)}/attendees`;
-    const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', Buffer.from(atprotoSessionKey, 'base64'), iv);
-    cipher.setAAD(Buffer.from(`session:${did}`));
-    const ciphertext = Buffer.concat([
-      cipher.update(
-        JSON.stringify({
-          dpopJwk: privateKey.export({ format: 'jwk' }),
-          authMethod: { method: 'none' },
-          tokenSet: {
-            sub: did,
-            iss: 'https://auth.example',
-            aud: 'https://pds.example',
-            scope: ATPROTO_OAUTH_SCOPE,
-            token_type: 'DPoP',
-            access_token: 'test-access-token',
-            expires_at: '2099-01-01T00:00:00.000Z',
-          },
-        }),
-      ),
-      cipher.final(),
-      cipher.getAuthTag(),
-    ]);
     await db.batch([
       db
         .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
@@ -726,11 +969,7 @@ describe('Worker with real D1 storage', () => {
         .prepare(
           'INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)',
         )
-        .bind(
-          did,
-          `${iv.toString('base64')}.${ciphertext.toString('base64')}`,
-          new Date().toISOString(),
-        ),
+        .bind(did, encryptedAtprotoSession(did), new Date().toISOString()),
       db
         .prepare(
           `INSERT INTO atproto_events
@@ -739,7 +978,9 @@ describe('Worker with real D1 storage', () => {
         )
         .bind(uri, did, '2098-01-01T09:00:00.000Z', new Date().toISOString()),
       db
-        .prepare('INSERT INTO atproto_event_attendees (event_uri, attendee_id) VALUES (?, ?), (?, ?)')
+        .prepare(
+          'INSERT INTO atproto_event_attendees (event_uri, attendee_id) VALUES (?, ?), (?, ?)',
+        )
         .bind(uri, 'github:alice', uri, `atproto:${did}`),
     ]);
     try {

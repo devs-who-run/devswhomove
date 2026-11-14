@@ -6,6 +6,30 @@ const SERVER_INFO = { name: 'devs-who-move', version: '0.0.0' };
 const SERVER_META = { 'io.modelcontextprotocol/serverInfo': SERVER_INFO };
 const ALL_SCOPES: AgentScope[] = ['activities:read', 'activities:write', 'events:read'];
 const SPORT_ENUM = ['Running', 'Cycling', 'Tennis', 'Walking', 'Swimming', 'Strength', 'Other'];
+const ACTIVITY_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string', minLength: 1, maxLength: 100 },
+    sport: { type: 'string', enum: SPORT_ENUM },
+    occurredAt: { type: 'string', format: 'date-time' },
+    duration: {
+      type: 'number',
+      minimum: 1,
+      maximum: 1440,
+      description: 'Duration in minutes.',
+    },
+    distance: { type: 'number', minimum: 0, maximum: 2000, description: 'Distance in km.' },
+    notes: { type: 'string', maxLength: 2000 },
+    idempotencyKey: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 128,
+      description: 'Stable key to prevent duplicate activity imports. GitHub accounts only.',
+    },
+  },
+  required: ['title', 'sport', 'occurredAt', 'duration'],
+  additionalProperties: false,
+};
 
 interface McpIdentity {
   agent: boolean;
@@ -72,30 +96,25 @@ const TOOLS = [
   ),
   tool(
     'create_activity',
-    'Record a private activity on your account. Agent-created activities are always private.',
+    'Record a public activity on your account. Profile privacy still applies.',
+    'activities:write',
+    ACTIVITY_INPUT_SCHEMA,
+  ),
+  tool(
+    'create_activities',
+    'Record 1-100 public activities. Returns a result for each item; valid items are saved even when others fail. Profile privacy still applies.',
     'activities:write',
     {
       type: 'object',
       properties: {
-        title: { type: 'string', minLength: 1, maxLength: 100 },
-        sport: { type: 'string', enum: SPORT_ENUM },
-        occurredAt: { type: 'string', format: 'date-time' },
-        duration: {
-          type: 'number',
-          minimum: 1,
-          maximum: 1440,
-          description: 'Duration in minutes.',
-        },
-        distance: { type: 'number', minimum: 0, maximum: 2000, description: 'Distance in km.' },
-        notes: { type: 'string', maxLength: 2000 },
-        idempotencyKey: {
-          type: 'string',
-          minLength: 1,
-          maxLength: 128,
-          description: 'Stable key to prevent duplicate activity imports.',
+        activities: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 100,
+          items: ACTIVITY_INPUT_SCHEMA,
         },
       },
-      required: ['title', 'sport', 'occurredAt', 'duration'],
+      required: ['activities'],
       additionalProperties: false,
     },
   ),
@@ -115,7 +134,7 @@ function visibleTools(scopes: AgentScope[]) {
 
 async function readBody(request: Request): Promise<unknown> {
   const declaredLength = Number(request.headers.get('Content-Length') || 0);
-  if (declaredLength > 16_384) throw new Error('Request body is too large.');
+  if (declaredLength > 1_048_576) throw new Error('Request body is too large.');
   const reader = request.body?.getReader();
   if (!reader) throw new Error('Request body is required.');
 
@@ -125,7 +144,7 @@ async function readBody(request: Request): Promise<unknown> {
     const { done, value } = await reader.read();
     if (done) break;
     length += value.byteLength;
-    if (length > 16_384) {
+    if (length > 1_048_576) {
       await reader.cancel();
       throw new Error('Request body is too large.');
     }
@@ -274,7 +293,7 @@ export async function handleMcp(
       supportedVersions: [PROTOCOL_VERSION],
       capabilities: { tools: {} },
       instructions:
-        'Use scoped agent tokens. Available tools read your own activities, record private activities, and read upcoming public events.',
+        'Use scoped agent tokens. Available tools read your own activities, record public activities individually or in bulk, and read upcoming public events. Profile privacy still applies.',
       ttlMs: 3_600_000,
       cacheScope: 'private',
     });
@@ -307,8 +326,10 @@ export async function handleMcp(
   if (!isRecord(args)) return rpcError(requestId, -32602, 'Tool arguments must be an object.');
   const allowedArguments =
     name === 'create_activity'
-      ? ['title', 'sport', 'occurredAt', 'duration', 'distance', 'notes', 'idempotencyKey']
-      : [];
+      ? Object.keys(ACTIVITY_INPUT_SCHEMA.properties)
+      : name === 'create_activities'
+        ? ['activities']
+        : [];
   const unexpectedArgument = Object.keys(args).find((key) => !allowedArguments.includes(key));
   if (unexpectedArgument)
     return toolResult(
@@ -327,23 +348,25 @@ export async function handleMcp(
     return toolResult(requestId, result.ok ? result.data : { error: result.message }, !result.ok);
   }
 
+  if (name === 'create_activities') {
+    const result = await callApi(
+      dispatchApi,
+      apiRequest(request, '/api/activities/bulk', 'POST', args),
+    );
+    return toolResult(requestId, result.ok ? result.data : { error: result.message }, !result.ok);
+  }
+
   const { idempotencyKey, ...activity } = args;
   if (idempotencyKey !== undefined && typeof idempotencyKey !== 'string')
     return toolResult(requestId, { error: 'Idempotency key must be a string.' }, true);
   const result = await callApi(
     dispatchApi,
-    apiRequest(
-      request,
-      '/api/activities',
-      'POST',
-      { ...activity, visibility: 'private' },
-      idempotencyKey,
-    ),
+    apiRequest(request, '/api/activities', 'POST', activity, idempotencyKey),
   );
   return toolResult(
     requestId,
     result.ok
-      ? { ...result.data, visibility: 'private', source: 'agent' }
+      ? { ...result.data, visibility: 'public', source: 'agent' }
       : { error: result.message },
     !result.ok,
   );

@@ -30,7 +30,7 @@ Copy `.dev.vars.example` to `.dev.vars`, and fill in the client ID and secret. R
 
 The Worker requests `read:user`, not repository or email permissions. GitHub access tokens are used only during sign-in and not stored. Browser sessions use hashed opaque tokens and HTTP-only, SameSite cookies (Secure on HTTPS), expire in 30 days, and are invalidated on logout. OAuth state is random, cookie-bound and expires in 10 minutes.
 
-For GitHub accounts, new profiles and activities are **private by default**. Edit your profile to choose sports, bio, approximate location and public/private visibility. Publishing an individual activity does not override a private profile. Hosting an event is explicitly public even with a private profile. AT Protocol accounts are public-only; see the privacy notes below.
+For GitHub accounts, new profiles and website-created activities are **private by default**. Activities created using agent API tokens or MCP are **public**. Edit your profile to choose sports, bio, approximate location and public/private visibility. Publishing an individual activity does not override a private profile. Hosting an event is explicitly public even with a private profile. AT Protocol accounts are public-only; see the privacy notes below.
 
 ## AT Protocol sign-in and public data
 
@@ -67,10 +67,10 @@ Activity lists and summaries currently cover the latest 100 visible sessions. Ev
 
 ## Agent API
 
-Sign in, open **Your agents**, choose permissions and create a token. Copy it once into the agent's secret manager. Tokens expire in 90 days; at most 10 unexpired tokens per account. Token management, publication, profile privacy and event mutations require a browser session.
+Sign in, open **Your agents**, choose permissions and create a token. Copy it once into the agent's secret manager. Tokens expire in 90 days; at most 10 unexpired tokens per account. Token management, changing existing activity visibility, profile privacy and event mutations require a browser session.
 
 Supported scopes: `activities:read`, `activities:write`, `events:read`.
-AT Protocol agent tokens are read-only for activities; public PDS writes are not available to agents.
+AT Protocol agent tokens can publish public activity records to the account's PDS while its authorization remains valid.
 
 An HTTP-capable agent can upload a session:
 
@@ -85,8 +85,7 @@ curl "$DWM_URL/api/activities" \
     "occurredAt": "2026-11-04T07:30:00Z",
     "duration": 31,
     "distance": 5,
-    "notes": "Easy effort. Felt good.",
-    "visibility": "private"
+    "notes": "Easy effort. Felt good."
   }'
 ```
 
@@ -99,15 +98,46 @@ curl -X PUT "$DWM_URL/api/activities/$ACTIVITY_ID/photo" \
   --data-binary @session.jpg
 ```
 
-`duration` is minutes; `distance` is optional and measured in kilometres. Times are ISO 8601, stored in UTC. Sports: `Running`, `Cycling`, `Tennis`, `Walking`, `Swimming`, `Strength`, `Other`. Agent uploads are always private. Reusing an idempotency key with the same validated payload returns the original ID; a different payload returns 409. Agents should supply a stable key per session to avoid duplicate imports.
+`duration` is minutes; `distance` is optional and measured in kilometres. Times are ISO 8601, stored in UTC. Sports: `Running`, `Cycling`, `Tennis`, `Walking`, `Swimming`, `Strength`, `Other`. Agent uploads are always public, even if an older client sends `"visibility": "private"`. A private GitHub profile still hides its activities from other people. Existing activities are not changed.
 
-| Endpoint                           | Permission                                     |
-| ---------------------------------- | ---------------------------------------------- |
-| `GET /api/activities`              | `activities:read` — own recent sessions only   |
-| `POST /api/activities`             | `activities:write` — private sessions only     |
-| `PUT /api/activities/:id/photo`    | `activities:write` — own private sessions only |
-| `DELETE /api/activities/:id/photo` | `activities:write` — own private sessions only |
-| `GET /api/events`                  | `events:read` — upcoming public events         |
+For GitHub accounts, reusing an idempotency key with the same validated payload returns the original ID; a different payload returns 409. Agents should supply a stable key per session to avoid duplicate imports. Idempotency keys are not supported for AT Protocol activities and are rejected rather than silently ignored.
+
+To import up to 100 activities in one request (maximum JSON body: 1 MiB), use `POST /api/activities/bulk`:
+
+```sh
+curl "$DWM_URL/api/activities/bulk" \
+  -H "Authorization: Bearer $DWM_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "activities": [
+      {
+        "title": "Morning run",
+        "sport": "Running",
+        "occurredAt": "2026-11-04T07:30:00Z",
+        "duration": 31,
+        "distance": 5,
+        "idempotencyKey": "training-session-2026-11-04"
+      }
+    ]
+  }'
+```
+
+Bulk requests return HTTP 200 with ordered, zero-based per-item results, for example
+`{"results":[{"index":0,"status":201,"id":"..."},{"index":1,"status":400,"error":"..."}]}`.
+Valid activities are saved even when other items fail validation or conflict with an
+idempotency key. A replay has item status 200; an idempotency conflict has item
+status 409. Use each item's `idempotencyKey`, not an `Idempotency-Key` header for
+the whole batch. Authentication, scope, malformed body and batch-size failures
+reject the request before any activities are saved.
+
+| Endpoint                           | Permission                                      |
+| ---------------------------------- | ----------------------------------------------- |
+| `GET /api/activities`              | `activities:read` — own recent sessions only    |
+| `POST /api/activities`             | `activities:write` — public sessions            |
+| `POST /api/activities/bulk`        | `activities:write` — 1–100 public sessions      |
+| `PUT /api/activities/:id/photo`    | `activities:write` — own sessions (GitHub only) |
+| `DELETE /api/activities/:id/photo` | `activities:write` — own sessions (GitHub only) |
+| `GET /api/events`                  | `events:read` — upcoming public events          |
 
 ## MCP server
 
@@ -129,9 +159,10 @@ and an existing scoped agent token:
 ```
 
 The server implements `server/discover`, `tools/list` and `tools/call`. It
-exposes `list_activities` (`activities:read`), `create_activity`
+exposes `list_activities` (`activities:read`), `create_activity` / `create_activities`
 (`activities:write`) and `list_upcoming_events` (`events:read`) according to
-the token's scopes. Agent-created activities are always private; activity
+the token's scopes. `create_activities` accepts the same `activities` array as
+the bulk API and returns the same per-item results. Agent-created activities are public; activity
 validation, idempotency and token revocation use the same API and storage as
 other agents. MCP connections use the existing bearer tokens; MCP OAuth
 authorization is not implemented.

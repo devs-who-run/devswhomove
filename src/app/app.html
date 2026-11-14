@@ -932,7 +932,7 @@
                   <div class="terminal-result">
                     <app-icon name="check" /><span
                       >Create an activity on your account<br /><small
-                        >5.0 km · 31 min · MCP-created activities are always private</small
+                        >5.0 km · 31 min · API/MCP-created activities are public</small
                       ></span
                     >
                   </div>
@@ -992,17 +992,11 @@
                   />
                   <fieldset>
                     <legend>What can it do?</legend>
-                    @if (viewer()?.provider === 'atproto') {
-                      <p class="small-text muted">
-                        AT Protocol agent tokens cannot write public activities.
-                      </p>
-                    } @else {
-                      <label class="checkbox-label"
-                        ><input type="checkbox" name="agentWrite" [(ngModel)]="agentWrite" /><span
-                          >Log private activities</span
-                        ></label
-                      >
-                    }
+                    <label class="checkbox-label"
+                      ><input type="checkbox" name="agentWrite" [(ngModel)]="agentWrite" /><span
+                        >Log public activities</span
+                      ></label
+                    >
                     <label class="checkbox-label"
                       ><input type="checkbox" name="agentRead" [(ngModel)]="agentRead" /><span
                         >Read your activity history</span

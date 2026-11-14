@@ -315,11 +315,11 @@ async function readLimited(request: Request, limit: number): Promise<Uint8Array>
 }
 
 /** Parse a JSON object request body and return a client error for invalid input. */
-async function body(request: Request): Promise<Record<string, unknown>> {
+async function body(request: Request, limit = 16_384): Promise<Record<string, unknown>> {
   if (!request.headers.get('Content-Type')?.includes('application/json')) {
     throw new HttpError(415, 'Use application/json.');
   }
-  const bytes = await readLimited(request, 16_384);
+  const bytes = await readLimited(request, limit);
   let data: unknown;
   try {
     data = JSON.parse(new TextDecoder().decode(bytes));
@@ -502,6 +502,70 @@ async function saveAtprotoActivity(
     )
     .run();
   return created.data.uri;
+}
+
+async function saveActivity(
+  env: Env,
+  actor: Identity,
+  data: Record<string, unknown>,
+  keyInput?: unknown,
+): Promise<{ id: string; status: number }> {
+  const requestedVisibility = visibility(
+    data['visibility'] ?? (actor.agent || actor.provider === 'atproto' ? 'public' : 'private'),
+  );
+  if (actor.provider === 'atproto') {
+    if (!actor.agent && requestedVisibility !== 'public')
+      throw new HttpError(
+        400,
+        'AT Protocol activities are public; private activities are not supported.',
+      );
+    if (keyInput != null)
+      throw new HttpError(400, 'Idempotency keys are not supported for AT Protocol activities.');
+    return { id: await saveAtprotoActivity(env, actor, data), status: 201 };
+  }
+  const entry = {
+    title: text(data['title'], 'Title', 100),
+    sport: sport(data['sport']),
+    occurredAt: date(data['occurredAt'], false),
+    duration: number(data['duration'], 'Duration in minutes', 1, 1440),
+    distance: data['distance'] == null ? null : number(data['distance'], 'Distance in km', 0, 2000),
+    notes: text(data['notes'] ?? '', 'Notes', 2000, false),
+    visibility: actor.agent ? 'public' : requestedVisibility,
+  };
+  const key = keyInput == null ? null : text(keyInput, 'Idempotency key', 128);
+  const payloadHash = await hash(JSON.stringify(entry));
+  const id = crypto.randomUUID();
+  await env.DB.prepare(
+    `INSERT INTO activities
+    (id, user_id, title, sport, occurred_at, duration, distance, notes, visibility, source, idempotency_key, payload_hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, idempotency_key) DO NOTHING`,
+  )
+    .bind(
+      id,
+      actor.user.id,
+      entry.title,
+      entry.sport,
+      entry.occurredAt,
+      entry.duration,
+      entry.distance,
+      entry.notes,
+      entry.visibility,
+      actor.agent ? 'agent' : 'web',
+      key,
+      payloadHash,
+    )
+    .run();
+  if (key) {
+    const existing = await env.DB.prepare(
+      'SELECT id, payload_hash FROM activities WHERE user_id = ? AND idempotency_key = ?',
+    )
+      .bind(actor.user.id, key)
+      .first<{ id: string; payload_hash: string }>();
+    if (!existing || existing.payload_hash !== payloadHash)
+      throw new HttpError(409, 'Idempotency key was already used with a different activity.');
+    return { id: existing.id, status: existing.id === id ? 201 : 200 };
+  }
+  return { id, status: 201 };
 }
 
 /** Publish a hosted event to the host's PDS and index it for community discovery. */
@@ -1112,67 +1176,35 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/activities' && method === 'POST') {
     const actor = requireIdentity(auth, 'activities:write');
     const data = await body(request);
-    if (actor.provider === 'atproto') {
-      if (actor.agent)
-        throw new HttpError(403, 'Agent writes cannot publish public AT Protocol activities.');
-      if (visibility(data['visibility'] ?? 'public') !== 'public')
-        throw new HttpError(
-          400,
-          'AT Protocol activities are public; private activities are not supported.',
-        );
-      const id = await saveAtprotoActivity(env, actor, data);
-      return json({ id }, 201);
+    const { id, status } = await saveActivity(
+      env,
+      actor,
+      data,
+      request.headers.get('Idempotency-Key'),
+    );
+    return json({ id }, status);
+  }
+  if (url.pathname === '/api/activities/bulk' && method === 'POST') {
+    const actor = requireIdentity(auth, 'activities:write');
+    const data = await body(request, 1_048_576);
+    const items = data['activities'];
+    if (!Array.isArray(items) || items.length < 1 || items.length > 100)
+      throw new HttpError(400, 'Provide between 1 and 100 activities.');
+    if (request.headers.has('Idempotency-Key'))
+      throw new HttpError(400, 'Use an idempotencyKey on each activity, not a batch header.');
+    const results = [];
+    for (const [index, item] of items.entries()) {
+      try {
+        if (!item || typeof item !== 'object' || Array.isArray(item))
+          throw new HttpError(400, 'Expected an activity object.');
+        const { id, status } = await saveActivity(env, actor, item, item['idempotencyKey']);
+        results.push({ index, status, id });
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.status >= 500) throw error;
+        results.push({ index, status: error.status, error: error.message });
+      }
     }
-    const entry = {
-      title: text(data['title'], 'Title', 100),
-      sport: sport(data['sport']),
-      occurredAt: date(data['occurredAt'], false),
-      duration: number(data['duration'], 'Duration in minutes', 1, 1440),
-      distance:
-        data['distance'] == null ? null : number(data['distance'], 'Distance in km', 0, 2000),
-      notes: text(data['notes'] ?? '', 'Notes', 2000, false),
-      visibility: visibility(data['visibility'] ?? 'private'),
-    };
-    if (actor.agent && entry.visibility !== 'private')
-      throw new HttpError(
-        403,
-        'Agent tokens can only create private activities. Publish from the website.',
-      );
-    const keyHeader = request.headers.get('Idempotency-Key');
-    const key = keyHeader === null ? null : text(keyHeader, 'Idempotency key', 128);
-    const payloadHash = await hash(JSON.stringify(entry));
-    const id = crypto.randomUUID();
-    await env.DB.prepare(
-      `INSERT INTO activities
-      (id, user_id, title, sport, occurred_at, duration, distance, notes, visibility, source, idempotency_key, payload_hash)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, idempotency_key) DO NOTHING`,
-    )
-      .bind(
-        id,
-        actor.user.id,
-        entry.title,
-        entry.sport,
-        entry.occurredAt,
-        entry.duration,
-        entry.distance,
-        entry.notes,
-        entry.visibility,
-        actor.agent ? 'agent' : 'web',
-        key,
-        payloadHash,
-      )
-      .run();
-    if (key) {
-      const existing = await env.DB.prepare(
-        'SELECT id, payload_hash FROM activities WHERE user_id = ? AND idempotency_key = ?',
-      )
-        .bind(actor.user.id, key)
-        .first<{ id: string; payload_hash: string }>();
-      if (!existing || existing.payload_hash !== payloadHash)
-        throw new HttpError(409, 'Idempotency key was already used with a different activity.');
-      return json({ id: existing.id }, existing.id === id ? 201 : 200);
-    }
-    return json({ id }, 201);
+    return json({ results });
   }
   const photoMatch = /^\/api\/activities\/([^/]+)\/photo$/.exec(url.pathname);
   if (photoMatch && method === 'GET') {
@@ -1203,13 +1235,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
       throw new HttpError(400, 'Activity photos are not supported for AT Protocol accounts yet.');
     const activityId = decodedPathPart(photoMatch[1]);
     const current = await env.DB.prepare(
-      'SELECT photo_key AS key, visibility FROM activities WHERE id = ? AND user_id = ?',
+      'SELECT photo_key AS key FROM activities WHERE id = ? AND user_id = ?',
     )
       .bind(activityId, actor.user.id)
-      .first<{ key: string | null; visibility: string }>();
+      .first<{ key: string | null }>();
     if (!current) throw new HttpError(404, 'Activity not found.');
-    if (actor.agent && current.visibility !== 'private')
-      throw new HttpError(403, 'Agent tokens can only change photos on private activities.');
     let key: string | null = null;
     let type: string | null = null;
     if (method === 'PUT') {
