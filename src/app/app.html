@@ -226,14 +226,23 @@
                   <button
                     [class.selected]="feedMode() === 'community'"
                     [attr.aria-pressed]="feedMode() === 'community'"
-                    (click)="feedMode.set('community')"
+                    (click)="setFeedMode('community')"
                   >
                     Community
                   </button>
+                  @if (!preview()) {
+                    <button
+                      [class.selected]="feedMode() === 'following'"
+                      [attr.aria-pressed]="feedMode() === 'following'"
+                      (click)="setFeedMode('following')"
+                    >
+                      Following
+                    </button>
+                  }
                   <button
                     [class.selected]="feedMode() === 'mine'"
                     [attr.aria-pressed]="feedMode() === 'mine'"
-                    (click)="feedMode.set('mine')"
+                    (click)="setFeedMode('mine')"
                   >
                     Your activity
                   </button>
@@ -268,17 +277,32 @@
                   [profileHidden]="profileHidden()"
                   [canChangeVisibility]="!!viewer() && viewer()?.provider !== 'atproto'"
                   [saving]="saving()"
+                  [social]="!preview()"
+                  [participation]="participation()"
                   (visibilityChange)="toggleVisibility($event)"
                 />
               } @empty {
-                <div class="empty-state">
-                  <app-icon name="move" />
-                  <h3>A fresh starting line.</h3>
-                  <p>No activities here yet. Your first little move belongs here.</p>
-                  <button class="button outline" (click)="openModal('activity')">
-                    Log an activity <app-icon name="plus" />
-                  </button>
-                </div>
+                @if (feedMode() === 'following') {
+                  <div class="empty-state" [attr.aria-busy]="followingLoading()">
+                    <app-icon name="people" />
+                    <h3>{{ followingLoading() ? 'Loading your people…' : 'Find your people.' }}</h3>
+                    @if (!followingLoading()) {
+                      <p>Follow people from their profile to see their public activities here.</p>
+                      <button class="button outline" (click)="setFeedMode('community')">
+                        Browse the community <app-icon name="arrow" />
+                      </button>
+                    }
+                  </div>
+                } @else {
+                  <div class="empty-state">
+                    <app-icon name="move" />
+                    <h3>A fresh starting line.</h3>
+                    <p>No activities here yet. Your first little move belongs here.</p>
+                    <button class="button outline" (click)="openModal('activity')">
+                      Log an activity <app-icon name="plus" />
+                    </button>
+                  </div>
+                }
               }
               <p class="feed-end">YOU DON’T HAVE TO GO FAST. JUST GO.</p>
             </section>
@@ -414,6 +438,11 @@
                     {{ event.startsAt | date: 'h:mm a' }}
                   </div>
                   <h2>{{ event.title }}</h2>
+                  @if (event.clubSlug) {
+                    <p class="event-conference">
+                      Club: <a [routerLink]="['/clubs', event.clubSlug]">{{ event.clubName }}</a>
+                    </p>
+                  }
                   @if (event.conferenceName) {
                     <p class="event-conference">
                       Conference:
@@ -515,6 +544,208 @@
           </p>
         }
 
+        @if (page() === 'clubs') {
+          @if (clubLoading()) {
+            <div class="loading-state" role="status">Loading club…</div>
+          } @else if (clubError()) {
+            <div class="empty-state">
+              <app-icon name="people" />
+              <h2>We couldn’t find that club.</h2>
+              <p>{{ clubError() }}</p>
+              <a class="button outline" routerLink="/clubs">Back to clubs</a>
+            </div>
+          } @else if (clubDetail(); as detail) {
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow">
+                  <a routerLink="/clubs">CLUBS</a> ·
+                  {{ detail.club.sport ? detail.club.sport.toUpperCase() : 'ALL SPORTS' }}
+                </p>
+                <h1>{{ detail.club.name }}</h1>
+                <p>{{ detail.club.description || 'Developers who move together.' }}</p>
+                <p class="muted small-text">
+                  {{ detail.club.members }}
+                  {{ detail.club.members === 1 ? 'member' : 'members' }}
+                  @if (detail.club.ownerName) {
+                    · Started by {{ detail.club.ownerName }}
+                  }
+                </p>
+              </div>
+              <div class="club-actions">
+                @if (detail.club.ownerId === viewer()?.id) {
+                  <button
+                    class="button outline"
+                    (click)="deleteClub(detail.club)"
+                    [disabled]="saving()"
+                  >
+                    Delete club
+                  </button>
+                } @else {
+                  <button
+                    class="button"
+                    [class.primary]="!detail.club.joined"
+                    [class.outline]="detail.club.joined"
+                    (click)="toggleMembership(detail.club)"
+                    [disabled]="saving()"
+                  >
+                    {{ detail.club.joined ? 'Leave club' : 'Join club' }}
+                  </button>
+                }
+                @if (detail.club.joined) {
+                  <button class="button primary" (click)="openModal('event')">
+                    <app-icon name="plus" /> Host a club event
+                  </button>
+                }
+              </div>
+            </div>
+            <div class="club-layout">
+              <section aria-labelledby="club-feed-title">
+                <h2 id="club-feed-title">Club feed</h2>
+                @for (activity of detail.activities; track activity.id) {
+                  <app-activity-card
+                    [activity]="activity"
+                    [viewerId]="viewer()?.id ?? null"
+                    [profileHidden]="profileHidden()"
+                    [social]="true"
+                    [participation]="participation()"
+                  />
+                } @empty {
+                  <div class="empty-state">
+                    <app-icon name="move" />
+                    <h3>Quiet start.</h3>
+                    <p>Public activities from club members show up here.</p>
+                  </div>
+                }
+              </section>
+              <aside class="club-sidebar">
+                <section aria-labelledby="club-events-title">
+                  <h2 id="club-events-title">Upcoming club events</h2>
+                  <ul class="club-list">
+                    @for (event of detail.events; track event.id) {
+                      <li>
+                        <strong>{{ event.title }}</strong>
+                        <span class="muted small-text"
+                          >{{ event.startsAt | date: 'EEE, MMM d · h:mm a' }} ·
+                          {{ event.location }}</span
+                        >
+                        <span class="muted small-text"
+                          >{{ event.attendees }} / {{ event.capacity }} going</span
+                        >
+                        @if (event.hostId !== viewer()?.id) {
+                          <button
+                            class="text-button"
+                            [disabled]="
+                              saving() || (!event.joined && event.attendees >= event.capacity)
+                            "
+                            (click)="join(event)"
+                          >
+                            {{
+                              event.joined
+                                ? 'Leave event'
+                                : event.attendees >= event.capacity
+                                  ? 'Full'
+                                  : 'Count me in'
+                            }}
+                          </button>
+                        }
+                      </li>
+                    } @empty {
+                      <li class="muted small-text">No upcoming club events yet.</li>
+                    }
+                  </ul>
+                </section>
+                <section aria-labelledby="club-members-title">
+                  <h2 id="club-members-title">Members</h2>
+                  <ul class="club-list">
+                    @for (member of detail.members; track member.id) {
+                      <li class="attendee">
+                        @if (member.avatar) {
+                          <img [src]="member.avatar" alt="" referrerpolicy="no-referrer" />
+                        } @else {
+                          <app-icon name="user" />
+                        }
+                        <a
+                          [routerLink]="[
+                            '/profile',
+                            member.id.startsWith('did:') ? member.id : member.username,
+                          ]"
+                          >{{ member.name }}</a
+                        >
+                        @if (member.role === 'owner') {
+                          <span class="muted small-text">· Owner</span>
+                        }
+                      </li>
+                    }
+                  </ul>
+                </section>
+              </aside>
+            </div>
+          } @else {
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow">YOUR PEOPLE. YOUR PACE.</p>
+                <h1>Find your <span>club.</span></h1>
+                <p>Open clubs for developers who move. Join one, or start your own.</p>
+              </div>
+              <button class="button primary" (click)="openModal('club')">
+                <app-icon name="plus" /> Start a club
+              </button>
+            </div>
+            @if (viewer() && participation() === 'private') {
+              <div class="privacy-callout" role="note">
+                <app-icon name="lock" />
+                <div>
+                  <strong>Clubs are public.</strong>
+                  <p>Make your profile public to join or start a club.</p>
+                </div>
+                <button class="text-button" (click)="makeProfilePublic()">
+                  Make profile public <app-icon name="arrow" />
+                </button>
+              </div>
+            }
+            <div class="event-grid">
+              @for (club of clubs(); track club.id) {
+                <article class="event-card">
+                  <div class="event-body">
+                    <div class="event-date">
+                      {{ club.sport || 'All sports' }} · {{ club.members }}
+                      {{ club.members === 1 ? 'member' : 'members' }}
+                    </div>
+                    <h2>
+                      <a [routerLink]="['/clubs', club.slug]">{{ club.name }}</a>
+                    </h2>
+                    <p class="event-description">{{ club.description }}</p>
+                    @if (club.ownerId !== viewer()?.id) {
+                      <button
+                        class="button full"
+                        [class.primary]="!club.joined"
+                        [class.outline]="club.joined"
+                        (click)="toggleMembership(club)"
+                        [disabled]="saving()"
+                      >
+                        {{ club.joined ? 'Joined · Leave' : 'Join club' }}
+                      </button>
+                    } @else {
+                      <a class="button outline full" [routerLink]="['/clubs', club.slug]"
+                        >Your club</a
+                      >
+                    }
+                  </div>
+                </article>
+              } @empty {
+                <div class="empty-state full">
+                  <app-icon name="people" />
+                  <h3>No clubs yet.</h3>
+                  <p>Start the first one, like “Angular devs who run”.</p>
+                  <button class="button primary" (click)="openModal('club')">
+                    Start a club <app-icon name="plus" />
+                  </button>
+                </div>
+              }
+            </div>
+          }
+        }
+
         @if (page() === 'profile') {
           @if (profileLoading()) {
             <div class="loading-state" role="status">Loading profile…</div>
@@ -549,6 +780,18 @@
                     <app-icon name="edit" /> Edit profile
                   </button>
                 }
+                @if (remoteProfile() && viewer() && profile.id !== viewer()?.id) {
+                  <button
+                    class="button"
+                    [class.primary]="!socialCounts()?.viewerFollows"
+                    [class.outline]="socialCounts()?.viewerFollows"
+                    [attr.aria-pressed]="!!socialCounts()?.viewerFollows"
+                    [disabled]="saving()"
+                    (click)="toggleFollow(profile)"
+                  >
+                    {{ socialCounts()?.viewerFollows ? 'Following' : 'Follow' }}
+                  </button>
+                }
                 @if (profile.visibility === 'public') {
                   <button class="button outline" (click)="copyProfileLink(profile)">
                     Copy profile link
@@ -576,6 +819,13 @@
               </p>
               @if (profile.location) {
                 <p class="profile-location"><app-icon name="pin" />{{ profile.location }}</p>
+              }
+              @if (socialCounts(); as social) {
+                <p class="profile-location">
+                  <app-icon name="people" /><strong>{{ social.followers }}</strong>
+                  {{ social.followers === 1 ? 'follower' : 'followers' }} ·
+                  <strong>{{ social.following }}</strong> following
+                </p>
               }
               <div class="sport-filters profile-sports">
                 @for (sport of profile.sports; track sport) {
@@ -764,6 +1014,13 @@
                   </small>
                   <h3>{{ activity.title }}</h3>
                   <p>{{ activity.notes }}</p>
+                  @if (activity.kudos || activity.comments) {
+                    <small
+                      >{{ activity.kudos ?? 0 }} kudos ·
+                      {{ activity.comments ?? 0 }}
+                      {{ activity.comments === 1 ? 'comment' : 'comments' }}</small
+                    >
+                  }
                   @if (activity.photo) {
                     <img
                       class="profile-activity-photo"
@@ -1046,7 +1303,9 @@
                 ? editingEvent()
                   ? 'Fine-tune your event.'
                   : 'Good company starts here.'
-                : 'Make this space yours.'
+                : modal() === 'club'
+                  ? 'Start a club.'
+                  : 'Make this space yours.'
         }}
       </h2>
     </div>
@@ -1271,6 +1530,15 @@
       <p id="conference-help" class="muted small-text">
         Link any sport to a tech conference. Add a name before a URL; conference details are public.
       </p>
+      @if (eventClubOptions().length) {
+        <label for="event-club">Club (optional)</label>
+        <select id="event-club" name="clubId" [(ngModel)]="eventForm.clubId">
+          <option value="">No club</option>
+          @for (club of eventClubOptions(); track club.id) {
+            <option [value]="club.id">{{ club.name }}</option>
+          }
+        </select>
+      }
       <div class="form-row">
         <div>
           <label for="event-sport">Sport</label
@@ -1326,6 +1594,37 @@
         [(ngModel)]="eventForm.description"
         maxlength="1000"
         placeholder="Duration, equipment, weather plans, and anything that helps someone feel welcome."
+      ></textarea>
+    }
+    @if (modal() === 'club') {
+      <p class="form-help">
+        Clubs are public and open: anyone with a public profile can join. Members can link their
+        events to the club.
+      </p>
+      <label for="club-name">Club name</label
+      ><input
+        id="club-name"
+        name="clubName"
+        [(ngModel)]="clubForm.name"
+        maxlength="60"
+        placeholder="Angular devs who run"
+        required
+      />
+      <label for="club-sport">Main sport</label
+      ><select id="club-sport" name="clubSport" [(ngModel)]="clubForm.sport">
+        <option value="">All sports</option>
+        @for (sport of sports; track sport) {
+          <option [value]="sport">{{ sport }}</option>
+        }
+      </select>
+      <label for="club-description">What’s it about?</label
+      ><textarea
+        id="club-description"
+        name="clubDescription"
+        rows="3"
+        [(ngModel)]="clubForm.description"
+        maxlength="300"
+        placeholder="Weekly easy runs, all paces welcome."
       ></textarea>
     }
     @if (modal() === 'profile') {
@@ -1411,7 +1710,9 @@
                   ? editingEvent()
                     ? 'Save changes'
                     : 'Create event'
-                  : 'Save profile'
+                  : modal() === 'club'
+                    ? 'Create club'
+                    : 'Save profile'
         }}<app-icon name="arrow" />
       </button>
     </div>

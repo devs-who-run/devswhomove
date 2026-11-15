@@ -248,6 +248,7 @@ describe('Worker with real D1 storage', () => {
         '0003_atproto.sql',
         '0004_atproto_handle_index.sql',
         '0005_event_conferences.sql',
+        '0006_social.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {

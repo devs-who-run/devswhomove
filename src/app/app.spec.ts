@@ -903,4 +903,161 @@ describe('App', () => {
     await app.save();
     expect(app.error()).toContain('Add a conference name');
   });
+
+  describe('social features', () => {
+    const viewer = { ...DEMO_PROFILE, id: 'me', username: 'me' };
+    const friendActivity = {
+      ...DEMO_ACTIVITIES[0],
+      id: 'friend-run',
+      userId: 'friend',
+      username: 'friend',
+      name: 'Friend',
+      visibility: 'public' as const,
+      kudos: 2,
+      kudoed: false,
+      comments: 0,
+    };
+    const club = {
+      id: 'club-1',
+      slug: 'angular-devs-who-run',
+      name: 'Angular devs who run',
+      description: 'Easy runs.',
+      sport: 'Running' as const,
+      ownerId: 'friend',
+      ownerName: 'Friend',
+      members: 3,
+      joined: false,
+    };
+    const button = (root: HTMLElement, text: string) =>
+      [...root.querySelectorAll('button')].find((item) =>
+        item.textContent?.replace(/\s+/g, ' ').trim().startsWith(text),
+      ) as HTMLButtonElement;
+
+    function mockApi(
+      user: typeof viewer | null,
+      routes: Record<string, (init?: RequestInit) => unknown> = {},
+    ) {
+      const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+        const handler = routes[`${init?.method ?? 'GET'} ${path}`];
+        if (handler) return Response.json(handler(init));
+        return Response.json({
+          ...bootstrap,
+          viewer: user,
+          activities: [friendActivity],
+          clubs: [club],
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      return fetchMock;
+    }
+
+    it('gives kudos from the feed and updates the count', async () => {
+      const fetchMock = mockApi(viewer, {
+        'POST /api/activities/friend-run/kudos': () => ({ kudos: 3, kudoed: true }),
+      });
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const root = fixture.nativeElement as HTMLElement;
+      button(root, '2 kudos').click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const kudos = fetchMock.mock.calls.find(([path]) => path.endsWith('/kudos'));
+      expect(JSON.parse(kudos?.[1]?.body as string)).toEqual({ kudos: true });
+      expect(button(root, '3 kudos').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('asks private profiles to go public before giving kudos', async () => {
+      const fetchMock = mockApi({ ...viewer, visibility: 'private' });
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const root = fixture.nativeElement as HTMLElement;
+      button(root, '2 kudos').click();
+      fixture.detectChanges();
+      expect(root.textContent).toContain('Make your profile public to give kudos and comment.');
+      expect(fetchMock.mock.calls.some(([path]) => path.endsWith('/kudos'))).toBe(false);
+    });
+
+    it('shows only followed people on the Following tab', async () => {
+      mockApi(viewer, {
+        'GET /api/feed?scope=following': () => ({ activities: [] }),
+      });
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const root = fixture.nativeElement as HTMLElement;
+      button(root, 'Following').click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.filteredActivities()).toEqual([]);
+      expect(root.textContent).toContain('Follow people from their profile');
+    });
+
+    it('follows a remote profile and shows follower counts', async () => {
+      const fetchMock = mockApi(viewer, {
+        'GET /api/profiles/friend': () => ({
+          profile: { ...viewer, id: 'friend', username: 'friend', name: 'Friend' },
+          activities: [],
+          social: { followers: 4, following: 1, viewerFollows: false },
+        }),
+        'POST /api/follows': () => ({ followers: 5, following: 1, viewerFollows: true }),
+      });
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      await TestBed.inject(Router).navigateByUrl('/profile/friend');
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const root = fixture.nativeElement as HTMLElement;
+      expect(root.textContent?.replace(/\s+/g, ' ')).toContain('4 followers · 1 following');
+      button(root, 'Follow').click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const follow = fetchMock.mock.calls.find(([path]) => path === '/api/follows');
+      expect(JSON.parse(follow?.[1]?.body as string)).toEqual({ userId: 'friend', follow: true });
+      expect(button(root, 'Following').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('lists clubs, joins one, and creates a new club', async () => {
+      HTMLDialogElement.prototype.showModal = vi.fn();
+      HTMLDialogElement.prototype.close = vi.fn();
+      const created = { ...club, id: 'club-2', slug: 'ng-riders', name: 'NG riders' };
+      const fetchMock = mockApi(viewer, {
+        [`POST /api/clubs/${club.slug}/membership`]: () => ({ club: { ...club, joined: true } }),
+        'POST /api/clubs': () => ({ club: created }),
+        'GET /api/clubs/ng-riders': () => ({
+          club: created,
+          members: [],
+          activities: [],
+          events: [],
+        }),
+      });
+      const fixture = TestBed.createComponent(App);
+      const app = fixture.componentInstance;
+      await fixture.whenStable();
+      await TestBed.inject(Router).navigateByUrl('/clubs');
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const root = fixture.nativeElement as HTMLElement;
+      expect(root.textContent).toContain('Angular devs who run');
+      button(root, 'Join club').click();
+      await fixture.whenStable();
+      const join = fetchMock.mock.calls.find(([path]) => path.endsWith('/membership'));
+      expect(JSON.parse(join?.[1]?.body as string)).toEqual({ join: true });
+      app.openModal('club');
+      app.clubForm = { name: 'NG riders', description: '', sport: '' };
+      await app.save();
+      await fixture.whenStable();
+      const create = fetchMock.mock.calls.find(
+        ([path, init]) => path === '/api/clubs' && init?.method === 'POST',
+      );
+      expect(JSON.parse(create?.[1]?.body as string)).toEqual({
+        name: 'NG riders',
+        description: '',
+        sport: null,
+      });
+      expect(TestBed.inject(Router).url).toBe('/clubs/ng-riders');
+      expect(app.clubDetail()?.club.name).toBe('NG riders');
+    });
+  });
 });

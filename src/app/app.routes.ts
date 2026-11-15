@@ -8,6 +8,8 @@ export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'feed' },
   { path: 'feed', component: RoutePage },
   { path: 'events', component: RoutePage },
+  { path: 'clubs', component: RoutePage },
+  { path: 'clubs/:slug', component: RoutePage },
   { path: 'profile', component: RoutePage },
   { path: 'profile/:username', component: RoutePage },
   { path: 'agents', component: RoutePage },

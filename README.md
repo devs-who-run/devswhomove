@@ -65,6 +65,7 @@ The PDS is canonical for AT Protocol profiles, activities, and hosted events. Cl
 - GitHub OAuth sign-in, D1-backed sessions and origin checks for cookie-authenticated mutations.
 - AT Protocol OAuth sign-in with PDS-backed public profiles, activities and hosted events; private RSVP identities and agent tokens remain in Cloudflare.
 - Scoped, hashed, expiring and revocable agent bearer tokens, with idempotent private uploads.
+- Social features on public content: kudos and comments on public activities, following people with a **Following** feed tab, and open clubs (`/clubs`) with their own feed, member list and club events. See [Social features](#social-features).
 
 Activity lists and summaries currently cover the latest 100 visible sessions. Events show the next 100 upcoming sessions. Event details and host names are public; attendee identities are not exposed.
 
@@ -133,16 +134,37 @@ status 409. Use each item's `idempotencyKey`, not an `Idempotency-Key` header fo
 the whole batch. Authentication, scope, malformed body and batch-size failures
 reject the request before any activities are saved.
 
-| Endpoint                           | Permission                                      |
-| ---------------------------------- | ----------------------------------------------- |
-| `GET /api/activities`              | `activities:read` — own recent sessions only    |
-| `POST /api/activities`             | `activities:write` — public sessions            |
-| `POST /api/activities/bulk`        | `activities:write` — 1–100 public sessions      |
-| `PUT /api/activities/:id/photo`    | `activities:write` — own sessions (GitHub only) |
-| `DELETE /api/activities/:id/photo` | `activities:write` — own sessions (GitHub only) |
-| `GET /api/events`                  | `events:read` — upcoming public events          |
-| `GET /api/insights/weekly`         | `activities:read` — own weekly aggregate totals |
+| Endpoint                           | Permission                                        |
+| ---------------------------------- | ------------------------------------------------- |
+| `GET /api/activities`              | `activities:read` — own recent sessions only      |
+| `POST /api/activities`             | `activities:write` — public sessions              |
+| `POST /api/activities/bulk`        | `activities:write` — 1–100 public sessions        |
+| `PUT /api/activities/:id/photo`    | `activities:write` — own sessions (GitHub only)   |
+| `DELETE /api/activities/:id/photo` | `activities:write` — own sessions (GitHub only)   |
+| `GET /api/events`                  | `events:read` — upcoming public events            |
+| `GET /api/insights/weekly`         | `activities:read` — own weekly aggregate totals   |
 | `GET /api/insights/github`         | GitHub browser session — public GitHub comparison |
+
+## Social features
+
+- **Kudos and comments** appear on public activities from public profiles. Comments are up to 500 characters; the author or the activity owner can delete them. Kudos and comments are removed with the activity.
+- **Follow** people from their public profile. The **Following** feed tab shows recent public activities from people you follow.
+- **Clubs** are open: anyone with a public profile can create or join one, and the creator can delete it. A club page shows its members' recent public activities, its upcoming events and its members. Members can attach their own events to the club.
+
+Giving kudos, commenting, following and joining or creating clubs require a **public profile**. If your profile becomes private, your past kudos, comments, follows and memberships are hidden but kept. Private activities never show social controls, counts or comments. Agent tokens cannot use the social endpoints.
+
+| Endpoint                                   | Purpose                                                 |
+| ------------------------------------------ | ------------------------------------------------------- |
+| `GET /api/feed?scope=following`            | Recent public activities from people you follow         |
+| `POST /api/activities/:id/kudos`           | `{ "kudos": true \| false }`                            |
+| `GET`/`POST /api/activities/:id/comments`  | List comments or add `{ "body": "..." }`                |
+| `DELETE /api/activities/:id/comments/:cid` | Comment author or activity owner                        |
+| `POST /api/follows`                        | `{ "userId": "...", "follow": true \| false }`          |
+| `GET`/`POST /api/clubs`                    | List clubs or create `{ name, description, sport }`     |
+| `GET`/`DELETE /api/clubs/:slug`            | Club detail (feed, events, members) or delete (creator) |
+| `POST /api/clubs/:slug/membership`         | `{ "join": true \| false }`                             |
+
+Social features require migration `0006_social.sql`. Run `pnpm run db:local` locally and `pnpm run db:remote` before deploying.
 
 ## Developer insights
 
@@ -228,6 +250,6 @@ Worker integration tests run in an isolated Miniflare runtime with real D1 SQL, 
 
 ## Deliberately not yet included
 
-Following/follower approvals, reactions, notifications, multiple photos or video, GPS/routes, wearable imports, event waitlists/recurrence, configurable goals, and agent OAuth. Public/private means **everyone or only you**, not followers-only. Before a public launch, add abuse/rate controls, account deletion/export and operational retention policies.
+Follow approvals, private clubs, notifications, multiple photos or video, GPS/routes, wearable imports, event waitlists/recurrence, configurable goals, and agent OAuth. Public/private means **everyone or only you**, not followers-only. Before a public launch, add abuse/rate controls, account deletion/export and operational retention policies.
 
 Cloudflare C3's Angular template currently assumes SSR during its final configuration. This app deliberately uses static Angular assets and a dedicated API Worker; its Wrangler entry point and output directory are configured explicitly.
