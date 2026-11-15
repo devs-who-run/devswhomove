@@ -1,0 +1,255 @@
+.activity-card {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 10px;
+  padding: 22px 24px 0;
+  margin-top: 14px;
+}
+.activity-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 8px 24px rgb(34 54 40 / 7%);
+}
+.activity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.person:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  background: #e4edda;
+  color: #4b6c3e;
+  font: 650 13px var(--heading);
+  border: 1px solid #d8e4c9;
+}
+.avatar.orange {
+  background: #f6e8d7;
+  border-color: #eddbc3;
+  color: #98704c;
+}
+.avatar.lilac {
+  background: #ece6f3;
+  border-color: #e1d6ec;
+  color: #7e6992;
+}
+.person strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+}
+.person small {
+  display: block;
+  font-size: 12px;
+  color: #8a9286;
+  margin-top: 4px;
+}
+.person small span {
+  margin: 0 3px;
+}
+.sport-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #6d7f63;
+  white-space: nowrap;
+}
+.sport-label app-icon {
+  font-size: 13px;
+}
+.activity-card h3 {
+  font: 700 18px/1.35 var(--heading);
+  letter-spacing: -0.5px;
+  margin-top: 19px;
+}
+.activity-notes {
+  font-size: 13px;
+  line-height: 1.8;
+  color: #7b847a;
+  margin-top: 8px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.activity-photo {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-top: 14px;
+  background: var(--surface-soft);
+}
+.activity-metrics {
+  display: flex;
+  align-items: center;
+  gap: 31px;
+  margin: 23px 0 22px;
+}
+.activity-metrics > div + div {
+  padding-left: 24px;
+  border-left: 1px solid var(--border);
+}
+.activity-metrics > div > span {
+  display: block;
+  color: #9aa18f;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+.activity-metrics strong {
+  font: 700 24px var(--heading);
+  letter-spacing: -0.9px;
+  white-space: nowrap;
+}
+.activity-metrics small {
+  font:
+    450 12px 'DM Sans',
+    sans-serif;
+  color: #88917c;
+  letter-spacing: 0;
+}
+.activity-glyph {
+  margin-left: auto;
+  font-size: 38px;
+  color: #d5e0c9;
+  transform: rotate(-9deg);
+}
+.activity-footer {
+  border-top: 1px solid #eef0ea;
+  padding: 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: #8c9586;
+}
+.activity-footer > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.activity-footer app-icon {
+  font-size: 12px;
+}
+.activity-footer .agent-label {
+  margin-left: auto;
+  color: #73835f;
+  background: #f3f6ed;
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+.activity-footer .text-button {
+  font-size: 12px;
+  margin-left: auto;
+}
+@media (min-width: 1600px) {
+  .activity-card {
+    padding: 26px 28px 0;
+  }
+  .activity-card h3 {
+    font-size: 20px;
+  }
+}
+@media (max-width: 1250px) {
+  .activity-card {
+    padding-left: 19px;
+    padding-right: 19px;
+  }
+  .activity-metrics {
+    gap: 20px;
+  }
+  .activity-metrics > div + div {
+    padding-left: 18px;
+  }
+  .activity-metrics strong {
+    font-size: 22px;
+  }
+}
+@media (max-width: 1050px) {
+  .activity-metrics {
+    gap: 16px;
+  }
+  .activity-metrics > div + div {
+    padding-left: 14px;
+  }
+  .activity-metrics strong {
+    font-size: 20px;
+  }
+  .activity-glyph {
+    display: none;
+  }
+  .activity-card h3 {
+    font-size: 17px;
+  }
+  .activity-header {
+    align-items: flex-start;
+  }
+  .sport-label {
+    gap: 3px;
+  }
+}
+@media (max-width: 850px) {
+  .activity-card {
+    padding: 22px 24px 0;
+  }
+  .activity-glyph {
+    display: block;
+  }
+  .activity-metrics strong {
+    font-size: 25px;
+  }
+  .activity-metrics {
+    gap: 28px;
+  }
+  .activity-metrics > div + div {
+    padding-left: 24px;
+  }
+  .activity-card h3 {
+    font-size: 19px;
+  }
+}
+@media (max-width: 520px) {
+  .activity-card {
+    padding: 19px 18px 0;
+  }
+  .activity-card h3 {
+    font-size: 18px;
+  }
+  .activity-metrics {
+    flex-wrap: wrap;
+    gap: 12px 16px;
+  }
+  .activity-metrics > div + div {
+    padding-left: 16px;
+  }
+  .activity-metrics strong {
+    font-size: 23px;
+  }
+  .activity-glyph {
+    display: none;
+  }
+  .avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 13px;
+  }
+  .activity-footer {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+}

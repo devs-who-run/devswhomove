@@ -74,8 +74,12 @@ describe('App', () => {
   it('filters activities by sport without changing the source data', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
-    fixture.componentInstance.selectedSport.set('Tennis');
+    const tennisFilter = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('app-sport-filter button'),
+    ).find((button) => button.textContent?.includes('Tennis')) as HTMLButtonElement;
+    tennisFilter.click();
     fixture.detectChanges();
+    expect(fixture.componentInstance.selectedSport()).toBe('Tennis');
     expect(fixture.nativeElement.querySelectorAll('.activity-card')).toHaveLength(1);
     expect(fixture.componentInstance.activities()).toHaveLength(4);
   });
