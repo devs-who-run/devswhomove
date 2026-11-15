@@ -3,10 +3,12 @@ import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivityCard } from './activity-card';
 import { Icon } from './icon';
 import { Theme } from './theme';
 import { preparePhoto } from './photo';
 import { DEMO_ACTIVITIES, DEMO_EVENTS, DEMO_PROFILE } from './demo';
+import { SportFilter } from './sport-filter';
 import {
   SPORTS,
   type Activity,
@@ -33,7 +35,16 @@ const formatMonth = (month: string) => {
 };
 
 @Component({
-  imports: [DatePipe, DecimalPipe, FormsModule, Icon, RouterLink, RouterOutlet],
+  imports: [
+    ActivityCard,
+    DatePipe,
+    DecimalPipe,
+    FormsModule,
+    Icon,
+    RouterLink,
+    RouterOutlet,
+    SportFilter,
+  ],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',

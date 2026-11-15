@@ -243,24 +243,12 @@
                 </div>
                 <span class="muted small-text">A little progress, shared.</span>
               </div>
-              <div class="sport-filters" role="group" aria-label="Filter activities by sport">
-                <button
-                  [class.selected]="selectedSport() === 'All'"
-                  [attr.aria-pressed]="selectedSport() === 'All'"
-                  (click)="selectedSport.set('All')"
-                >
-                  All movement
-                </button>
-                @for (sport of sports; track sport) {
-                  <button
-                    [class.selected]="selectedSport() === sport"
-                    [attr.aria-pressed]="selectedSport() === sport"
-                    (click)="selectedSport.set(sport)"
-                  >
-                    <app-icon [name]="sport" />{{ sport }}
-                  </button>
-                }
-              </div>
+              <app-sport-filter
+                ariaLabel="Filter activities by sport"
+                allLabel="All movement"
+                [selected]="selectedSport()"
+                (selectedChange)="selectedSport.set($event)"
+              />
               @if (profileHidden()) {
                 <div class="privacy-callout" style="margin: 0 0 18px" role="note">
                   <app-icon name="lock" />
@@ -277,123 +265,14 @@
                 </div>
               }
               @for (activity of filteredActivities(); track activity.id) {
-                <article class="activity-card">
-                  <div class="activity-header">
-                    <a
-                      class="person"
-                      [routerLink]="
-                        activity.userId === viewer()?.id
-                          ? ['/profile']
-                          : [
-                              '/profile',
-                              activity.userId.startsWith('did:')
-                                ? activity.userId
-                                : activity.username,
-                            ]
-                      "
-                      ><span
-                        class="avatar"
-                        [class.orange]="activity.sport === 'Cycling'"
-                        [class.lilac]="activity.sport === 'Tennis'"
-                      >
-                        @if (activity.avatar) {
-                          <img
-                            [src]="activity.avatar"
-                            alt=""
-                            loading="lazy"
-                            referrerpolicy="no-referrer"
-                          />
-                        } @else {
-                          {{ initials(activity.name) }}
-                        }</span
-                      ><span
-                        ><strong>{{ activity.name }}</strong
-                        ><small
-                          >&#64;{{ activity.username }} <span aria-hidden="true">·</span>
-                          {{ activity.occurredAt | date: 'MMM d, h:mm a' }}</small
-                        ></span
-                      ></a
-                    >
-                    <span class="sport-label"
-                      ><app-icon [name]="activity.sport" />{{ activity.sport }}</span
-                    >
-                  </div>
-                  <h3>{{ activity.title }}</h3>
-                  <p class="activity-notes">{{ activity.notes }}</p>
-                  @if (activity.photo) {
-                    <img
-                      class="activity-photo"
-                      [src]="activity.photo"
-                      [alt]="'Photo from ' + activity.title"
-                      loading="lazy"
-                    />
-                  }
-                  <div class="activity-metrics">
-                    @if (activity.distance !== null) {
-                      <div>
-                        <span>Distance</span
-                        ><strong
-                          >{{ activity.distance | number: '1.0-2' }} <small>km</small></strong
-                        >
-                      </div>
-                    }
-                    <div>
-                      <span>Moving time</span
-                      ><strong>{{ activity.duration | number: '1.0-1' }} <small>min</small></strong>
-                    </div>
-                    @if (activity.sport === 'Running' && activity.distance) {
-                      <div>
-                        <span>Avg. pace</span
-                        ><strong>{{ pace(activity) }} <small>/km</small></strong>
-                      </div>
-                    }
-                    @if (activity.sport === 'Cycling' && activity.distance) {
-                      <div>
-                        <span>Avg. speed</span
-                        ><strong
-                          >{{ (activity.distance / activity.duration) * 60 | number: '1.0-1' }}
-                          <small>km/h</small></strong
-                        >
-                      </div>
-                    }
-                    <span class="activity-glyph" aria-hidden="true"
-                      ><app-icon [name]="activity.sport"
-                    /></span>
-                  </div>
-                  <footer class="activity-footer">
-                    @if (
-                      activity.visibility === 'public' &&
-                      activity.userId === viewer()?.id &&
-                      profileHidden()
-                    ) {
-                      <span title="Make your profile public to share this activity."
-                        ><app-icon name="lock" />Public · hidden while your profile is private</span
-                      >
-                    } @else {
-                      <span
-                        ><app-icon
-                          [name]="activity.visibility === 'private' ? 'lock' : 'globe'"
-                        />{{
-                          activity.visibility === 'private' ? 'Only you' : 'Public activity'
-                        }}</span
-                      >
-                    }
-                    @if (activity.source === 'agent') {
-                      <span class="agent-label"
-                        ><app-icon name="terminal" /> Logged by an agent</span
-                      >
-                    }
-                    @if (activity.userId === viewer()?.id && viewer()?.provider !== 'atproto') {
-                      <button
-                        class="text-button"
-                        (click)="toggleVisibility(activity)"
-                        [disabled]="saving()"
-                      >
-                        Make {{ activity.visibility === 'public' ? 'private' : 'public' }}
-                      </button>
-                    }
-                  </footer>
-                </article>
+                <app-activity-card
+                  [activity]="activity"
+                  [viewerId]="viewer()?.id ?? null"
+                  [profileHidden]="profileHidden()"
+                  [canChangeVisibility]="!!viewer() && viewer()?.provider !== 'atproto'"
+                  [saving]="saving()"
+                  (visibilityChange)="toggleVisibility($event)"
+                />
               } @empty {
                 <div class="empty-state">
                   <app-icon name="move" />
@@ -511,24 +390,13 @@
               move. Every starting point is welcome.
             </p>
           </div>
-          <div class="sport-filters event-filters" role="group" aria-label="Filter events by sport">
-            <button
-              [class.selected]="selectedSport() === 'All'"
-              [attr.aria-pressed]="selectedSport() === 'All'"
-              (click)="selectedSport.set('All')"
-            >
-              All sports
-            </button>
-            @for (sport of sports; track sport) {
-              <button
-                [class.selected]="selectedSport() === sport"
-                [attr.aria-pressed]="selectedSport() === sport"
-                (click)="selectedSport.set(sport)"
-              >
-                <app-icon [name]="sport" />{{ sport }}
-              </button>
-            }
-          </div>
+          <app-sport-filter
+            class="event-filters"
+            ariaLabel="Filter events by sport"
+            allLabel="All sports"
+            [selected]="selectedSport()"
+            (selectedChange)="selectedSport.set($event)"
+          />
           <div class="event-grid">
             @for (event of filteredEvents(); track event.id) {
               <article class="event-card">

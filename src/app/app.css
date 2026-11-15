@@ -511,7 +511,6 @@ h1 span {
   flex-wrap: wrap;
   margin: 17px 0;
 }
-.sport-filters button,
 .sport-filters > span {
   background: transparent;
   display: inline-flex;
@@ -524,40 +523,10 @@ h1 span {
   font-size: 12px;
   color: #7c8578;
 }
-.sport-filters button.selected,
 .sport-filters > span {
   background: #eff3e8;
   border-color: #dbe5cc;
   color: #3c5735;
-}
-.sport-filters button:hover {
-  border-color: #9bb085;
-}
-.sport-filters app-icon {
-  font-size: 13px;
-}
-.activity-card {
-  border: 1px solid var(--border);
-  background: #fff;
-  border-radius: 10px;
-  padding: 22px 24px 0;
-  margin-top: 14px;
-}
-.activity-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-.person {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.person:hover strong {
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 .avatar {
   display: flex;
@@ -582,20 +551,6 @@ h1 span {
   border-color: #e1d6ec;
   color: #7e6992;
 }
-.person strong {
-  display: block;
-  font-size: 13px;
-  font-weight: 650;
-}
-.person small {
-  display: block;
-  font-size: 12px;
-  color: #8a9286;
-  margin-top: 4px;
-}
-.person small span {
-  margin: 0 3px;
-}
 .sport-label {
   display: inline-flex;
   align-items: center;
@@ -606,81 +561,6 @@ h1 span {
 }
 .sport-label app-icon {
   font-size: 13px;
-}
-.activity-card h3 {
-  font: 700 18px/1.35 var(--heading);
-  letter-spacing: -0.5px;
-  margin-top: 19px;
-}
-.activity-notes {
-  font-size: 13px;
-  line-height: 1.8;
-  color: #7b847a;
-  margin-top: 8px;
-  white-space: pre-line;
-  overflow-wrap: anywhere;
-}
-.activity-metrics {
-  display: flex;
-  align-items: center;
-  gap: 31px;
-  margin: 23px 0 22px;
-}
-.activity-metrics > div + div {
-  padding-left: 24px;
-  border-left: 1px solid var(--border);
-}
-.activity-metrics > div > span {
-  display: block;
-  color: #9aa18f;
-  font-size: 12px;
-  margin-bottom: 5px;
-}
-.activity-metrics strong {
-  font: 700 24px var(--heading);
-  letter-spacing: -0.9px;
-  white-space: nowrap;
-}
-.activity-metrics small {
-  font:
-    450 12px 'DM Sans',
-    sans-serif;
-  color: #88917c;
-  letter-spacing: 0;
-}
-.activity-glyph {
-  margin-left: auto;
-  font-size: 38px;
-  color: #d5e0c9;
-  transform: rotate(-9deg);
-}
-.activity-footer {
-  border-top: 1px solid #eef0ea;
-  padding: 12px 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 12px;
-  color: #8c9586;
-}
-.activity-footer > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.activity-footer app-icon {
-  font-size: 12px;
-}
-.activity-footer .agent-label {
-  margin-left: auto;
-  color: #73835f;
-  background: #f3f6ed;
-  border-radius: 4px;
-  padding: 4px 6px;
-}
-.activity-footer .text-button {
-  font-size: 12px;
-  margin-left: auto;
 }
 .feed-end {
   text-align: center;
@@ -1803,15 +1683,6 @@ fieldset .sport-filters {
   .hero p {
     font-size: 13px;
   }
-  .activity-card {
-    padding: 26px 28px 0;
-  }
-  .activity-card h3 {
-    font-size: 20px;
-  }
-  .activity-notes {
-    font-size: 13px;
-  }
   .weekly-card {
     padding: 25px 24px 0;
   }
@@ -1855,19 +1726,6 @@ fieldset .sport-filters {
   .route-label {
     display: none;
   }
-  .activity-card {
-    padding-left: 19px;
-    padding-right: 19px;
-  }
-  .activity-metrics {
-    gap: 20px;
-  }
-  .activity-metrics > div + div {
-    padding-left: 18px;
-  }
-  .activity-metrics strong {
-    font-size: 22px;
-  }
   .event-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1888,9 +1746,6 @@ fieldset .sport-filters {
     gap: 15px;
   }
   .today {
-    font-size: 12px;
-  }
-  .activity-header .sport-label {
     font-size: 12px;
   }
 }
@@ -1972,37 +1827,6 @@ fieldset .sport-filters {
   }
   .feed-tabs > .small-text {
     display: none;
-  }
-  .activity-metrics {
-    gap: 16px;
-  }
-  .activity-metrics > div + div {
-    padding-left: 14px;
-  }
-  .activity-metrics strong {
-    font-size: 20px;
-  }
-  .activity-glyph {
-    display: none;
-  }
-  .activity-card h3 {
-    font-size: 17px;
-  }
-  .activity-header {
-    align-items: flex-start;
-  }
-  .person small {
-    font-size: 12px;
-  }
-  .sport-label {
-    gap: 3px;
-  }
-  .sport-filters {
-    gap: 5px;
-  }
-  .sport-filters button {
-    font-size: 12px;
-    padding: 5px 7px;
   }
   .preview-strip {
     align-items: flex-start;
@@ -2195,37 +2019,6 @@ fieldset .sport-filters {
   }
   .hero-art svg {
     opacity: 0.8;
-  }
-  .activity-card {
-    padding: 22px 24px 0;
-  }
-  .activity-glyph {
-    display: block;
-  }
-  .activity-metrics strong {
-    font-size: 25px;
-  }
-  .activity-metrics {
-    gap: 28px;
-  }
-  .activity-metrics > div + div {
-    padding-left: 24px;
-  }
-  .person small {
-    font-size: 12px;
-  }
-  .person strong {
-    font-size: 13px;
-  }
-  .activity-card h3 {
-    font-size: 19px;
-  }
-  .activity-notes {
-    font-size: 13px;
-  }
-  .sport-filters button {
-    font-size: 12px;
-    padding: 7px 9px;
   }
   .profile-actions .visibility-pill {
     font-size: 12px;
@@ -2435,53 +2228,10 @@ fieldset .sport-filters {
   .hero .button {
     margin-top: 22px;
   }
-  .activity-card {
-    padding: 19px 18px 0;
-  }
-  .activity-card h3 {
-    font-size: 18px;
-  }
-  .activity-metrics {
-    gap: 21px;
-  }
-  .activity-metrics > div + div {
-    padding-left: 18px;
-  }
-  .activity-metrics strong {
-    font-size: 23px;
-  }
-  .activity-metrics small {
-    font-size: 12px;
-  }
-  .activity-glyph {
-    display: none;
-  }
-  .person strong {
-    font-size: 13px;
-  }
-  .person small {
-    font-size: 12px;
-  }
-  .activity-header > .sport-label {
-    font-size: 12px;
-  }
   .avatar {
     width: 34px;
     height: 34px;
     font-size: 13px;
-  }
-  .activity-notes {
-    font-size: 13px;
-  }
-  .activity-footer {
-    font-size: 12px;
-    gap: 5px;
-  }
-  .activity-footer .agent-label {
-    font-size: 12px;
-  }
-  .activity-footer .text-button {
-    font-size: 12px;
   }
   .right-column {
     grid-template-columns: 1fr;
@@ -2728,13 +2478,6 @@ fieldset .sport-filters {
   .form-help {
     font-size: 12px;
   }
-  .sport-filters {
-    gap: 6px;
-  }
-  .sport-filters button {
-    font-size: 12px;
-    padding: 6px 8px;
-  }
 }
 
 .optional {
@@ -2815,15 +2558,6 @@ fieldset .sport-filters {
   gap: 6px;
   align-items: center;
 }
-.activity-photo {
-  display: block;
-  width: 100%;
-  max-height: 420px;
-  object-fit: cover;
-  border-radius: 10px;
-  margin-top: 14px;
-  background: var(--surface-soft);
-}
 .profile-activity-photo {
   display: block;
   width: 100%;
@@ -2873,14 +2607,6 @@ nav a {
   min-height: 46px;
 }
 
-.sport-filters button {
-  min-height: 44px;
-}
-
-.activity-footer {
-  flex-wrap: wrap;
-}
-
 .heatmap-details {
   margin-top: 12px;
   color: var(--muted);
@@ -2926,15 +2652,6 @@ nav a {
     padding-bottom: calc(82px + env(safe-area-inset-bottom));
   }
 
-  .activity-metrics {
-    flex-wrap: wrap;
-    gap: 12px 16px;
-  }
-
-  .activity-metrics > div + div {
-    padding-left: 16px;
-  }
-
   .profile-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     row-gap: 18px;
@@ -2964,7 +2681,6 @@ nav a {
 .hero-label,
 .sport-label,
 .nav-tag,
-.activity-footer,
 .feed-end,
 .chart-day small,
 .mini-sport,
@@ -2995,7 +2711,6 @@ nav a {
   font-size: max(12px, 0.85em);
 }
 
-.activity-card:hover,
 .event-card:hover,
 .profile-activity:hover {
   border-color: var(--border-hover);
