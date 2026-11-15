@@ -142,7 +142,11 @@ export class ActivitySocial {
 
   async toggleComments(): Promise<void> {
     this.open.update((open) => !open);
-    if (!this.open()) return;
+    if (this.open()) await this.reload();
+  }
+
+  /** Fetch the authoritative list; a newer reload supersedes older ones. */
+  private async reload(): Promise<void> {
     const load = ++this.loadRequest;
     this.loading.set(true);
     this.error.set('');
@@ -167,26 +171,20 @@ export class ActivitySocial {
         'POST',
         { body },
       );
-      this.invalidateLoad();
       this.comments.update((comments) => [...comments, comment]);
       this.commentCount.update((count) => count + 1);
       this.draft = '';
     });
+    if (!this.error()) await this.reload();
   }
 
   async remove(comment: ActivityComment): Promise<void> {
     await this.run(async () => {
       await request(this.path(`comments/${encodeURIComponent(comment.id)}`), 'DELETE');
-      this.invalidateLoad();
       this.comments.update((comments) => comments.filter((item) => item.id !== comment.id));
       this.commentCount.update((count) => Math.max(0, count - 1));
     });
-  }
-
-  /** Ignore a list fetch that started before a mutation, so it can't overwrite the result. */
-  private invalidateLoad(): void {
-    this.loadRequest++;
-    this.loading.set(false);
+    if (!this.error()) await this.reload();
   }
 
   private async run(work: () => Promise<void>): Promise<void> {

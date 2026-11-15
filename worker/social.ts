@@ -194,10 +194,20 @@ export async function deleteComment(
 }
 
 /** Remove social data attached to a deleted activity. */
-export function deleteActivitySocial(db: D1Database, activityId: string): D1PreparedStatement[] {
+export function deleteActivitySocial(
+  db: D1Database,
+  activityIds: string | string[],
+): D1PreparedStatement[] {
+  const ids = JSON.stringify(typeof activityIds === 'string' ? [activityIds] : activityIds);
   return [
-    db.prepare('DELETE FROM activity_kudos WHERE activity_id = ?').bind(activityId),
-    db.prepare('DELETE FROM activity_comments WHERE activity_id = ?').bind(activityId),
+    db
+      .prepare('DELETE FROM activity_kudos WHERE activity_id IN (SELECT value FROM json_each(?))')
+      .bind(ids),
+    db
+      .prepare(
+        'DELETE FROM activity_comments WHERE activity_id IN (SELECT value FROM json_each(?))',
+      )
+      .bind(ids),
   ];
 }
 

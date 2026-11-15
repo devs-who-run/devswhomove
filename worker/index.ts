@@ -788,19 +788,16 @@ async function removeStaleAtprotoRecords(
     .all<{ uri: string }>();
   const live = new Set(liveUris);
   const stale = existing.results.filter(({ uri }) => !live.has(uri)).map(({ uri }) => uri);
-  const deletions = [];
+  // Each chunk's record and social deletes share one batch, so they commit or roll back together.
   for (let offset = 0; offset < stale.length; offset += 50) {
     const batch = stale.slice(offset, offset + 50);
-    deletions.push(
+    await env.DB.batch([
       env.DB.prepare(
         `DELETE FROM ${table} WHERE did = ? AND uri IN (${batch.map(() => '?').join(',')})`,
       ).bind(did, ...batch),
-    );
-    if (table === 'atproto_activities')
-      deletions.push(...batch.flatMap((uri) => deleteActivitySocial(env.DB, uri)));
+      ...(table === 'atproto_activities' ? deleteActivitySocial(env.DB, batch) : []),
+    ]);
   }
-  for (let offset = 0; offset < deletions.length; offset += 50)
-    await env.DB.batch(deletions.slice(offset, offset + 50));
 }
 
 /** Refresh the bounded D1 projection from the user's PDS when its sync interval has elapsed. */
@@ -1424,14 +1421,22 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return json({ ok: true });
     }
     if (method === 'DELETE') {
-      const deleted = await env.DB.prepare(
-        'DELETE FROM activities WHERE id = ? AND user_id = ? RETURNING photo_key AS key',
+      // Read the photo key first so a failed batch leaves it available for a retry.
+      const current = await env.DB.prepare(
+        'SELECT photo_key AS key FROM activities WHERE id = ? AND user_id = ?',
       )
         .bind(activityId, identity.user.id)
         .first<{ key: string | null }>();
-      if (!deleted) throw new HttpError(404, 'Activity not found.');
-      await env.DB.batch(deleteActivitySocial(env.DB, activityId));
-      if (deleted.key) await env.PHOTOS.delete(deleted.key);
+      if (!current) throw new HttpError(404, 'Activity not found.');
+      const [deleted] = await env.DB.batch([
+        env.DB.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(
+          activityId,
+          identity.user.id,
+        ),
+        ...deleteActivitySocial(env.DB, activityId),
+      ]);
+      if (!deleted?.meta.changes) throw new HttpError(404, 'Activity not found.');
+      if (current.key) await env.PHOTOS.delete(current.key);
     } else {
       const data = await body(request);
       const result = await env.DB.prepare(

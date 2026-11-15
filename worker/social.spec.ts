@@ -335,4 +335,36 @@ describe('Social API', () => {
     });
     expect(clubs.status).toBe(403);
   });
+
+  it('deletes kudos and comments together with the activity', async () => {
+    await db
+      .prepare(
+        `INSERT INTO activities (id, user_id, title, sport, occurred_at, duration, visibility, source, payload_hash)
+        VALUES ('bob-temp', 'bob', 'temp', 'Running', '2026-05-04T07:00:00.000Z', 30, 'public', 'web', 'hash')`,
+      )
+      .run();
+    await call('/api/activities/bob-temp/kudos', {
+      as: 'alice',
+      method: 'POST',
+      data: { kudos: true },
+    });
+    await call('/api/activities/bob-temp/comments', {
+      as: 'alice',
+      method: 'POST',
+      data: { body: 'Nice' },
+    });
+    expect((await call('/api/activities/bob-temp', { as: 'alice', method: 'DELETE' })).status).toBe(
+      404,
+    );
+    expect((await call('/api/activities/bob-temp', { as: 'bob', method: 'DELETE' })).status).toBe(
+      200,
+    );
+    const left = await db
+      .prepare(
+        `SELECT (SELECT COUNT(*) FROM activity_kudos WHERE activity_id = 'bob-temp') +
+          (SELECT COUNT(*) FROM activity_comments WHERE activity_id = 'bob-temp') AS count`,
+      )
+      .first<{ count: number }>();
+    expect(left?.count).toBe(0);
+  });
 });
