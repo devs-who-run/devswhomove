@@ -168,6 +168,8 @@ describe('App', () => {
     expect(html.textContent).toContain('Configure your client to use this version');
     expect(html.textContent).toContain('Bearer YOUR_AGENT_TOKEN');
     expect(html.textContent).not.toContain('MCP next');
+    expect(html.textContent).not.toContain('BETA');
+    expect(html.textContent).not.toContain('DEVELOPER PREVIEW');
   });
 
   it('lets AT Protocol accounts grant public activity writes to agents', async () => {

@@ -105,14 +105,6 @@ nav a.active {
 nav app-icon {
   font-size: 16px;
 }
-.nav-tag {
-  font-size: 12px;
-  letter-spacing: 0.6px;
-  padding: 3px 4px;
-  border: 1px solid #dce5d6;
-  border-radius: 4px;
-  margin-left: auto;
-}
 .sidebar-manifesto {
   border-top: 1px solid var(--border);
   margin: 38px 12px 0;
@@ -1269,14 +1261,6 @@ h1 span {
 .profile-activity-actions > .text-button {
   font-size: 12px;
 }
-.beta-pill {
-  border: 1px solid #dce6cc;
-  padding: 8px 11px;
-  border-radius: 5px;
-  color: #7f9262;
-  font-size: 12px;
-  letter-spacing: 1px;
-}
 .agents-layout {
   display: grid;
   grid-template-columns: 1.15fr 1fr;
@@ -1772,10 +1756,6 @@ fieldset .sport-filters {
     font-size: 13px;
     gap: 10px;
   }
-  .nav-tag {
-    font-size: 12px;
-    padding: 3px;
-  }
   .sidebar-manifesto {
     margin-left: 10px;
     margin-right: 10px;
@@ -1930,9 +1910,6 @@ fieldset .sport-filters {
   .hero-art svg {
     opacity: 0.45;
   }
-  .sidebar nav a .nav-tag {
-    display: none;
-  }
   .page-heading {
     margin-top: 15px;
   }
@@ -2055,9 +2032,6 @@ fieldset .sport-filters {
   .agent-principles {
     padding: 8px;
   }
-  .page-heading .beta-pill {
-    display: none;
-  }
   .event-grid {
     gap: 14px;
   }
@@ -2134,7 +2108,7 @@ fieldset .sport-filters {
     padding: 8px 4px;
     border-radius: 6px;
   }
-  nav a > span:not(.nav-tag) {
+  nav a > span {
     display: block;
     font-size: 12px;
   }
@@ -2642,7 +2616,7 @@ nav a {
     padding: 6px 2px;
   }
 
-  nav a > span:not(.nav-tag) {
+  nav a > span {
     font-size: 12px;
     line-height: 1.15;
     text-align: center;
@@ -2680,7 +2654,6 @@ nav a {
 .route-label,
 .hero-label,
 .sport-label,
-.nav-tag,
 .feed-end,
 .chart-day small,
 .mini-sport,
@@ -2695,7 +2668,6 @@ nav a {
 .profile-activity small,
 .profile-activity-metric > span,
 .visibility-pill,
-.beta-pill,
 .terminal-top small,
 .token-item small,
 .photo-picker-label small,
