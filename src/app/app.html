@@ -599,6 +599,9 @@
                 </p>
               </div>
               <div class="club-actions">
+                <button class="button outline" (click)="shareClub(detail.club)">
+                  <app-icon name="share" /> Invite people
+                </button>
                 @if (detail.club.owned) {
                   <button
                     class="button outline"
