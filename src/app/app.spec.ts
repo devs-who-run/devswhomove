@@ -261,6 +261,11 @@ describe('App', () => {
     expect(activityMetric.querySelector('strong')?.textContent).toContain('5.2 km');
     expect(activityMetric.querySelector('span')?.textContent).toContain('34 min');
     const graph = fixture.nativeElement.querySelector('.heatmap-toggle') as HTMLDetailsElement;
+    expect(graph.classList.contains('consistency-card')).toBe(true);
+    expect(graph.querySelector('summary h2')?.textContent).toBe(
+      'A different kind of contribution.',
+    );
+    expect(graph.querySelector('summary')?.textContent).toContain('Expand / collapse graph');
     expect(graph.open).toBe(true);
     (graph.querySelector('summary') as HTMLElement).click();
     expect(graph.open).toBe(false);

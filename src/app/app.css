@@ -1235,9 +1235,9 @@ h1 span {
 .consistency-card .small-text {
   margin-top: 7px;
 }
-.consistency-card > .section-top > app-icon {
-  color: #96ad6d;
-  font-size: 25px;
+.consistency-card > summary {
+  cursor: pointer;
+  min-height: 44px;
 }
 .profile-filters {
   display: flex;
