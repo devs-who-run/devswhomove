@@ -796,6 +796,8 @@ async function removeStaleAtprotoRecords(
         `DELETE FROM ${table} WHERE did = ? AND uri IN (${batch.map(() => '?').join(',')})`,
       ).bind(did, ...batch),
     );
+    if (table === 'atproto_activities')
+      deletions.push(...batch.flatMap((uri) => deleteActivitySocial(env.DB, uri)));
   }
   for (let offset = 0; offset < deletions.length; offset += 50)
     await env.DB.batch(deletions.slice(offset, offset + 50));

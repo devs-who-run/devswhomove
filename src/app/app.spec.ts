@@ -923,7 +923,7 @@ describe('App', () => {
       name: 'Angular devs who run',
       description: 'Easy runs.',
       sport: 'Running' as const,
-      ownerId: 'friend',
+      owned: false,
       ownerName: 'Friend',
       members: 3,
       joined: false,

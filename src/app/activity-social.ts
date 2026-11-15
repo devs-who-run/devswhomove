@@ -86,7 +86,11 @@ export type Participation = 'anonymous' | 'private' | 'ok';
               placeholder="Cheer them on…"
               required
             />
-            <button class="post-button" type="submit" [disabled]="busy() || !draft.trim()">
+            <button
+              class="post-button"
+              type="submit"
+              [disabled]="busy() || loading() || !draft.trim()"
+            >
               Post
             </button>
           </form>
@@ -116,6 +120,7 @@ export class ActivitySocial {
       : 'Sign in to give kudos and comment.',
   );
   draft = '';
+  private loadRequest = 0;
 
   private path(suffix: string): string {
     return `/api/activities/${encodeURIComponent(this.activity().id)}/${suffix}`;
@@ -138,28 +143,31 @@ export class ActivitySocial {
   async toggleComments(): Promise<void> {
     this.open.update((open) => !open);
     if (!this.open()) return;
+    const load = ++this.loadRequest;
     this.loading.set(true);
     this.error.set('');
     try {
       const { comments } = await request<{ comments: ActivityComment[] }>(this.path('comments'));
+      if (load !== this.loadRequest) return;
       this.comments.set(comments);
       this.commentCount.set(comments.length);
     } catch (error) {
-      this.error.set(errorMessage(error));
+      if (load === this.loadRequest) this.error.set(errorMessage(error));
     } finally {
-      this.loading.set(false);
+      if (load === this.loadRequest) this.loading.set(false);
     }
   }
 
   async add(): Promise<void> {
     const body = this.draft.trim();
-    if (!body) return;
+    if (!body || this.loading()) return;
     await this.run(async () => {
       const { comment } = await request<{ comment: ActivityComment }>(
         this.path('comments'),
         'POST',
         { body },
       );
+      this.invalidateLoad();
       this.comments.update((comments) => [...comments, comment]);
       this.commentCount.update((count) => count + 1);
       this.draft = '';
@@ -169,9 +177,16 @@ export class ActivitySocial {
   async remove(comment: ActivityComment): Promise<void> {
     await this.run(async () => {
       await request(this.path(`comments/${encodeURIComponent(comment.id)}`), 'DELETE');
+      this.invalidateLoad();
       this.comments.update((comments) => comments.filter((item) => item.id !== comment.id));
       this.commentCount.update((count) => Math.max(0, count - 1));
     });
+  }
+
+  /** Ignore a list fetch that started before a mutation, so it can't overwrite the result. */
+  private invalidateLoad(): void {
+    this.loadRequest++;
+    this.loading.set(false);
   }
 
   private async run(work: () => Promise<void>): Promise<void> {

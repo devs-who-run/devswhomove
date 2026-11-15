@@ -208,6 +208,18 @@ describe('Social API', () => {
     await db.prepare(`UPDATE users SET visibility = 'public' WHERE id = 'alice'`).run();
   });
 
+  it('omits social counts from private activities', async () => {
+    const { body } = await call<{ activities: Record<string, unknown>[] }>('/api/bootstrap', {
+      as: 'alice',
+    });
+    const secret = body.activities.find((item) => item['id'] === 'alice-secret');
+    const run = body.activities.find((item) => item['id'] === 'alice-run');
+    expect(secret).toBeDefined();
+    expect(secret).not.toHaveProperty('kudos');
+    expect(secret).not.toHaveProperty('comments');
+    expect(run).toHaveProperty('kudos');
+  });
+
   it('follows public people and filters the following feed', async () => {
     expect((await call('/api/feed?scope=following')).status).toBe(401);
     expect(
@@ -287,6 +299,12 @@ describe('Social API', () => {
       events: { title: string; clubSlug: string }[];
     }>(`/api/clubs/${slug}`);
     expect(detail.body.members.map((member) => member.username)).toEqual(['alice', 'bob']);
+    const publicClub = await call<{ club: Record<string, unknown> }>(`/api/clubs/${slug}`);
+    expect(publicClub.body.club).not.toHaveProperty('ownerId');
+    expect(publicClub.body.club['owned']).toBe(false);
+    expect((await call(`/api/clubs/${slug}`, { as: 'alice' })).body).toMatchObject({
+      club: { owned: true },
+    });
     expect(detail.body.activities.map((item) => item.id)).toEqual(['alice-run', 'bob-ride']);
     expect(detail.body.events).toEqual([
       expect.objectContaining({ title: 'Club 5K', clubSlug: slug }),

@@ -36,7 +36,10 @@ export async function withSocial(
   activities: Activity[],
   viewerId?: string,
 ): Promise<Activity[]> {
-  if (!activities.length) return activities;
+  const ids = activities
+    .filter((activity) => activity.visibility === 'public')
+    .map((activity) => activity.id);
+  if (!ids.length) return activities;
   const result = await db
     .prepare(
       `SELECT j.value AS id,
@@ -47,16 +50,17 @@ export async function withSocial(
           WHERE c.activity_id = j.value) AS comments
       FROM json_each(?) j`,
     )
-    .bind(viewerId || '', JSON.stringify(activities.map((activity) => activity.id)))
+    .bind(viewerId || '', JSON.stringify(ids))
     .all<{ id: string; kudos: number; kudoed: number; comments: number }>();
   const counts = new Map(result.results.map((row) => [row.id, row]));
   return activities.map((activity) => {
     const row = counts.get(activity.id);
+    if (!row) return activity;
     return {
       ...activity,
-      kudos: row?.kudos ?? 0,
-      kudoed: Boolean(row?.kudoed),
-      comments: row?.comments ?? 0,
+      kudos: row.kudos,
+      kudoed: Boolean(row.kudoed),
+      comments: row.comments,
     };
   });
 }
@@ -93,7 +97,11 @@ export async function setKudos(
       .bind(activityId, user.id)
       .run();
   }
-  const [activity] = await withSocial(db, [{ id: activityId } as Activity], user.id);
+  const [activity] = await withSocial(
+    db,
+    [{ id: activityId, visibility: 'public' } as Activity],
+    user.id,
+  );
   return { kudos: activity.kudos ?? 0, kudoed: Boolean(activity.kudoed) };
 }
 
@@ -255,20 +263,34 @@ export async function profileSocial(
   };
 }
 
-const CLUB_SELECT = `SELECT c.id, c.slug, c.name, c.description, c.sport, c.owner_id AS ownerId,
+const CLUB_SELECT = `SELECT c.id, c.slug, c.name, c.description, c.sport, c.owner_id = ? AS owned,
   o.name AS ownerName,
   (SELECT COUNT(*) FROM club_members m JOIN ${PUBLIC_ACTORS} p ON p.actor_id = m.actor_id
     WHERE m.club_id = c.id) AS members,
   EXISTS(SELECT 1 FROM club_members WHERE club_id = c.id AND actor_id = ?) AS joined
   FROM clubs c LEFT JOIN ${PUBLIC_ACTORS} o ON o.actor_id = c.owner_id`;
 
-type ClubRow = Omit<Club, 'joined'> & { joined: number };
-const club = (row: ClubRow): Club => ({ ...row, joined: Boolean(row.joined) });
+type ClubRow = Omit<Club, 'joined' | 'owned'> & { joined: number; owned: number };
+const club = (row: ClubRow): Club => ({
+  ...row,
+  joined: Boolean(row.joined),
+  owned: Boolean(row.owned),
+});
+
+/** Trusted owner lookup for authorization; never derived from the public club response. */
+async function clubOwner(db: D1Database, slug: string): Promise<{ id: string; ownerId: string }> {
+  const row = await db
+    .prepare('SELECT id, owner_id AS ownerId FROM clubs WHERE slug = ?')
+    .bind(slug)
+    .first<{ id: string; ownerId: string }>();
+  if (!row) throw new HttpError(404, 'Club not found.');
+  return row;
+}
 
 export async function listClubs(db: D1Database, viewerId = ''): Promise<Club[]> {
   const result = await db
     .prepare(`${CLUB_SELECT} ORDER BY members DESC, c.name COLLATE NOCASE LIMIT 100`)
-    .bind(viewerId)
+    .bind(viewerId, viewerId)
     .all<ClubRow>();
   return result.results.map(club);
 }
@@ -276,7 +298,7 @@ export async function listClubs(db: D1Database, viewerId = ''): Promise<Club[]> 
 export async function findClub(db: D1Database, slug: string, viewerId = ''): Promise<Club> {
   const row = await db
     .prepare(`${CLUB_SELECT} WHERE c.slug = ?`)
-    .bind(viewerId, slug)
+    .bind(viewerId, viewerId, slug)
     .first<ClubRow>();
   if (!row) throw new HttpError(404, 'Club not found.');
   return club(row);
@@ -356,7 +378,7 @@ export async function setMembership(
   slug: string,
   join: boolean,
 ): Promise<Club> {
-  const current = await findClub(db, slug, user.id);
+  const current = await clubOwner(db, slug);
   if (join) {
     requirePublicProfile(user);
     await db
@@ -378,7 +400,7 @@ export async function setMembership(
 }
 
 export async function deleteClub(db: D1Database, user: Profile, slug: string): Promise<void> {
-  const current = await findClub(db, slug, user.id);
+  const current = await clubOwner(db, slug);
   if (current.ownerId !== user.id) throw new HttpError(403, 'Only the club owner can delete it.');
   await db.batch([
     db.prepare('UPDATE events SET club_id = NULL WHERE club_id = ?').bind(current.id),

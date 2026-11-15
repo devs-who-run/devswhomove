@@ -71,7 +71,8 @@ export interface Club {
   name: string;
   description: string;
   sport: Sport | null;
-  ownerId: string;
+  /** Whether the viewer owns the club. Owner IDs are not exposed publicly. */
+  owned: boolean;
   ownerName: string | null;
   members: number;
   joined: boolean;

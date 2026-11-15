@@ -423,6 +423,8 @@ export class App {
     }
     if (page === 'agents' && this.viewer()) await this.loadTokens();
     if (page === 'clubs' && username) await this.loadClub(request, username);
+    if (this.page() === 'feed' && this.feedMode() === 'following')
+      await this.setFeedMode('following');
   }
 
   async setFeedMode(mode: 'community' | 'following' | 'mine'): Promise<void> {
@@ -960,6 +962,10 @@ export class App {
       this.newToken.set('');
       this.tokens.set([]);
       this.remoteProfile.set(null);
+      this.feedMode.set('community');
+      this.followingRequest++;
+      this.followingActivities.set([]);
+      this.followingLoading.set(false);
       await this.load();
       this.navigate('feed');
     });

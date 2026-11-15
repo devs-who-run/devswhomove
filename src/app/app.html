@@ -572,7 +572,7 @@
                 </p>
               </div>
               <div class="club-actions">
-                @if (detail.club.ownerId === viewer()?.id) {
+                @if (detail.club.owned) {
                   <button
                     class="button outline"
                     (click)="deleteClub(detail.club)"
@@ -715,7 +715,7 @@
                       <a [routerLink]="['/clubs', club.slug]">{{ club.name }}</a>
                     </h2>
                     <p class="event-description">{{ club.description }}</p>
-                    @if (club.ownerId !== viewer()?.id) {
+                    @if (!club.owned) {
                       <button
                         class="button full"
                         [class.primary]="!club.joined"
