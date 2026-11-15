@@ -66,6 +66,7 @@ The PDS is canonical for AT Protocol profiles, activities, and hosted events. Cl
 - AT Protocol OAuth sign-in with PDS-backed public profiles, activities and hosted events; private RSVP identities and agent tokens remain in Cloudflare.
 - Scoped, hashed, expiring and revocable agent bearer tokens, with idempotent private uploads.
 - Social features on public content: kudos and comments on public activities, following people with a **Following** feed tab, and open clubs (`/clubs`) with their own feed, member list and club events. See [Social features](#social-features).
+- Shareable OpenGraph image cards for public activities, with share links for X, Bluesky, LinkedIn, Mastodon, Facebook and Threads. See [Sharing](#sharing).
 
 Activity lists and summaries currently cover the latest 100 visible sessions. Events show the next 100 upcoming sessions. Event details and host names are public; attendee identities are not exposed.
 
@@ -165,6 +166,18 @@ Giving kudos, commenting, following and joining or creating clubs require a **pu
 | `POST /api/clubs/:slug/membership`         | `{ "join": true \| false }`                             |
 
 Social features require migration `0006_social.sql`, and activity photo cleanup uses `0007_photo_deletions.sql`: deleted photo keys are queued with the activity delete and removed from R2 afterwards, with failures retried on the next activity delete. Run `pnpm run db:local` locally and `pnpm run db:remote` before deploying.
+
+## Sharing
+
+Every public activity on a public profile has a **Share** button next to kudos and comments. It previews the card and offers:
+
+- Share links for X, Bluesky, LinkedIn, Facebook (Meta) and Threads (Meta).
+- Mastodon: enter your server (for example `mastodon.social`). It is saved in this browser only.
+- **Copy link**, **Download image**, and the device share sheet where the browser supports it.
+
+The shared link is `/activities/:id`. The Worker adds OpenGraph and `summary_large_image` Twitter tags to that page so networks show a large preview. The image comes from `GET /api/activities/:id/card.png`, a 1200×630 PNG rendered in the Worker. It is drawn as SVG and rasterised with `@resvg/resvg-wasm`. DM Sans and Manrope are bundled in `worker/fonts` under the SIL Open Font License.
+
+Cards only exist for public activities on public profiles. Private activities, and public activities on private profiles, return 404 and their pages get no preview tags. Cards show the name, handle, title, sport, date and metrics. They never include notes or photos. Cards are cached for 10 minutes and the cache key changes when the card's content changes. Networks keep their own copy, so a preview that was already posted may stay visible after the activity is made private.
 
 ## Developer insights
 

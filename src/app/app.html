@@ -544,6 +544,33 @@
           </p>
         }
 
+        @if (page() === 'activity') {
+          @if (sharedActivityLoading()) {
+            <div class="loading-state" role="status">Loading activity…</div>
+          } @else if (sharedActivity(); as shared) {
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow"><a routerLink="/feed">COMMUNITY</a> · ACTIVITY</p>
+                <h1>{{ shared.name }} moved.</h1>
+              </div>
+            </div>
+            <app-activity-card
+              [activity]="shared"
+              [viewerId]="viewer()?.id ?? null"
+              [profileHidden]="profileHidden()"
+              [social]="true"
+              [participation]="participation()"
+            />
+          } @else {
+            <div class="empty-state">
+              <app-icon name="lock" />
+              <h2>This activity isn’t available.</h2>
+              <p>{{ sharedActivityError() || 'It may be private or deleted.' }}</p>
+              <a class="button outline" routerLink="/feed">Back to the community</a>
+            </div>
+          }
+        }
+
         @if (page() === 'clubs') {
           @if (clubLoading()) {
             <div class="loading-state" role="status">Loading club…</div>

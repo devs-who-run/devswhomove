@@ -10,5 +10,5 @@
     "noEmit": true
   },
   "include": ["worker/**/*.ts", "src/app/models.ts"],
-  "exclude": ["worker/**/*.spec.ts"]
+  "exclude": ["worker/**/*.spec.ts", "worker/testing/**"]
 }
