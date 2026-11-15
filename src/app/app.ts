@@ -15,6 +15,7 @@ import { localDate } from './date';
 import { SportFilter } from './sport-filter';
 import { ProfileBadges } from './badges';
 import { DeveloperInsights } from './developer-insights';
+import { FeedSidebar } from './feed-sidebar';
 import {
   SPORTS,
   type Activity,
@@ -53,6 +54,7 @@ const formatMonth = (month: string) => {
     RouterOutlet,
     SportFilter,
     DeveloperInsights,
+    FeedSidebar,
     ProfileBadges,
   ],
   selector: 'app-root',
@@ -182,45 +184,6 @@ export class App {
       this.profileActivities().filter((activity) =>
         this.selectedActivityIds().includes(activity.id),
       ).length,
-  );
-  readonly weekly = computed(() => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-    return this.myActivities().filter((activity) => new Date(activity.occurredAt) >= start);
-  });
-  readonly weeklyMinutes = computed(() =>
-    this.weekly().reduce((sum, activity) => sum + activity.duration, 0),
-  );
-  readonly weeklyDistance = computed(() =>
-    this.weekly().reduce((sum, activity) => sum + (activity.distance || 0), 0),
-  );
-  readonly weekBars = computed(() => {
-    const minutes = Array<number>(7).fill(0);
-    for (const activity of this.weekly())
-      minutes[(new Date(activity.occurredAt).getDay() + 6) % 7] += activity.duration;
-    const max = Math.max(60, ...minutes);
-    const days = [
-      ['Monday', 'M'],
-      ['Tuesday', 'T'],
-      ['Wednesday', 'W'],
-      ['Thursday', 'T'],
-      ['Friday', 'F'],
-      ['Saturday', 'S'],
-      ['Sunday', 'S'],
-    ] as const;
-    return minutes.map((value, index) => ({
-      day: days[index][0],
-      shortDay: days[index][1],
-      minutes: value,
-      height: (value / max) * 100,
-    }));
-  });
-  readonly weekChartLabel = computed(
-    () =>
-      `Activity minutes this week: ${this.weekBars()
-        .map((bar) => `${bar.day}, ${bar.minutes} minutes`)
-        .join('; ')}.`,
   );
   readonly profileStats = computed(() => {
     const activities = this.profileActivities();

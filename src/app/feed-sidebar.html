@@ -1,0 +1,74 @@
+<aside class="right-column" aria-label="Your week and upcoming events">
+  <section class="weekly-card">
+    <div class="section-top">
+      <h2>Your week in motion</h2>
+      <app-icon name="spark" />
+    </div>
+    <p class="muted small-text">
+      {{ preview() ? 'A glimpse of your future rhythm.' : 'Small steps. They add up.' }}
+    </p>
+    <div class="week-total">
+      {{ weeklyMinutes() | number: '1.0-0' }}<span>min outside the scroll</span>
+    </div>
+    <div class="week-chart" role="img" [attr.aria-label]="weekChartLabel()">
+      @for (bar of weekBars(); track $index) {
+        <div class="chart-day" [title]="bar.day + ': ' + bar.minutes + ' minutes'">
+          <div class="bar-track">
+            <span [style.height.%]="bar.height" [class.has-value]="bar.minutes > 0"></span>
+          </div>
+          <small>{{ bar.shortDay }}</small>
+        </div>
+      }
+    </div>
+    <div class="week-footer">
+      <span
+        ><strong>{{ weekly().length }}</strong> sessions</span
+      >
+      <span
+        ><strong>{{ weeklyDistance() | number: '1.0-1' }}</strong> km covered</span
+      >
+    </div>
+  </section>
+  <section class="upcoming-section">
+    <div class="section-top">
+      <h2>Better, together</h2>
+      <button class="text-button" (click)="navigate.emit('events')" aria-label="See all events">
+        <app-icon name="arrow" />
+      </button>
+    </div>
+    <p class="muted small-text">Make room for a little good company.</p>
+    @for (event of events().slice(0, 2); track event.id) {
+      <button class="mini-event" (click)="navigate.emit('events')">
+        <span class="date-tile">
+          <small>{{ event.startsAt | date: 'MMM' }}</small>
+          <strong>{{ event.startsAt | date: 'dd' }}</strong>
+        </span>
+        <span>
+          <span class="mini-sport">
+            {{ event.sport }} <span aria-hidden="true">·</span>
+            {{ event.startsAt | date: 'h:mm a' }}
+          </span>
+          <strong>{{ event.title }}</strong>
+          <small><app-icon name="pin" />{{ event.location }}</small>
+        </span>
+      </button>
+    } @empty {
+      <p class="small-text muted empty-events">
+        A little company starts with an invitation. Host the first event.
+      </p>
+    }
+    <button class="host-button" (click)="hostEvent.emit()">
+      <app-icon name="plus" /> Bring people together
+    </button>
+  </section>
+  <section class="agent-promo">
+    <div class="terminal-mark"><app-icon name="terminal" /><span class="status-dot"></span></div>
+    <span class="eyebrow">YOUR AGENT. YOUR WINGMATE.</span>
+    <h3>You do the moving.<br />Let your agent do the logging.</h3>
+    <p>Less admin. More endorphins.</p>
+    <button class="text-button" (click)="navigate.emit('agents')">
+      Meet your new routine <app-icon name="arrow" />
+    </button>
+  </section>
+  <p class="right-footnote">Made for developers.<br />Designed for life beyond the screen.</p>
+</aside>
