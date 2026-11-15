@@ -1,0 +1,88 @@
+:host {
+  display: block;
+  margin-top: 22px;
+}
+.badges {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 25px;
+}
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+h2 {
+  font: 700 21px/1.3 var(--heading);
+  margin: 0;
+}
+.badge-count {
+  color: var(--muted);
+  font-size: 13px;
+}
+ul {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.badge {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+}
+.badge.earned {
+  border-style: solid;
+  background: var(--surface-soft);
+  color: var(--text);
+}
+.badge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  font-size: 18px;
+  margin-bottom: 4px;
+  opacity: 0.6;
+}
+.earned .badge-icon {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--green);
+  opacity: 1;
+}
+strong {
+  font-size: 14px;
+}
+small {
+  font-size: 12px;
+  line-height: 1.4;
+}
+.badge-progress {
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.badge-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+:host-context([data-theme='dark']) .badge-progress > span {
+  background: var(--lime);
+}
