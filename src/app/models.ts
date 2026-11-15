@@ -34,6 +34,7 @@ export interface Activity {
   occurredAt: string;
   duration: number;
   distance: number | null;
+  steps?: number | null;
   notes: string;
   visibility: Visibility;
   source: 'web' | 'agent';

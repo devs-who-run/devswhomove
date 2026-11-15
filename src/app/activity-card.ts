@@ -54,7 +54,11 @@ import type { Activity } from './models';
         />
       }
       <div class="activity-metrics">
-        @if (activity().distance !== null) {
+        @if (activity().sport === 'Walking' && activity().steps != null) {
+          <div>
+            <span>Steps</span><strong>{{ activity().steps | number }} <small>steps</small></strong>
+          </div>
+        } @else if (activity().distance !== null) {
           <div>
             <span>Distance</span
             ><strong>{{ activity().distance | number: '1.0-2' }} <small>km</small></strong>

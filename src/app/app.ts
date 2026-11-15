@@ -276,6 +276,7 @@ export class App {
       occurredAt: localDate(new Date()),
       duration: 30,
       distance: null as number | null,
+      steps: null as number | null,
       notes: '',
       visibility: 'private' as Visibility,
     };
@@ -541,8 +542,10 @@ export class App {
     this.error.set('');
     try {
       if (this.modal() === 'activity') {
+        const { steps, ...activityForm } = this.activityForm;
         const { id } = await this.api<{ id: string }>('/api/activities', 'POST', {
-          ...this.activityForm,
+          ...activityForm,
+          ...(activityForm.sport === 'Walking' ? { steps } : {}),
           occurredAt: new Date(this.activityForm.occurredAt).toISOString(),
         });
         const photo = this.photo();

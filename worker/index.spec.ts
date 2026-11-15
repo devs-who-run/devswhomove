@@ -205,6 +205,7 @@ describe('Worker with real D1 storage', () => {
         '0002_activity_photos.sql',
         '0003_atproto.sql',
         '0004_atproto_handle_index.sql',
+        '0005_activity_steps.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -271,6 +272,11 @@ describe('Worker with real D1 storage', () => {
       )
       .run();
     for (const statement of migrations[3]
+      .split(';')
+      .map((part) => part.trim())
+      .filter(Boolean))
+      await db.prepare(statement).run();
+    for (const statement of migrations[4]
       .split(';')
       .map((part) => part.trim())
       .filter(Boolean))
@@ -346,6 +352,72 @@ describe('Worker with real D1 storage', () => {
     ).json<{ activities: unknown[] }>();
     expect(own.activities).toHaveLength(1);
     expect(other.activities).toHaveLength(0);
+  });
+
+  it('stores and returns step counts for walking activities', async () => {
+    const walking = { ...activity, sport: 'Walking', steps: 3842 };
+    const response = await request('/api/activities', 'POST', walking, alice);
+    expect(response.status).toBe(201);
+    const { id } = await response.json<{ id: string }>();
+    const own = await (
+      await request('/api/bootstrap', 'GET', undefined, alice)
+    ).json<{ activities: { sport: string; steps?: number }[] }>();
+    expect(own.activities.find((item) => item.sport === 'Walking')?.steps).toBe(3842);
+    expect(
+      (await request('/api/activities', 'POST', { ...walking, steps: 3.5 }, alice)).status,
+    ).toBe(400);
+    await db.prepare('DELETE FROM activities WHERE id = ?').bind(id).run();
+  });
+
+  it('preserves legacy idempotency hashes when no step count is provided', async () => {
+    const idempotencyKey = 'legacy-without-steps';
+    const payloadHash = hash(
+      JSON.stringify({
+        title: activity.title,
+        sport: activity.sport,
+        occurredAt: activity.occurredAt,
+        duration: activity.duration,
+        distance: activity.distance,
+        notes: activity.notes,
+        visibility: activity.visibility,
+      }),
+    );
+    await db
+      .prepare(
+        'INSERT INTO activities (id, user_id, title, sport, occurred_at, duration, distance, notes, visibility, source, idempotency_key, payload_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .bind(
+        'legacy-activity',
+        'alice',
+        activity.title,
+        activity.sport,
+        activity.occurredAt,
+        activity.duration,
+        activity.distance,
+        activity.notes,
+        activity.visibility,
+        'web',
+        idempotencyKey,
+        payloadHash,
+      )
+      .run();
+
+    const replay = await request('/api/activities', 'POST', activity, alice, undefined, {
+      'Idempotency-Key': idempotencyKey,
+    });
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual({ id: 'legacy-activity' });
+
+    const changedSteps = await request(
+      '/api/activities',
+      'POST',
+      { ...activity, steps: 3842 },
+      alice,
+      undefined,
+      { 'Idempotency-Key': idempotencyKey },
+    );
+    expect(changedSteps.status).toBe(409);
+    await db.prepare('DELETE FROM activities WHERE id = ?').bind('legacy-activity').run();
   });
 
   it('returns more than 100 visible profile activities without exposing private ones', async () => {

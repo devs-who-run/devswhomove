@@ -19,6 +19,12 @@ const ACTIVITY_INPUT_SCHEMA = {
       description: 'Duration in minutes.',
     },
     distance: { type: 'number', minimum: 0, maximum: 2000, description: 'Distance in km.' },
+    steps: {
+      type: 'integer',
+      minimum: 0,
+      maximum: 1000000,
+      description: 'Optional step count, for walking activities.',
+    },
     notes: { type: 'string', maxLength: 2000 },
     idempotencyKey: {
       type: 'string',

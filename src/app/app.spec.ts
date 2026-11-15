@@ -66,9 +66,19 @@ describe('App', () => {
     expect(html.querySelector('h1')?.textContent).toContain('Your people.');
     expect(html.textContent).toContain('YOU’RE EXPLORING A PREVIEW');
     expect(html.querySelectorAll('.activity-card')).toHaveLength(4);
+    const walkingCard = [...html.querySelectorAll('.activity-card')].find((card) =>
+      card.textContent?.includes('A little headspace'),
+    );
+    expect(walkingCard?.textContent).toContain('3,842 steps');
+    expect(walkingCard?.textContent).not.toContain('Distance');
     expect(html.querySelector('.tabs')?.getAttribute('role')).toBe('group');
     expect(html.querySelector('.week-chart')?.getAttribute('role')).toBe('img');
     expect(html.querySelector('.week-chart')?.getAttribute('aria-label')).toContain('Monday');
+
+    fixture.componentInstance.preview.set(false);
+    fixture.componentInstance.liveActivities.set([{ ...DEMO_ACTIVITIES[3], steps: null }]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.activity-card')?.textContent).toContain('2.4 km');
   });
 
   it('filters activities by sport without changing the source data', async () => {
@@ -588,6 +598,36 @@ describe('App', () => {
     expect(
       fixture.componentInstance.pace({ ...DEMO_ACTIVITIES[0], distance: 1, duration: 5.999 }),
     ).toBe('6:00');
+  });
+
+  it('sends step counts only for walking activities', async () => {
+    const viewer = { ...DEMO_PROFILE, id: 'me', username: 'me' };
+    const posted: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string, init?: RequestInit) => {
+        if (path === '/api/activities' && init?.method === 'POST') {
+          posted.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+          return Response.json({ id: 'new' }, { status: 201 });
+        }
+        return Response.json({ ...bootstrap, viewer });
+      }),
+    );
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+
+    app.modal.set('activity');
+    app.activityForm.sport = 'Running';
+    app.activityForm.steps = 3842;
+    await app.save();
+    app.modal.set('activity');
+    app.activityForm.sport = 'Walking';
+    app.activityForm.steps = 3842;
+    await app.save();
+
+    expect(posted[0]).not.toHaveProperty('steps');
+    expect(posted[1]).toHaveProperty('steps', 3842);
   });
 
   it('uploads a prepared photo after logging an activity and shows it in the feed', async () => {

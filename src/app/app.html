@@ -760,7 +760,10 @@
                   }
                 </div>
                 <div class="profile-activity-metric">
-                  @if (activity.distance !== null) {
+                  @if (activity.sport === 'Walking' && activity.steps != null) {
+                    <strong>{{ activity.steps | number }} <small>steps</small></strong>
+                    <span>{{ activity.duration }} min</span>
+                  } @else if (activity.distance !== null) {
                     <strong>{{ activity.distance }} <small>km</small></strong>
                     <span>{{ activity.duration }} min</span>
                   } @else {
