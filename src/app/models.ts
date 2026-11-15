@@ -53,6 +53,8 @@ export interface SportEvent {
   capacity: number;
   attendees: number;
   joined: boolean;
+  conferenceName?: string | null;
+  conferenceUrl?: string | null;
 }
 
 export interface EventAttendee {

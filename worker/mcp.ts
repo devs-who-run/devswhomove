@@ -89,6 +89,12 @@ function tool(name: string, description: string, requiredScope: AgentScope, inpu
 
 const TOOLS = [
   tool(
+    'get_weekly_recap',
+    'Read factual fitness totals for your last completed UTC Monday–Sunday and the previous week, including private aggregate totals. Data is supplied to the calling connected agent, not a server-hosted LLM. Summarize factual totals with exact dates and coverage limitations; do not offer medical advice. No raw activity titles, notes, health details, or private locations are returned.',
+    'activities:read',
+    { type: 'object', properties: {}, additionalProperties: false },
+  ),
+  tool(
     'list_activities',
     'List your latest activities. Returns only your own activities, including private activities.',
     'activities:read',
@@ -293,7 +299,7 @@ export async function handleMcp(
       supportedVersions: [PROTOCOL_VERSION],
       capabilities: { tools: {} },
       instructions:
-        'Use scoped agent tokens. Available tools read your own activities, record public activities individually or in bulk, and read upcoming public events. Profile privacy still applies.',
+        'Use scoped agent tokens. Available tools read your own activities and factual weekly aggregate recaps, record public activities individually or in bulk, and read upcoming public events. Recap data is supplied to the caller, not a hosted LLM; include dates and limitations and do not offer medical advice. Profile privacy still applies.',
       ttlMs: 3_600_000,
       cacheScope: 'private',
     });
@@ -340,6 +346,11 @@ export async function handleMcp(
 
   if (name === 'list_activities') {
     const result = await callApi(dispatchApi, apiRequest(request, '/api/activities', 'GET'));
+    return toolResult(requestId, result.ok ? result.data : { error: result.message }, !result.ok);
+  }
+
+  if (name === 'get_weekly_recap') {
+    const result = await callApi(dispatchApi, apiRequest(request, '/api/insights/weekly', 'GET'));
     return toolResult(requestId, result.ok ? result.data : { error: result.message }, !result.ok);
   }
 

@@ -414,6 +414,18 @@
                     {{ event.startsAt | date: 'h:mm a' }}
                   </div>
                   <h2>{{ event.title }}</h2>
+                  @if (event.conferenceName) {
+                    <p class="event-conference">
+                      Conference:
+                      @if (conferenceLink(event.conferenceUrl); as link) {
+                        <a [href]="link" target="_blank" rel="noopener noreferrer">{{
+                          event.conferenceName
+                        }}</a>
+                      } @else {
+                        <span>{{ event.conferenceName }}</span>
+                      }
+                    </p>
+                  }
                   <p class="event-description">{{ event.description }}</p>
                   <p class="event-detail"><app-icon name="pin" />{{ event.location }}</p>
                   <p class="event-detail"><app-icon name="move" />{{ event.level }}</p>
@@ -602,6 +614,11 @@
                 <span>WAYS TO MOVE</span><strong>{{ profileStats().sports }}</strong>
               </div>
             </div>
+            @if (!remoteProfile() && !preview()) {
+              @if (viewer(); as ownProfile) {
+                <app-developer-insights [profile]="ownProfile" />
+              }
+            }
             <div class="profile-filters">
               <label>
                 Month
@@ -1211,8 +1228,9 @@
       </p>
       @if (viewer()?.provider === 'atproto') {
         <div class="banner public-data-warning" role="note">
-          Event details are saved as public PDS records. Use a public meeting point; do not include
-          private contact details or a home address. RSVP identities remain in Cloudflare.
+          Event details, including conference associations, are saved as public PDS records. Use a
+          public meeting point; do not include private contact details or a home address. RSVP
+          identities remain in Cloudflare.
         </div>
         <label class="checkbox-label public-confirm"
           ><input
@@ -1232,6 +1250,27 @@
         placeholder="The no-standup run club"
         required
       />
+      <label for="conference-name">Conference name (optional)</label>
+      <input
+        id="conference-name"
+        name="conferenceName"
+        [(ngModel)]="eventForm.conferenceName"
+        maxlength="100"
+        placeholder="e.g. NG-Conf"
+      />
+      <label for="conference-url">Conference URL (optional, HTTPS)</label>
+      <input
+        id="conference-url"
+        name="conferenceUrl"
+        type="url"
+        [(ngModel)]="eventForm.conferenceUrl"
+        maxlength="2048"
+        placeholder="https://example.com/conference"
+        aria-describedby="conference-help"
+      />
+      <p id="conference-help" class="muted small-text">
+        Link any sport to a tech conference. Add a name before a URL; conference details are public.
+      </p>
       <div class="form-row">
         <div>
           <label for="event-sport">Sport</label
