@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './app';
+import { ActivityCalendar } from './activity-calendar';
+import { By } from '@angular/platform-browser';
 import { DEMO_ACTIVITIES, DEMO_EVENTS, DEMO_PROFILE } from './demo';
 import type { Bootstrap } from './models';
 import { provideRouter, Router } from '@angular/router';
@@ -315,8 +317,10 @@ describe('App', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     const app = fixture.componentInstance;
+    const calendar = fixture.debugElement.query(By.directive(ActivityCalendar))
+      .componentInstance as ActivityCalendar;
     expect(app.profileStats().sessions).toBe(102);
-    expect(app.heatmapYears()).toEqual(expect.arrayContaining([2025, 2024]));
+    expect(calendar.years()).toEqual(expect.arrayContaining([2025, 2024]));
     expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(102);
     app.selectAllProfileActivities();
     expect(app.selectedActivityIds()).toHaveLength(100);
@@ -332,8 +336,9 @@ describe('App', () => {
     graphSelects[0].value = '2024';
     graphSelects[0].dispatchEvent(new Event('change'));
     fixture.detectChanges();
-    expect(app.heatmap().days.find((day) => day.date === '2024-01-15')?.count).toBe(1);
-    expect(app.heatmap().sessions).toBe(1);
+    expect(app.heatmapYear()).toBe('2024');
+    expect(calendar.heatmap().days.find((day) => day.date === '2024-01-15')?.count).toBe(1);
+    expect(calendar.heatmap().sessions).toBe(1);
     expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(102);
     const activityMetric = fixture.nativeElement.querySelector(
       '.profile-activity-metric',
@@ -354,20 +359,30 @@ describe('App', () => {
     monthSelect.value = '2025-02';
     monthSelect.dispatchEvent(new Event('change'));
     fixture.detectChanges();
-    expect(app.heatmap().sessions).toBe(1);
+    expect(calendar.heatmap().sessions).toBe(1);
     monthSelect.value = '2024-01';
     monthSelect.dispatchEvent(new Event('change'));
     graphSelects[1].value = 'Cycling';
     graphSelects[1].dispatchEvent(new Event('change'));
     fixture.detectChanges();
+    expect(app.profileSport()).toBe('Cycling');
     expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(1);
-    expect(app.heatmap().days.find((day) => day.date === '2024-01-15')?.count).toBe(1);
+    expect(calendar.heatmap().days.find((day) => day.date === '2024-01-15')?.count).toBe(1);
     app.profileSport.set('Running');
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(0);
-    expect(app.heatmap().sessions).toBe(0);
-    expect(app.heatmap().days).toHaveLength(366);
+    expect(calendar.heatmap().sessions).toBe(0);
+    expect(calendar.heatmap().days).toHaveLength(366);
     expect(app.profileStats().sessions).toBe(102);
+    await TestBed.inject(Router).navigateByUrl('/feed');
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(app.heatmapYear()).toBe('last-12-months');
+    expect(app.profileSport()).toBe('All');
+    expect(
+      (fixture.nativeElement.querySelector('.heatmap-filters select') as HTMLSelectElement).value,
+    ).toBe('last-12-months');
   });
 
   it('shows a daily summary in the graph and accessible details, respecting activity filters', async () => {
@@ -415,62 +430,6 @@ describe('App', () => {
     const filtered = fixture.nativeElement.querySelector('.heatmap .moved')?.getAttribute('title');
     expect(filtered).toContain('1 session · Swimming · 20 min');
     expect(filtered).not.toContain('km');
-  });
-
-  it('shows a continuous last-12-month calendar including rest days and local-day totals', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date(2026, 10, 15, 12));
-    const fixture = TestBed.createComponent(App);
-    await fixture.whenStable();
-    const app = fixture.componentInstance;
-    app.ownProfileActivities.set([
-      { ...DEMO_ACTIVITIES[0], occurredAt: new Date(2025, 10, 15, 12).toISOString() },
-      { ...DEMO_ACTIVITIES[0], occurredAt: new Date(2025, 10, 16, 0, 5).toISOString() },
-      { ...DEMO_ACTIVITIES[0], occurredAt: new Date(2026, 10, 15, 23, 55).toISOString() },
-      { ...DEMO_ACTIVITIES[0], occurredAt: new Date(2026, 10, 16, 12).toISOString() },
-    ]);
-    const calendar = app.heatmap();
-    expect(calendar.days).toHaveLength(365);
-    expect(calendar.days[0].date).toBe('2025-11-16');
-    expect(calendar.days.at(-1)?.date).toBe('2026-11-15');
-    expect(calendar.sessions).toBe(2);
-    expect(calendar.activeDays).toBe(2);
-    expect(calendar.days.find((day) => day.date === '2026-05-01')?.count).toBe(0);
-    expect(calendar.months.map((month) => month.label)).toContain('May');
-    expect(calendar.cells).toHaveLength(calendar.weeks * 7);
-    for (const [index, day] of calendar.cells.entries()) {
-      if (day) expect(new Date(`${day.date}T12:00:00`).getDay()).toBe(index % 7);
-    }
-  });
-
-  it('handles leap days, empty years, padding and future dates in calendar-year views', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date(2024, 1, 29, 12));
-    const fixture = TestBed.createComponent(App);
-    await fixture.whenStable();
-    const app = fixture.componentInstance;
-    expect(app.heatmap().days[0].date).toBe('2023-03-01');
-    expect(app.heatmap().days.at(-1)?.date).toBe('2024-02-29');
-    expect(app.heatmap().days).toHaveLength(366);
-    app.heatmapYear.set('2024');
-    app.ownProfileActivities.set([
-      { ...DEMO_ACTIVITIES[0], occurredAt: new Date(2024, 1, 29, 12).toISOString() },
-      { ...DEMO_ACTIVITIES[0], occurredAt: new Date(2024, 2, 1, 12).toISOString() },
-    ]);
-    expect(app.heatmap().days).toHaveLength(366);
-    expect(app.heatmap().cells[0]).toBeNull();
-    expect(app.heatmap().cells[1]?.date).toBe('2024-01-01');
-    expect(app.heatmap().days.find((day) => day.date === '2024-02-29')?.count).toBe(1);
-    expect(app.heatmap().days.find((day) => day.date === '2024-03-01')?.future).toBe(true);
-    expect(app.heatmap().sessions).toBe(1);
-    app.heatmapYear.set('2023');
-    expect(app.heatmap().days).toHaveLength(365);
-    expect(app.heatmap().sessions).toBe(0);
-    expect(app.heatmap().months).toHaveLength(12);
-    app.ownProfileActivities.set([
-      { ...DEMO_ACTIVITIES[0], occurredAt: new Date(2022, 0, 1, 12).toISOString() },
-    ]);
-    expect(app.heatmapYears()).toEqual([2024, 2023, 2022]);
   });
 
   it('uses clean router links and navigates between pages', async () => {

@@ -900,95 +900,11 @@
                 <app-developer-insights [profile]="ownProfile" />
               }
             }
-            <details class="consistency-card heatmap-toggle" open>
-              <summary class="section-top">
-                <h2>A different kind of contribution.</h2>
-                <span class="text-button">Expand / collapse graph</span>
-              </summary>
-              <div class="profile-filters heatmap-filters">
-                <label>
-                  Year
-                  <select [ngModel]="heatmapYear()" (ngModelChange)="heatmapYear.set($event)">
-                    <option value="last-12-months">Last 12 months</option>
-                    @for (year of heatmapYears(); track year) {
-                      <option [value]="year">{{ year }}</option>
-                    }
-                  </select>
-                </label>
-                <label>
-                  Activity
-                  <select [ngModel]="profileSport()" (ngModelChange)="profileSport.set($event)">
-                    <option value="All">All activities</option>
-                    @for (sport of sports; track sport) {
-                      <option [value]="sport">{{ sport }}</option>
-                    }
-                  </select>
-                </label>
-              </div>
-              <p class="muted small-text">
-                {{ heatmap().sessions }} {{ heatmap().sessions === 1 ? 'session' : 'sessions' }} in
-                {{ heatmap().period }} · {{ heatmap().activeDays }} active days
-              </p>
-              <div
-                class="heatmap-scroll"
-                tabindex="0"
-                role="region"
-                aria-label="Activity contribution calendar"
-              >
-                <div class="heatmap-calendar" [style.--weeks]="heatmap().weeks">
-                  <div class="heatmap-months" aria-hidden="true">
-                    @for (month of heatmap().months; track month.column) {
-                      <span [style.grid-column]="month.column">{{ month.label }}</span>
-                    }
-                  </div>
-                  <div class="heatmap-weekdays" aria-hidden="true">
-                    <span>Mon</span><span>Wed</span><span>Fri</span>
-                  </div>
-                  <div
-                    class="heatmap"
-                    role="img"
-                    [attr.aria-label]="
-                      'Activity calendar for ' +
-                      heatmap().period +
-                      '. Each column is a week, Sunday to Saturday. Color intensity shows sessions per day. Daily summaries are available below.'
-                    "
-                  >
-                    @for (day of heatmap().cells; track $index) {
-                      @if (day) {
-                        <span
-                          [class.moved]="day.count > 0"
-                          [class.more]="day.count > 1"
-                          [class.many]="day.count > 2"
-                          [class.most]="day.count > 3"
-                          [class.future]="day.future"
-                          [title]="day.future ? 'Future date' : day.summary"
-                          [attr.data-date]="day.date"
-                        ></span>
-                      } @else {
-                        <span class="heatmap-padding" aria-hidden="true"></span>
-                      }
-                    }
-                  </div>
-                </div>
-              </div>
-              <div class="heatmap-legend">
-                <span>Every little move counts.</span
-                ><span aria-label="Session intensity from less to more"
-                  >Less <i></i><i class="moved"></i><i class="more"></i><i class="many"></i
-                  ><i class="most"></i> More</span
-                >
-              </div>
-              <details class="heatmap-details">
-                <summary>View daily activity details for {{ heatmap().period }}</summary>
-                <ul>
-                  @for (day of heatmap().days; track day.date) {
-                    @if (!day.future) {
-                      <li>{{ day.summary }}</li>
-                    }
-                  }
-                </ul>
-              </details>
-            </details>
+            <app-activity-calendar
+              [activities]="profileActivities()"
+              [(sport)]="profileSport"
+              [(year)]="heatmapYear"
+            />
             <div class="profile-filters">
               <label>
                 Recent movement month
