@@ -50,7 +50,7 @@ interface Identity {
 const ALL_SCOPES: AgentScope[] = ['activities:read', 'activities:write', 'events:read'];
 const ATPROTO_SYNC_INTERVAL_MS = 5 * 60_000;
 const ACTIVITY_SELECT = `SELECT a.id, a.user_id AS userId, u.username, u.name, u.avatar,
-  a.title, a.sport, a.occurred_at AS occurredAt, a.duration, a.distance, a.notes,
+  a.title, a.sport, a.occurred_at AS occurredAt, a.duration, a.distance, a.steps, a.notes,
   a.visibility, a.source,
   CASE WHEN a.photo_key IS NULL THEN NULL
     ELSE '/api/activities/' || a.id || '/photo?v=' || substr(a.photo_key, -12) END AS photo
@@ -348,6 +348,7 @@ async function activities(env: Env, userId?: string): Promise<Activity[]> {
         json_extract(a.record_json, '$.occurredAt') AS occurredAt,
         json_extract(a.record_json, '$.duration') AS duration,
         json_extract(a.record_json, '$.distance') AS distance,
+        json_extract(a.record_json, '$.steps') AS steps,
         json_extract(a.record_json, '$.notes') AS notes,
         'public' AS visibility, json_extract(a.record_json, '$.source') AS source,
         NULL AS photo
@@ -373,6 +374,7 @@ async function atprotoActivitiesByDid(
       json_extract(a.record_json, '$.occurredAt') AS occurredAt,
       json_extract(a.record_json, '$.duration') AS duration,
       json_extract(a.record_json, '$.distance') AS distance,
+      json_extract(a.record_json, '$.steps') AS steps,
       json_extract(a.record_json, '$.notes') AS notes,
       'public' AS visibility, json_extract(a.record_json, '$.source') AS source,
       NULL AS photo
@@ -441,6 +443,13 @@ async function events(env: Env, userId?: string): Promise<SportEvent[]> {
     .slice(0, 100);
 }
 
+function parseSteps(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 1_000_000)
+    throw new HttpError(400, 'Step count must be a whole number between 0 and 1000000.');
+  return value;
+}
+
 /** Build the public activity lexicon record for a validated application activity. */
 function activityRecord(row: Record<string, unknown>, source: 'web' | 'agent') {
   return {
@@ -450,6 +459,7 @@ function activityRecord(row: Record<string, unknown>, source: 'web' | 'agent') {
     occurredAt: row['occurredAt'],
     duration: row['duration'],
     ...(row['distance'] == null ? {} : { distance: row['distance'] }),
+    ...(row['steps'] == null ? {} : { steps: row['steps'] }),
     notes: row['notes'],
     source,
   };
@@ -485,6 +495,7 @@ async function saveAtprotoActivity(
     duration: number(input['duration'], 'Duration in minutes', 1, 1440),
     distance:
       input['distance'] == null ? null : number(input['distance'], 'Distance in km', 0, 2000),
+    steps: parseSteps(input['steps']),
     notes: text(input['notes'] ?? '', 'Notes', 2000, false),
   };
   const record = activityRecord(entry, actor.agent ? 'agent' : 'web');
@@ -533,6 +544,7 @@ async function saveActivity(
     occurredAt: date(data['occurredAt'], false),
     duration: number(data['duration'], 'Duration in minutes', 1, 1440),
     distance: data['distance'] == null ? null : number(data['distance'], 'Distance in km', 0, 2000),
+    steps: parseSteps(data['steps']),
     notes: text(data['notes'] ?? '', 'Notes', 2000, false),
     visibility: actor.agent ? 'public' : requestedVisibility,
   };
@@ -541,8 +553,8 @@ async function saveActivity(
   const id = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO activities
-    (id, user_id, title, sport, occurred_at, duration, distance, notes, visibility, source, idempotency_key, payload_hash)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, idempotency_key) DO NOTHING`,
+    (id, user_id, title, sport, occurred_at, duration, distance, steps, notes, visibility, source, idempotency_key, payload_hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, idempotency_key) DO NOTHING`,
   )
     .bind(
       id,
@@ -552,6 +564,7 @@ async function saveActivity(
       entry.occurredAt,
       entry.duration,
       entry.distance,
+      entry.steps,
       entry.notes,
       entry.visibility,
       actor.agent ? 'agent' : 'web',
@@ -633,7 +646,16 @@ async function listAtprotoRecords(
 function atprotoActivityRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const record = value as Record<string, unknown>;
-  const { title, sport: activitySport, occurredAt, duration, distance, notes, source } = record;
+  const {
+    title,
+    sport: activitySport,
+    occurredAt,
+    duration,
+    distance,
+    steps,
+    notes,
+    source,
+  } = record;
   if (
     record['$type'] !== ACTIVITY_COLLECTION ||
     typeof title !== 'string' ||
@@ -654,6 +676,8 @@ function atprotoActivityRecord(value: unknown): Record<string, unknown> | undefi
         !Number.isFinite(distance) ||
         distance < 0 ||
         distance > 2000)) ||
+    (steps != null &&
+      (typeof steps !== 'number' || !Number.isInteger(steps) || steps < 0 || steps > 1_000_000)) ||
     typeof notes !== 'string' ||
     notes.length > 2000
   )
@@ -665,6 +689,7 @@ function atprotoActivityRecord(value: unknown): Record<string, unknown> | undefi
     occurredAt,
     duration,
     ...(distance == null ? {} : { distance }),
+    ...(steps == null ? {} : { steps }),
     notes,
     source: source === 'agent' ? 'agent' : 'web',
   };

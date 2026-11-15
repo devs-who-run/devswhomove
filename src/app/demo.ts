@@ -76,6 +76,7 @@ export const DEMO_ACTIVITIES: Activity[] = [
     occurredAt: ago(2, 12),
     duration: 28,
     distance: 2.4,
+    steps: 3_842,
     notes: 'A lunchtime walk, without the headphones.',
     visibility: 'public',
     source: 'web',

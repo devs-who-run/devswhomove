@@ -276,6 +276,7 @@ export class App {
       occurredAt: localDate(new Date()),
       duration: 30,
       distance: null as number | null,
+      steps: null as number | null,
       notes: '',
       visibility: 'private' as Visibility,
     };

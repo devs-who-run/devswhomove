@@ -66,9 +66,19 @@ describe('App', () => {
     expect(html.querySelector('h1')?.textContent).toContain('Your people.');
     expect(html.textContent).toContain('YOU’RE EXPLORING A PREVIEW');
     expect(html.querySelectorAll('.activity-card')).toHaveLength(4);
+    const walkingCard = [...html.querySelectorAll('.activity-card')].find((card) =>
+      card.textContent?.includes('A little headspace'),
+    );
+    expect(walkingCard?.textContent).toContain('3,842 steps');
+    expect(walkingCard?.textContent).not.toContain('Distance');
     expect(html.querySelector('.tabs')?.getAttribute('role')).toBe('group');
     expect(html.querySelector('.week-chart')?.getAttribute('role')).toBe('img');
     expect(html.querySelector('.week-chart')?.getAttribute('aria-label')).toContain('Monday');
+
+    fixture.componentInstance.preview.set(false);
+    fixture.componentInstance.liveActivities.set([{ ...DEMO_ACTIVITIES[3], steps: null }]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.activity-card')?.textContent).toContain('2.4 km');
   });
 
   it('filters activities by sport without changing the source data', async () => {

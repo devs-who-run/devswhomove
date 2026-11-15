@@ -205,6 +205,7 @@ describe('Worker with real D1 storage', () => {
         '0002_activity_photos.sql',
         '0003_atproto.sql',
         '0004_atproto_handle_index.sql',
+        '0005_activity_steps.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -271,6 +272,11 @@ describe('Worker with real D1 storage', () => {
       )
       .run();
     for (const statement of migrations[3]
+      .split(';')
+      .map((part) => part.trim())
+      .filter(Boolean))
+      await db.prepare(statement).run();
+    for (const statement of migrations[4]
       .split(';')
       .map((part) => part.trim())
       .filter(Boolean))
@@ -346,6 +352,21 @@ describe('Worker with real D1 storage', () => {
     ).json<{ activities: unknown[] }>();
     expect(own.activities).toHaveLength(1);
     expect(other.activities).toHaveLength(0);
+  });
+
+  it('stores and returns step counts for walking activities', async () => {
+    const walking = { ...activity, sport: 'Walking', steps: 3842 };
+    const response = await request('/api/activities', 'POST', walking, alice);
+    expect(response.status).toBe(201);
+    const { id } = await response.json<{ id: string }>();
+    const own = await (
+      await request('/api/bootstrap', 'GET', undefined, alice)
+    ).json<{ activities: { sport: string; steps?: number }[] }>();
+    expect(own.activities.find((item) => item.sport === 'Walking')?.steps).toBe(3842);
+    expect(
+      (await request('/api/activities', 'POST', { ...walking, steps: 3.5 }, alice)).status,
+    ).toBe(400);
+    await db.prepare('DELETE FROM activities WHERE id = ?').bind(id).run();
   });
 
   it('returns more than 100 visible profile activities without exposing private ones', async () => {
