@@ -1,8 +1,13 @@
 :host {
   display: block;
+  width: 100%;
+  min-width: 0;
 }
 
 .activity-card {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid var(--border);
   background: #fff;
   border-radius: 10px;
