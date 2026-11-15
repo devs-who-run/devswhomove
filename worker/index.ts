@@ -26,6 +26,23 @@ import { MAX_PHOTO_BYTES, sanitizeImage } from './images';
 import { handleMcp } from './mcp';
 import { getWeeklyRecap, getGithubInsights } from './insights';
 import { date, HttpError, number, sport, text, visibility } from './validation';
+import {
+  addComment,
+  clubMembers,
+  createClub,
+  deleteActivitySocial,
+  deleteClub,
+  deleteComment,
+  eventClub,
+  findClub,
+  listClubs,
+  listComments,
+  profileSocial,
+  setFollow,
+  setKudos,
+  setMembership,
+  withSocial,
+} from './social';
 
 interface Env {
   DB: D1Database;
@@ -332,16 +349,26 @@ async function body(request: Request, limit = 16_384): Promise<Record<string, un
   return data as Record<string, unknown>;
 }
 
-/** Combine the public community feed with the signed-in GitHub user's own activities. */
-async function activities(env: Env, userId?: string): Promise<Activity[]> {
-  const [github, atproto] = await Promise.all([
-    env.DB.prepare(
-      `${ACTIVITY_SELECT}
+/** Restrict a feed to public activities from a set of people, such as followed members or a club. */
+interface Audience {
+  sql: string;
+  binding: string;
+}
+
+/**
+ * Combine the public community feed with the signed-in GitHub user's own activities.
+ * With an audience, only public activities from that audience are returned.
+ */
+async function activities(env: Env, userId?: string, audience?: Audience): Promise<Activity[]> {
+  const github = env.DB.prepare(
+    `${ACTIVITY_SELECT}
     WHERE (a.user_id = ? OR (a.visibility = 'public' AND u.visibility = 'public'))
+    ${audience ? `AND a.user_id IN (${audience.sql})` : ''}
     ORDER BY a.occurred_at DESC LIMIT 100`,
-    )
-      .bind(userId || '')
-      .all<Activity>(),
+  );
+  const atprotoFilter = audience ? `WHERE a.did IN (${audience.sql})` : '';
+  const [githubResult, atproto] = await Promise.all([
+    (audience ? github.bind('', audience.binding) : github.bind(userId || '')).all<Activity>(),
     env.DB.prepare(
       `SELECT a.uri AS id, a.did AS userId, u.handle AS username, u.name, u.avatar,
         json_extract(a.record_json, '$.title') AS title,
@@ -353,10 +380,13 @@ async function activities(env: Env, userId?: string): Promise<Activity[]> {
         'public' AS visibility, json_extract(a.record_json, '$.source') AS source,
         NULL AS photo
       FROM atproto_activities a JOIN atproto_accounts u ON u.did = a.did
+      ${atprotoFilter}
       ORDER BY json_extract(a.record_json, '$.occurredAt') DESC LIMIT 100`,
-    ).all<Activity>(),
+    )
+      .bind(...(audience ? [audience.binding] : []))
+      .all<Activity>(),
   ]);
-  return [...github.results, ...atproto.results]
+  return [...githubResult.results, ...atproto.results]
     .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
     .slice(0, 100);
 }
@@ -402,39 +432,46 @@ async function profileActivities(
 }
 
 /** Combine upcoming GitHub and AT Protocol events without exposing attendee identities. */
-async function events(env: Env, userId?: string): Promise<SportEvent[]> {
+async function events(env: Env, userId?: string, clubId?: string): Promise<SportEvent[]> {
   const [github, atproto] = await Promise.all([
     env.DB.prepare(
       `SELECT e.id, e.host_id AS hostId, u.name AS hostName,
     e.title, e.sport, e.starts_at AS startsAt, e.location, e.description, e.level, e.capacity,
     e.conference_name AS conferenceName, e.conference_url AS conferenceUrl,
+    e.club_id AS clubId, c.name AS clubName, c.slug AS clubSlug,
     (SELECT COUNT(*) FROM event_attendees WHERE event_id = e.id) +
     (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = e.id) AS attendees,
     EXISTS(SELECT 1 FROM event_attendees WHERE event_id = e.id AND user_id = ?) OR
     EXISTS(SELECT 1 FROM atproto_external_event_attendees
       WHERE event_id = e.id AND attendee_id = ?) AS joined
-    FROM events e JOIN users u ON u.id = e.host_id
-    WHERE e.cancelled = 0 AND e.starts_at > ? ORDER BY e.starts_at LIMIT 100`,
+    FROM events e JOIN users u ON u.id = e.host_id LEFT JOIN clubs c ON c.id = e.club_id
+    WHERE e.cancelled = 0 AND e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}
+    ORDER BY e.starts_at LIMIT 100`,
     )
       .bind(
         userId || '',
         userId ? `${userId.startsWith('did:') ? 'atproto' : 'github'}:${userId}` : '',
         new Date().toISOString(),
+        ...(clubId ? [clubId] : []),
       )
       .all<SportEvent>(),
     env.DB.prepare(
       `SELECT e.uri AS id, e.did AS hostId, u.name AS hostName, e.title, e.sport,
         e.starts_at AS startsAt, e.location, e.description, e.level, e.capacity,
         e.conference_name AS conferenceName, e.conference_url AS conferenceUrl,
+        e.club_id AS clubId, c.name AS clubName, c.slug AS clubSlug,
         (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = e.uri) AS attendees,
         EXISTS(SELECT 1 FROM atproto_event_attendees
           WHERE event_uri = e.uri AND attendee_id = ?) AS joined
       FROM atproto_events e JOIN atproto_accounts u ON u.did = e.did
-      WHERE e.starts_at > ? ORDER BY e.starts_at LIMIT 100`,
+      LEFT JOIN clubs c ON c.id = e.club_id
+      WHERE e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}
+      ORDER BY e.starts_at LIMIT 100`,
     )
       .bind(
         userId ? `${userId.startsWith('did:') ? 'atproto' : 'github'}:${userId}` : '',
         new Date().toISOString(),
+        ...(clubId ? [clubId] : []),
       )
       .all<SportEvent>(),
   ]);
@@ -592,6 +629,7 @@ async function saveAtprotoEvent(
   env: Env,
   actor: Identity,
   fields: ReturnType<typeof eventFields>,
+  clubId: string | null = null,
 ): Promise<string> {
   const agent = actor.atprotoAgent;
   if (!agent) throw new HttpError(500, 'AT Protocol session is unavailable.');
@@ -605,8 +643,8 @@ async function saveAtprotoEvent(
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO atproto_events
-    (uri, did, rkey, record_json, title, sport, starts_at, location, description, level, capacity, conference_name, conference_url, indexed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    (uri, did, rkey, record_json, title, sport, starts_at, location, description, level, capacity, conference_name, conference_url, indexed_at, club_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       uri,
       actor.user.id,
@@ -614,6 +652,7 @@ async function saveAtprotoEvent(
       JSON.stringify(record),
       ...fields,
       new Date().toISOString(),
+      clubId,
     ),
     env.DB.prepare(
       'INSERT INTO atproto_event_attendees (event_uri, attendee_id) VALUES (?, ?)',
@@ -749,17 +788,31 @@ async function removeStaleAtprotoRecords(
     .all<{ uri: string }>();
   const live = new Set(liveUris);
   const stale = existing.results.filter(({ uri }) => !live.has(uri)).map(({ uri }) => uri);
-  const deletions = [];
+  // Each chunk's record and social deletes share one batch, so they commit or roll back together.
   for (let offset = 0; offset < stale.length; offset += 50) {
     const batch = stale.slice(offset, offset + 50);
-    deletions.push(
+    await env.DB.batch([
       env.DB.prepare(
         `DELETE FROM ${table} WHERE did = ? AND uri IN (${batch.map(() => '?').join(',')})`,
       ).bind(did, ...batch),
-    );
+      ...(table === 'atproto_activities' ? deleteActivitySocial(env.DB, batch) : []),
+    ]);
   }
-  for (let offset = 0; offset < deletions.length; offset += 50)
-    await env.DB.batch(deletions.slice(offset, offset + 50));
+}
+
+/** Remove queued photos from R2; failures stay queued and are retried on the next activity delete. */
+async function purgeDeletedPhotos(env: Env): Promise<void> {
+  try {
+    const queued = await env.DB.prepare(
+      'SELECT key FROM photo_deletions ORDER BY queued_at LIMIT 20',
+    ).all<{ key: string }>();
+    for (const { key } of queued.results) {
+      await env.PHOTOS.delete(key);
+      await env.DB.prepare('DELETE FROM photo_deletions WHERE key = ?').bind(key).run();
+    }
+  } catch (error) {
+    console.error('Photo cleanup failed; it will be retried.', error);
+  }
 }
 
 /** Refresh the bounded D1 projection from the user's PDS when its sync interval has elapsed. */
@@ -1141,14 +1194,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
         console.warn('AT Protocol sync failed; serving the cached community projection.');
       }
     }
-    const [feed, upcoming] = await Promise.all([
-      activities(env, auth?.user.id),
+    const [feed, upcoming, clubs] = await Promise.all([
+      activities(env, auth?.user.id).then((items) => withSocial(env.DB, items, auth?.user.id)),
       events(env, auth?.user.id),
+      listClubs(env.DB, auth?.user.id),
     ]);
     return json({
       viewer: auth?.user || null,
       activities: feed,
       events: upcoming,
+      clubs,
       githubConfigured: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
       atprotoConfigured: Boolean(env.ATPROTO_OAUTH_PRIVATE_KEY && env.ATPROTO_SESSION_KEY),
     });
@@ -1360,9 +1415,13 @@ async function handle(request: Request, env: Env): Promise<Response> {
           collection: ACTIVITY_COLLECTION,
           rkey: key,
         });
-        await env.DB.prepare('DELETE FROM atproto_activities WHERE uri = ? AND did = ?')
-          .bind(activityId, identity.user.id)
-          .run();
+        await env.DB.batch([
+          env.DB.prepare('DELETE FROM atproto_activities WHERE uri = ? AND did = ?').bind(
+            activityId,
+            identity.user.id,
+          ),
+          ...deleteActivitySocial(env.DB, activityId),
+        ]);
       } else {
         const data = await body(request);
         if (visibility(data['visibility']) !== 'public')
@@ -1377,13 +1436,30 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return json({ ok: true });
     }
     if (method === 'DELETE') {
-      const deleted = await env.DB.prepare(
-        'DELETE FROM activities WHERE id = ? AND user_id = ? RETURNING photo_key AS key',
-      )
-        .bind(activityId, identity.user.id)
-        .first<{ key: string | null }>();
-      if (!deleted) throw new HttpError(404, 'Activity not found.');
-      if (deleted.key) await env.PHOTOS.delete(deleted.key);
+      try {
+        const owned = await env.DB.prepare(
+          'SELECT 1 AS found FROM activities WHERE id = ? AND user_id = ?',
+        )
+          .bind(activityId, identity.user.id)
+          .first();
+        if (!owned) throw new HttpError(404, 'Activity not found.');
+        // The photo key is queued in the same transaction as the delete, so it survives R2 failures.
+        const [, deleted] = await env.DB.batch([
+          env.DB.prepare(
+            `INSERT OR IGNORE INTO photo_deletions (key, queued_at)
+            SELECT photo_key, ? FROM activities
+            WHERE id = ? AND user_id = ? AND photo_key IS NOT NULL`,
+          ).bind(new Date().toISOString(), activityId, identity.user.id),
+          env.DB.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(
+            activityId,
+            identity.user.id,
+          ),
+          ...deleteActivitySocial(env.DB, activityId),
+        ]);
+        if (!deleted?.meta.changes) throw new HttpError(404, 'Activity not found.');
+      } finally {
+        await purgeDeletedPhotos(env);
+      }
     } else {
       const data = await body(request);
       const result = await env.DB.prepare(
@@ -1401,17 +1477,19 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
   if (url.pathname === '/api/events' && method === 'POST') {
     const identity = requireIdentity(auth, undefined, true);
-    const fields = eventFields(await body(request));
+    const data = await body(request);
+    const fields = eventFields(data);
+    const clubId = await eventClub(env.DB, identity.user, data['clubId']);
     if (identity.provider === 'atproto') {
-      const id = await saveAtprotoEvent(env, identity, fields);
+      const id = await saveAtprotoEvent(env, identity, fields, clubId);
       return json({ id }, 201);
     }
     const id = crypto.randomUUID();
     await env.DB.batch([
       env.DB.prepare(
-        `INSERT INTO events (id, host_id, title, sport, starts_at, location, description, level, capacity, conference_name, conference_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, identity.user.id, ...fields),
+        `INSERT INTO events (id, host_id, title, sport, starts_at, location, description, level, capacity, conference_name, conference_url, club_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, identity.user.id, ...fields, clubId),
       env.DB.prepare('INSERT INTO event_attendees (event_id, user_id) VALUES (?, ?)').bind(
         id,
         identity.user.id,
@@ -1475,7 +1553,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const eventId = eventMatch ? decodedPathPart(eventMatch[1]) : '';
   if (eventMatch && !eventMatch[2] && method === 'PATCH') {
     const identity = requireIdentity(auth, undefined, true);
-    const fields = eventFields(await body(request));
+    const data = await body(request);
+    const fields = eventFields(data);
+    const updateClub = 'clubId' in data;
+    const clubId = updateClub ? await eventClub(env.DB, identity.user, data['clubId']) : null;
     if (eventId.startsWith('at://')) {
       if (identity.provider !== 'atproto')
         throw new HttpError(403, 'Only the AT Protocol event host can edit this event.');
@@ -1535,6 +1616,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
           .run();
         throw error;
       }
+      if (updateClub)
+        await env.DB.prepare('UPDATE atproto_events SET club_id = ? WHERE uri = ? AND did = ?')
+          .bind(clubId, eventId, identity.user.id)
+          .run();
       return json({ ok: true });
     }
     const id = eventId;
@@ -1552,11 +1637,13 @@ async function handle(request: Request, env: Env): Promise<Response> {
       throw new HttpError(403, 'Only the host can edit an event.');
     const result = await env.DB.prepare(
       `UPDATE events SET title = ?, sport = ?, starts_at = ?, location = ?, description = ?,
-      level = ?, capacity = ?, conference_name = ?, conference_url = ? WHERE id = ? AND host_id = ? AND cancelled = 0
+      level = ?, capacity = ?, conference_name = ?, conference_url = ?,
+      club_id = CASE WHEN ? THEN ? ELSE club_id END
+      WHERE id = ? AND host_id = ? AND cancelled = 0
       AND (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) +
       (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = ?) <= ?`,
     )
-      .bind(...fields, id, identity.user.id, id, id, fields[6])
+      .bind(...fields, updateClub ? 1 : 0, clubId, id, identity.user.id, id, id, fields[6])
       .run();
     if (!result.meta.changes)
       throw new HttpError(
@@ -1795,7 +1882,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (row)
       return json({
         profile: profile(row),
-        activities: await profileActivities(env, row.id, auth?.user.id || ''),
+        activities: await withSocial(
+          env.DB,
+          await profileActivities(env, row.id, auth?.user.id || ''),
+          auth?.user.id,
+        ),
+        social: await profileSocial(env.DB, row.id, auth?.user.id),
       });
     const atprotoRow = await env.DB.prepare(
       `SELECT did AS id, handle AS username, name, avatar, bio, '' AS location,
@@ -1808,8 +1900,111 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (!atprotoRow) throw new HttpError(404, 'Profile is private or does not exist.');
     return json({
       profile: { ...profile(atprotoRow), provider: 'atproto' },
-      activities: await profileActivities(env, atprotoRow.id, auth?.user.id || ''),
+      activities: await withSocial(
+        env.DB,
+        await profileActivities(env, atprotoRow.id, auth?.user.id || ''),
+        auth?.user.id,
+      ),
+      social: await profileSocial(env.DB, atprotoRow.id, auth?.user.id),
     });
+  }
+  return social(request, env, auth, url);
+}
+
+/** Require an explicit boolean toggle in a social request body. */
+function toggle(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') throw new HttpError(400, `${label} must be true or false.`);
+  return value;
+}
+
+/** Kudos, comments, follows, and clubs. These are browser-only and never available to agent tokens. */
+async function social(
+  request: Request,
+  env: Env,
+  auth: Identity | null,
+  url: URL,
+): Promise<Response> {
+  const { method } = request;
+  if (
+    auth?.agent &&
+    /^\/api\/(feed|follows|clubs|activities\/[^/]+\/(kudos|comments))/.test(url.pathname)
+  )
+    throw new HttpError(403, 'Agent tokens cannot use social features.');
+  if (url.pathname === '/api/feed' && method === 'GET') {
+    const { user } = requireIdentity(auth, undefined, true);
+    if (url.searchParams.get('scope') !== 'following')
+      throw new HttpError(400, 'Unsupported feed scope.');
+    const feed = await activities(env, '', {
+      sql: 'SELECT followee_id FROM follows WHERE follower_id = ?',
+      binding: user.id,
+    });
+    return json({ activities: await withSocial(env.DB, feed, user.id) });
+  }
+  const kudosMatch = /^\/api\/activities\/([^/]+)\/kudos$/.exec(url.pathname);
+  if (kudosMatch && method === 'POST') {
+    const { user } = requireIdentity(auth, undefined, true);
+    const data = await body(request);
+    return json(
+      await setKudos(env.DB, user, decodedPathPart(kudosMatch[1]), toggle(data['kudos'], 'Kudos')),
+    );
+  }
+  const commentsMatch = /^\/api\/activities\/([^/]+)\/comments(?:\/([^/]+))?$/.exec(url.pathname);
+  if (commentsMatch) {
+    const activityId = decodedPathPart(commentsMatch[1]);
+    if (!commentsMatch[2] && method === 'GET')
+      return json({ comments: await listComments(env.DB, activityId, auth?.user.id) });
+    if (!commentsMatch[2] && method === 'POST') {
+      const { user } = requireIdentity(auth, undefined, true);
+      const data = await body(request);
+      return json({ comment: await addComment(env.DB, user, activityId, data['body']) }, 201);
+    }
+    if (commentsMatch[2] && method === 'DELETE') {
+      const { user } = requireIdentity(auth, undefined, true);
+      await deleteComment(env.DB, user, activityId, decodedPathPart(commentsMatch[2]));
+      return json({ ok: true });
+    }
+  }
+  if (url.pathname === '/api/follows' && method === 'POST') {
+    const { user } = requireIdentity(auth, undefined, true);
+    const data = await body(request);
+    return json(await setFollow(env.DB, user, data['userId'], toggle(data['follow'], 'Follow')));
+  }
+  if (url.pathname === '/api/clubs' && method === 'GET')
+    return json({ clubs: await listClubs(env.DB, auth?.user.id) });
+  if (url.pathname === '/api/clubs' && method === 'POST') {
+    const { user } = requireIdentity(auth, undefined, true);
+    return json({ club: await createClub(env.DB, user, await body(request)) }, 201);
+  }
+  const clubMatch = /^\/api\/clubs\/([^/]+)(\/membership)?$/.exec(url.pathname);
+  if (clubMatch) {
+    const slug = decodedPathPart(clubMatch[1]);
+    if (!clubMatch[2] && method === 'GET') {
+      const club = await findClub(env.DB, slug, auth?.user.id);
+      const [members, feed, upcoming] = await Promise.all([
+        clubMembers(env.DB, club.id),
+        activities(env, '', {
+          sql: 'SELECT actor_id FROM club_members WHERE club_id = ?',
+          binding: club.id,
+        }),
+        events(env, auth?.user.id, club.id),
+      ]);
+      return json({
+        club,
+        members,
+        activities: await withSocial(env.DB, feed, auth?.user.id),
+        events: upcoming,
+      });
+    }
+    if (clubMatch[2] && method === 'POST') {
+      const { user } = requireIdentity(auth, undefined, true);
+      const data = await body(request);
+      return json({ club: await setMembership(env.DB, user, slug, toggle(data['join'], 'Join')) });
+    }
+    if (!clubMatch[2] && method === 'DELETE') {
+      const { user } = requireIdentity(auth, undefined, true);
+      await deleteClub(env.DB, user, slug);
+      return json({ ok: true });
+    }
   }
   throw new HttpError(404, 'Endpoint not found.');
 }

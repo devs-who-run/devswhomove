@@ -1,11 +1,12 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { ActivitySocial, type Participation } from './activity-social';
 import { Icon } from './icon';
 import type { Activity } from './models';
 
 @Component({
-  imports: [DatePipe, DecimalPipe, Icon, RouterLink],
+  imports: [ActivitySocial, DatePipe, DecimalPipe, Icon, RouterLink],
   selector: 'app-activity-card',
   styleUrl: './activity-card.css',
   template: `
@@ -109,6 +110,17 @@ import type { Activity } from './models';
           </button>
         }
       </footer>
+      @if (
+        social() &&
+        activity().visibility === 'public' &&
+        !(activity().userId === viewerId() && profileHidden())
+      ) {
+        <app-activity-social
+          [activity]="activity()"
+          [viewerId]="viewerId()"
+          [participation]="participation()"
+        />
+      }
     </article>
   `,
 })
@@ -118,6 +130,9 @@ export class ActivityCard {
   readonly profileHidden = input(false);
   readonly canChangeVisibility = input(false);
   readonly saving = input(false);
+  /** Show kudos and comments. Off for preview content that is not stored. */
+  readonly social = input(false);
+  readonly participation = input<Participation>('anonymous');
   readonly visibilityChange = output<Activity>();
 
   initials(name: string): string {

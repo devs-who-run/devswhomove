@@ -4,6 +4,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivityCard } from './activity-card';
+import type { Participation } from './activity-social';
+import { errorMessage, request } from './api';
 import { Icon } from './icon';
 import { Theme } from './theme';
 import { preparePhoto } from './photo';
@@ -16,15 +18,18 @@ import {
   type AgentScope,
   type AgentToken,
   type Bootstrap,
+  type Club,
+  type ClubDetail,
   type EventAttendee,
   type Profile,
+  type ProfileSocial,
   type Sport,
   type SportEvent,
   type Visibility,
 } from './models';
 
-type Page = 'feed' | 'events' | 'profile' | 'agents';
-type Modal = 'activity' | 'event' | 'profile' | 'atproto-login' | null;
+type Page = 'feed' | 'events' | 'clubs' | 'profile' | 'agents';
+type Modal = 'activity' | 'event' | 'profile' | 'club' | 'atproto-login' | null;
 const localDate = (date: Date) =>
   new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 const formatMonth = (month: string) => {
@@ -58,6 +63,7 @@ export class App {
   readonly nav: { page: Page; label: string; icon: string }[] = [
     { page: 'feed', label: 'The community', icon: 'grid' },
     { page: 'events', label: 'Move together', icon: 'calendar' },
+    { page: 'clubs', label: 'Clubs', icon: 'people' },
     { page: 'profile', label: 'Your profile', icon: 'user' },
     { page: 'agents', label: 'Your agents', icon: 'terminal' },
   ];
@@ -73,7 +79,15 @@ export class App {
   readonly atprotoConfigured = signal(false);
   readonly preview = signal(false);
   readonly selectedSport = signal<Sport | 'All'>('All');
-  readonly feedMode = signal<'community' | 'mine'>('community');
+  readonly feedMode = signal<'community' | 'following' | 'mine'>('community');
+  readonly followingActivities = signal<Activity[]>([]);
+  readonly followingLoading = signal(false);
+  readonly clubs = signal<Club[]>([]);
+  readonly clubDetail = signal<ClubDetail | null>(null);
+  readonly clubLoading = signal(false);
+  readonly clubError = signal('');
+  readonly socialCounts = signal<ProfileSocial | null>(null);
+  readonly joinedClubs = computed(() => this.clubs().filter((club) => club.joined));
   readonly bulkVisibilityMode = signal(false);
   readonly selectedActivityIds = signal<string[]>([]);
   readonly modal = signal<Modal>(null);
@@ -98,11 +112,19 @@ export class App {
   preparePhoto = preparePhoto;
   private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('dialog');
   private routeRequest = 0;
+  private followingRequest = 0;
+  private editingClubId: string | null = null;
   private attendeeRequest = 0;
 
   readonly activities = computed(() => (this.preview() ? DEMO_ACTIVITIES : this.liveActivities()));
   readonly events = computed(() => (this.preview() ? DEMO_EVENTS : this.liveEvents()));
   readonly displayedProfile = computed(() => this.remoteProfile() || this.viewer());
+  /** Kudos, comments, follows, and clubs need a public profile. */
+  readonly participation = computed<Participation>(() => {
+    const viewer = this.viewer();
+    if (!viewer) return 'anonymous';
+    return viewer.visibility === 'public' ? 'ok' : 'private';
+  });
   /** Public activities from a private GitHub profile are not shared with anyone else. */
   readonly profileHidden = computed(() => {
     const viewer = this.viewer();
@@ -132,11 +154,10 @@ export class App {
     ),
   );
   readonly filteredActivities = computed(() =>
-    this.activities().filter(
+    (this.feedMode() === 'following' ? this.followingActivities() : this.activities()).filter(
       (activity) =>
         (this.selectedSport() === 'All' || activity.sport === this.selectedSport()) &&
-        (this.feedMode() === 'community' ||
-          activity.userId === (this.viewer()?.id || DEMO_PROFILE.id)),
+        (this.feedMode() !== 'mine' || activity.userId === (this.viewer()?.id || DEMO_PROFILE.id)),
     ),
   );
   readonly filteredEvents = computed(() =>
@@ -252,6 +273,7 @@ export class App {
 
   activityForm = this.emptyActivity();
   eventForm = this.emptyEvent();
+  clubForm = this.emptyClub();
   profileForm = {
     name: '',
     bio: '',
@@ -296,7 +318,12 @@ export class App {
       capacity: 12,
       conferenceName: '',
       conferenceUrl: '',
+      clubId: '',
     };
+  }
+
+  private emptyClub() {
+    return { name: '', description: '', sport: '' as Sport | '' };
   }
 
   conferenceLink(value?: string | null): string | null {
@@ -318,18 +345,8 @@ export class App {
     }
   }
 
-  private async api<T>(path: string, method = 'GET', data?: unknown): Promise<T> {
-    const response = await fetch(path, {
-      method,
-      credentials: 'same-origin',
-      ...(data === undefined
-        ? {}
-        : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
-    });
-    if (response.status === 204) return undefined as T;
-    const result = (await response.json()) as T & { error?: string };
-    if (!response.ok) throw new Error(result.error || 'The request failed. Please try again.');
-    return result;
+  private api<T>(path: string, method = 'GET', data?: unknown): Promise<T> {
+    return request<T>(path, method, data);
   }
 
   async load(): Promise<void> {
@@ -338,6 +355,7 @@ export class App {
       this.viewer.set(data.viewer);
       this.liveActivities.set(data.activities);
       this.liveEvents.set(data.events);
+      this.clubs.set(data.clubs ?? []);
       this.githubConfigured.set(data.githubConfigured);
       this.atprotoConfigured.set(data.atprotoConfigured ?? false);
       this.preview.set(!data.viewer && data.activities.length === 0 && data.events.length === 0);
@@ -366,7 +384,11 @@ export class App {
     if (this.page() !== 'agents') this.newToken.set('');
     this.selectedSport.set('All');
     this.remoteProfile.set(null);
+    this.socialCounts.set(null);
     this.remoteActivities.set([]);
+    this.clubDetail.set(null);
+    this.clubError.set('');
+    this.clubLoading.set(false);
     this.ownProfileActivities.set([]);
     this.profileMonth.set('All');
     this.profileSport.set('All');
@@ -380,11 +402,14 @@ export class App {
     ) {
       this.profileLoading.set(true);
       try {
-        const data = await this.api<{ profile: Profile; activities: Activity[] }>(
-          `/api/profiles/${encodeURIComponent(username)}`,
-        );
+        const data = await this.api<{
+          profile: Profile;
+          activities: Activity[];
+          social?: ProfileSocial;
+        }>(`/api/profiles/${encodeURIComponent(username)}`);
         if (request === this.routeRequest) {
           this.remoteProfile.set(data.profile);
+          this.socialCounts.set(data.social ?? null);
           this.remoteActivities.set(data.activities);
         }
       } catch (error) {
@@ -397,6 +422,94 @@ export class App {
       if (viewer) await this.loadOwnProfileActivities(request, viewer);
     }
     if (page === 'agents' && this.viewer()) await this.loadTokens();
+    if (page === 'clubs' && username) await this.loadClub(request, username);
+    if (this.page() === 'feed' && this.feedMode() === 'following')
+      await this.setFeedMode('following');
+  }
+
+  async setFeedMode(mode: 'community' | 'following' | 'mine'): Promise<void> {
+    if (mode === 'following' && !this.signedIn()) return;
+    this.feedMode.set(mode);
+    if (mode !== 'following') return;
+    const request = ++this.followingRequest;
+    this.followingLoading.set(true);
+    try {
+      const data = await this.api<{ activities: Activity[] }>('/api/feed?scope=following');
+      if (request === this.followingRequest) this.followingActivities.set(data.activities);
+    } catch (error) {
+      if (request === this.followingRequest) this.error.set(this.message(error));
+    } finally {
+      if (request === this.followingRequest) this.followingLoading.set(false);
+    }
+  }
+
+  async toggleFollow(profile: Profile): Promise<void> {
+    if (!this.signedIn()) return;
+    if (this.participation() !== 'ok') {
+      this.error.set('Make your profile public to follow people.');
+      return;
+    }
+    const following = !!this.socialCounts()?.viewerFollows;
+    await this.action(async () => {
+      const social = await this.api<ProfileSocial>('/api/follows', 'POST', {
+        userId: profile.id,
+        follow: !following,
+      });
+      if (this.remoteProfile()?.id === profile.id) this.socialCounts.set(social);
+      this.notice.set(
+        following ? `You unfollowed ${profile.name}.` : `You are following ${profile.name}.`,
+      );
+    });
+  }
+
+  private async loadClub(request: number, slug: string): Promise<void> {
+    this.clubLoading.set(true);
+    this.clubError.set('');
+    try {
+      const data = await this.api<ClubDetail>(`/api/clubs/${encodeURIComponent(slug)}`);
+      if (request === this.routeRequest) this.clubDetail.set(data);
+    } catch (error) {
+      if (request === this.routeRequest) this.clubError.set(this.message(error));
+    } finally {
+      if (request === this.routeRequest) this.clubLoading.set(false);
+    }
+  }
+
+  private async refreshClub(): Promise<void> {
+    const slug = this.clubDetail()?.club.slug;
+    if (slug) await this.loadClub(this.routeRequest, slug);
+  }
+
+  async toggleMembership(club: Club): Promise<void> {
+    if (!this.signedIn()) return;
+    if (!club.joined && this.participation() !== 'ok') {
+      this.error.set('Make your profile public to join clubs.');
+      return;
+    }
+    await this.action(async () => {
+      await this.api(`/api/clubs/${encodeURIComponent(club.slug)}/membership`, 'POST', {
+        join: !club.joined,
+      });
+      await this.load();
+      await this.refreshClub();
+      this.notice.set(club.joined ? `You left ${club.name}.` : `Welcome to ${club.name}!`);
+    });
+  }
+
+  async deleteClub(club: Club): Promise<void> {
+    if (!window.confirm(`Delete "${club.name}"? Its events stay public without the club label.`))
+      return;
+    await this.action(async () => {
+      await this.api(`/api/clubs/${encodeURIComponent(club.slug)}`, 'DELETE');
+      await this.load();
+      this.notice.set('Club deleted.');
+      this.navigate('clubs');
+    });
+  }
+
+  /** Clubs an event can be linked to: joined clubs plus the event's current club. */
+  eventClubOptions(): Club[] {
+    return this.clubs().filter((club) => club.joined || club.id === this.eventForm.clubId);
   }
 
   private async loadOwnProfileActivities(request: number, viewer: Profile): Promise<void> {
@@ -404,10 +517,13 @@ export class App {
     this.profileError.set('');
     try {
       const identifier = viewer.provider === 'atproto' ? viewer.id : viewer.username;
-      const data = await this.api<{ activities: Activity[] }>(
+      const data = await this.api<{ activities: Activity[]; social?: ProfileSocial }>(
         `/api/profiles/${encodeURIComponent(identifier)}`,
       );
-      if (request === this.routeRequest) this.ownProfileActivities.set(data.activities);
+      if (request === this.routeRequest) {
+        this.ownProfileActivities.set(data.activities);
+        this.socialCounts.set(data.social ?? null);
+      }
     } catch (error) {
       if (request === this.routeRequest) this.profileError.set(this.message(error));
     } finally {
@@ -469,6 +585,16 @@ export class App {
     if (modal === 'event') {
       this.eventForm = this.emptyEvent();
       this.editingEvent.set(null);
+      this.editingClubId = null;
+      const club = this.clubDetail()?.club;
+      if (this.page() === 'clubs' && club?.joined) this.eventForm.clubId = club.id;
+    }
+    if (modal === 'club') {
+      if (this.participation() !== 'ok') {
+        this.error.set('Make your profile public to create a club.');
+        return;
+      }
+      this.clubForm = this.emptyClub();
     }
     if (modal === 'profile') {
       const user = this.viewer()!;
@@ -556,7 +682,11 @@ export class App {
 
   async save(): Promise<void> {
     if (this.saving()) return;
-    if (this.viewer()?.provider === 'atproto' && !this.publicDisclosure()) {
+    if (
+      this.viewer()?.provider === 'atproto' &&
+      this.modal() !== 'club' &&
+      !this.publicDisclosure()
+    ) {
       this.error.set('Confirm that this will be publicly visible before saving.');
       return;
     }
@@ -592,11 +722,15 @@ export class App {
         if (conferenceUrl && !this.conferenceLink(conferenceUrl))
           throw new Error('Conference URL must be a safe HTTPS URL without credentials.');
         const editing = this.editingEvent();
+        const { clubId, ...event } = this.eventForm;
         await this.api(
           editing ? `/api/events/${encodeURIComponent(editing)}` : '/api/events',
           editing ? 'PATCH' : 'POST',
           {
-            ...this.eventForm,
+            ...event,
+            ...(!editing || (clubId || null) !== this.editingClubId
+              ? { clubId: clubId || null }
+              : {}),
             conferenceName: conferenceName || null,
             conferenceUrl: conferenceUrl || null,
             startsAt: new Date(this.eventForm.startsAt).toISOString(),
@@ -607,12 +741,20 @@ export class App {
             ? 'Event updated. Everyone going will see the latest details.'
             : 'Event created. You are on the list as host.',
         );
-        this.navigate('events');
+        if (this.page() !== 'clubs') this.navigate('events');
+      } else if (this.modal() === 'club') {
+        const { club } = await this.api<{ club: Club }>('/api/clubs', 'POST', {
+          ...this.clubForm,
+          sport: this.clubForm.sport || null,
+        });
+        this.notice.set(`${club.name} is ready. Invite your people.`);
+        void this.router.navigateByUrl(`/clubs/${encodeURIComponent(club.slug)}`);
       } else {
         await this.api('/api/me', 'PATCH', this.profileForm);
         this.notice.set('Profile updated. Your privacy, your call.');
       }
       await this.load();
+      await this.refreshClub();
       this.saving.set(false);
       this.closeModal();
     } catch (error) {
@@ -634,6 +776,7 @@ export class App {
           : 'You are in! The event is now in your upcoming sessions.',
       );
       await this.load();
+      await this.refreshClub();
     });
   }
 
@@ -677,7 +820,9 @@ export class App {
       capacity: event.capacity,
       conferenceName: event.conferenceName ?? '',
       conferenceUrl: event.conferenceUrl ?? '',
+      clubId: event.clubId ?? '',
     };
+    this.editingClubId = event.clubId ?? null;
   }
 
   async cancelEvent(event: SportEvent): Promise<void> {
@@ -817,6 +962,10 @@ export class App {
       this.newToken.set('');
       this.tokens.set([]);
       this.remoteProfile.set(null);
+      this.feedMode.set('community');
+      this.followingRequest++;
+      this.followingActivities.set([]);
+      this.followingLoading.set(false);
       await this.load();
       this.navigate('feed');
     });
@@ -850,6 +999,6 @@ export class App {
     return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   }
   private message(error: unknown): string {
-    return error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+    return errorMessage(error);
   }
 }

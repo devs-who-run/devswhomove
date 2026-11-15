@@ -38,6 +38,55 @@ export interface Activity {
   visibility: Visibility;
   source: 'web' | 'agent';
   photo?: string | null;
+  kudos?: number;
+  kudoed?: boolean;
+  comments?: number;
+}
+
+/** A public member of the community shown in social features. */
+export interface SocialActor {
+  id: string;
+  username: string;
+  name: string;
+  avatar: string;
+}
+
+export interface ActivityComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: SocialActor;
+  canDelete: boolean;
+}
+
+export interface ProfileSocial {
+  followers: number;
+  following: number;
+  viewerFollows: boolean;
+}
+
+export interface Club {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  sport: Sport | null;
+  /** Whether the viewer owns the club. Owner IDs are not exposed publicly. */
+  owned: boolean;
+  ownerName: string | null;
+  members: number;
+  joined: boolean;
+}
+
+export interface ClubMember extends SocialActor {
+  role: 'owner' | 'member';
+}
+
+export interface ClubDetail {
+  club: Club;
+  members: ClubMember[];
+  activities: Activity[];
+  events: SportEvent[];
 }
 
 export interface SportEvent {
@@ -55,6 +104,9 @@ export interface SportEvent {
   joined: boolean;
   conferenceName?: string | null;
   conferenceUrl?: string | null;
+  clubId?: string | null;
+  clubName?: string | null;
+  clubSlug?: string | null;
 }
 
 export interface EventAttendee {
@@ -76,4 +128,5 @@ export interface Bootstrap {
   events: SportEvent[];
   githubConfigured: boolean;
   atprotoConfigured?: boolean;
+  clubs?: Club[];
 }

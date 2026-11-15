@@ -1,0 +1,103 @@
+:host {
+  display: block;
+  border-top: 1px solid #eef0ea;
+  padding: 10px 0;
+}
+.social-bar {
+  display: flex;
+  gap: 8px;
+}
+.social-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: 600 12px var(--heading);
+  cursor: pointer;
+}
+.social-button:hover:not(:disabled) {
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+.social-button.active {
+  background: var(--lime);
+  border-color: #b8d66d;
+  color: var(--green);
+}
+.social-button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.social-error {
+  color: #a43c2f;
+  font-size: 12px;
+  margin: 8px 0 0;
+}
+.social-muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+.comments ul {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.comments li {
+  font-size: 13px;
+}
+.comments li p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.comment-author {
+  font-weight: 650;
+  margin-right: 6px;
+  color: var(--text);
+}
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.link-button.danger {
+  color: #a43c2f;
+}
+.comment-form {
+  display: flex;
+  gap: 8px;
+}
+.comment-form input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text);
+}
+.post-button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: var(--green);
+  color: #fff;
+  font: 650 13px var(--heading);
+  cursor: pointer;
+}
+.post-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

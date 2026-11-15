@@ -2711,3 +2711,50 @@ nav a {
 :host-context([data-theme='dark']) .terminal-result small {
   color: #e8f0df;
 }
+
+.club-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+.club-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+  gap: 28px;
+}
+.club-layout h2 {
+  font: 700 17px var(--heading);
+  margin: 0 0 6px;
+}
+.club-sidebar {
+  display: grid;
+  gap: 24px;
+  align-content: start;
+}
+.club-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+  display: grid;
+  gap: 12px;
+}
+.club-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 13px;
+}
+.club-list li > strong,
+.club-list li > .muted {
+  flex-basis: 100%;
+}
+.event-body h2 a {
+  color: inherit;
+}
+@media (max-width: 900px) {
+  .club-layout {
+    grid-template-columns: 1fr;
+  }
+}

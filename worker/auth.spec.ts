@@ -96,6 +96,8 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
           '0003_atproto.sql',
           '0004_atproto_handle_index.sql',
           '0005_event_conferences.sql',
+          '0006_social.sql',
+          '0007_photo_deletions.sql',
         ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
       )
     ).join(';');
