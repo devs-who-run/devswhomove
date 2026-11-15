@@ -115,7 +115,6 @@ html:root[data-theme='dark']
     .profile-activity small,
     .profile-activity p,
     .profile-activity-metric > span,
-    .beta-pill,
     .agent-principles > p,
     .agent-principles > div,
     .connect-card > p:not(.eyebrow),
@@ -164,11 +163,9 @@ html:root[data-theme='dark']
 html:root[data-theme='dark']
   :is(
     .outline,
-    .nav-tag,
     .sport-filters button,
     .sport-filters > span,
     .host-button,
-    .beta-pill,
     dialog,
     .empty-state,
     .activity-footer

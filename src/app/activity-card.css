@@ -1,3 +1,7 @@
+:host {
+  display: block;
+}
+
 .activity-card {
   border: 1px solid var(--border);
   background: #fff;
@@ -89,7 +93,7 @@
 .activity-photo {
   display: block;
   width: 100%;
-  max-height: 420px;
+  height: clamp(180px, 30vw, 320px);
   object-fit: cover;
   border-radius: 10px;
   margin-top: 14px;
