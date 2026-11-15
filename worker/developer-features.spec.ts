@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { workerModules } from './testing/bundle';
 import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
-import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 
@@ -13,18 +13,10 @@ describe('Developer insights API authorization', () => {
   const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
   beforeAll(async () => {
-    const bundle = await build({
-      entryPoints: ['worker/index.ts'],
-      bundle: true,
-      write: false,
-      format: 'esm',
-      platform: 'browser',
-      target: 'es2022',
-    });
+    const bundle = await workerModules();
     runtime = new Miniflare(
       convertV4MiniflareOptions({
-        modules: true,
-        script: bundle.outputFiles[0].text,
+        ...bundle,
         compatibilityDate: '2026-11-03',
         compatibilityFlags: ['nodejs_compat'],
         bindings: { APP_URL: origin },

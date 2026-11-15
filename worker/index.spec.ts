@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { workerModules } from './testing/bundle';
 import { convertV4MiniflareOptions, Miniflare, Response as WorkerResponse } from 'miniflare';
-import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
 import { createCipheriv, createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { ATPROTO_OAUTH_SCOPE } from './atproto';
@@ -150,21 +150,20 @@ describe('Worker with real D1 storage', () => {
     (await (await runtime.getR2Bucket('PHOTOS')).list()).objects.length;
 
   beforeAll(async () => {
-    const bundled = await build({
-      entryPoints: ['worker/index.ts'],
-      bundle: true,
-      write: false,
-      format: 'esm',
-      platform: 'browser',
-      target: 'es2022',
-    });
+    const bundled = await workerModules();
     runtime = new Miniflare(
       convertV4MiniflareOptions({
-        modules: true,
-        script: bundled.outputFiles[0].text,
+        ...bundled,
         compatibilityDate: '2026-11-03',
         d1Databases: ['DB'],
         r2Buckets: ['PHOTOS'],
+        serviceBindings: {
+          ASSETS: async () =>
+            new WorkerResponse(
+              '<!doctype html><html><head><title>Devs Who Move</title><meta name="description" content="Default" /></head><body><app-root></app-root></body></html>',
+              { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+            ),
+        },
         bindings: {
           APP_URL: origin,
           ATPROTO_OAUTH_PRIVATE_KEY: atprotoSigningKey,
@@ -540,6 +539,78 @@ describe('Worker with real D1 storage', () => {
     expect(feed.activities).toHaveLength(0);
     expect((await request('/api/profiles/alice')).status).toBe(404);
     expect((await request('/api/profiles/alice', 'GET', undefined, alice)).status).toBe(200);
+  });
+
+  it('shares public activities as PNG cards with OpenGraph pages and hides private ones', async () => {
+    const created = await request(
+      '/api/activities',
+      'POST',
+      {
+        ...activity,
+        title: 'Lunch <run> & "tempo"',
+        notes: 'Never put notes on a card.',
+        visibility: 'public',
+      },
+      charlie,
+    );
+    expect(created.status).toBe(201);
+    const { id } = await created.json<{ id: string }>();
+
+    const card = await request(
+      `/api/activities/${id}/card.png`,
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      {
+        Origin: '',
+      },
+    );
+    expect(card.status).toBe(200);
+    expect(card.headers.get('Content-Type')).toBe('image/png');
+    const png = new Uint8Array(await card.arrayBuffer());
+    expect([...png.slice(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const ihdr = new DataView(png.buffer, png.byteOffset + 16, 8);
+    expect([ihdr.getUint32(0), ihdr.getUint32(4)]).toEqual([1200, 630]);
+
+    const page = await request(`/activities/${id}`);
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain(
+      `<meta property="og:image" content="${origin}/api/activities/${id}/card.png?v=`,
+    );
+    expect(html).toContain('<meta name="twitter:card" content="summary_large_image" />');
+    expect(html).toContain(`<link rel="canonical" href="${origin}/activities/${id}" />`);
+    expect(html).toContain('Lunch &lt;run&gt; &amp; &quot;tempo&quot;');
+    expect(html).not.toContain('<run>');
+    expect(html).not.toContain('Never put notes');
+    expect(html).not.toContain('content="Default"');
+
+    const single = await (
+      await request(`/api/activities/${id}`)
+    ).json<{ activity: { title: string } }>();
+    expect(single.activity.title).toBe('Lunch <run> & "tempo"');
+
+    expect(
+      (await request(`/api/activities/${id}`, 'PATCH', { visibility: 'private' }, charlie)).status,
+    ).toBe(200);
+    expect((await request(`/api/activities/${id}/card.png`)).status).toBe(404);
+    expect((await request(`/api/activities/${id}`)).status).toBe(404);
+    expect((await request(`/api/activities/${id}`, 'GET', undefined, charlie)).status).toBe(200);
+    const privatePage = await (await request(`/activities/${id}`)).text();
+    expect(privatePage).not.toContain('og:image');
+    expect(privatePage).toContain('<title>Devs Who Move</title>');
+
+    // Public activities on a private profile are not shareable.
+    const hidden = await request(
+      '/api/activities',
+      'POST',
+      { ...activity, visibility: 'public' },
+      bob,
+    );
+    const hiddenId = (await hidden.json<{ id: string }>()).id;
+    expect((await request(`/api/activities/${hiddenId}/card.png`)).status).toBe(404);
+    expect(await (await request(`/activities/${hiddenId}`)).text()).not.toContain('og:image');
   });
 
   it('enforces activity ownership and validates metrics', async () => {

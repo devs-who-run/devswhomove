@@ -13,5 +13,6 @@ export const routes: Routes = [
   { path: 'profile', component: RoutePage },
   { path: 'profile/:username', component: RoutePage },
   { path: 'agents', component: RoutePage },
+  { path: 'activities/:id', component: RoutePage },
   { path: '**', redirectTo: 'feed' },
 ];

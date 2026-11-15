@@ -2,6 +2,7 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, input, linkedSignal, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { ActivityShare } from './activity-share';
 import { errorMessage, request } from './api';
 import { Icon } from './icon';
 import type { Activity, ActivityComment } from './models';
@@ -10,7 +11,7 @@ import type { Activity, ActivityComment } from './models';
 export type Participation = 'anonymous' | 'private' | 'ok';
 
 @Component({
-  imports: [DatePipe, FormsModule, Icon, RouterLink],
+  imports: [ActivityShare, DatePipe, FormsModule, Icon, RouterLink],
   selector: 'app-activity-social',
   styleUrl: './activity-social.css',
   template: `
@@ -35,7 +36,18 @@ export type Participation = 'anonymous' | 'private' | 'ok';
         <app-icon name="people" />{{ commentCount() }}
         {{ commentCount() === 1 ? 'comment' : 'comments' }}
       </button>
+      <button
+        type="button"
+        class="social-button"
+        [attr.aria-expanded]="sharing()"
+        (click)="sharing.set(!sharing())"
+      >
+        <app-icon name="share" />Share
+      </button>
     </div>
+    @if (sharing()) {
+      <app-activity-share [activity]="activity()" />
+    }
     @if (error()) {
       <p class="social-error" role="alert">{{ error() }}</p>
     }
@@ -110,6 +122,7 @@ export class ActivitySocial {
   readonly commentCount = linkedSignal(() => this.activity().comments ?? 0);
   readonly own = computed(() => this.activity().userId === this.viewerId());
   readonly open = signal(false);
+  readonly sharing = signal(false);
   readonly loading = signal(false);
   readonly busy = signal(false);
   readonly error = signal('');

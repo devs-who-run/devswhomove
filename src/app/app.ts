@@ -28,7 +28,7 @@ import {
   type Visibility,
 } from './models';
 
-type Page = 'feed' | 'events' | 'clubs' | 'profile' | 'agents';
+type Page = 'feed' | 'events' | 'clubs' | 'profile' | 'agents' | 'activity';
 type Modal = 'activity' | 'event' | 'profile' | 'club' | 'atproto-login' | null;
 const localDate = (date: Date) =>
   new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
@@ -101,6 +101,9 @@ export class App {
   readonly profileSport = signal<Sport | 'All'>('All');
   readonly profileLoading = signal(false);
   readonly profileError = signal('');
+  readonly sharedActivity = signal<Activity | null>(null);
+  readonly sharedActivityLoading = signal(false);
+  readonly sharedActivityError = signal('');
   readonly photo = signal<Blob | null>(null);
   readonly photoPreview = signal('');
   readonly photoBusy = signal(false);
@@ -378,7 +381,13 @@ export class App {
     const [page, username] = (
       this.router.parseUrl(this.router.url).root.children['primary']?.segments ?? []
     ).map((segment) => segment.path);
-    this.page.set(this.nav.some((item) => item.page === page) ? (page as Page) : 'feed');
+    this.page.set(
+      page === 'activities' && username
+        ? 'activity'
+        : this.nav.some((item) => item.page === page)
+          ? (page as Page)
+          : 'feed',
+    );
     this.bulkVisibilityMode.set(false);
     this.selectedActivityIds.set([]);
     if (this.page() !== 'agents') this.newToken.set('');
@@ -394,6 +403,10 @@ export class App {
     this.profileSport.set('All');
     this.profileError.set('');
     this.profileLoading.set(false);
+    this.sharedActivity.set(null);
+    this.sharedActivityError.set('');
+    this.sharedActivityLoading.set(false);
+    if (this.page() === 'activity') await this.loadSharedActivity(request, username);
     if (
       page === 'profile' &&
       username &&
@@ -460,6 +473,20 @@ export class App {
         following ? `You unfollowed ${profile.name}.` : `You are following ${profile.name}.`,
       );
     });
+  }
+
+  private async loadSharedActivity(request: number, id: string): Promise<void> {
+    this.sharedActivityLoading.set(true);
+    try {
+      const data = await this.api<{ activity: Activity }>(
+        `/api/activities/${encodeURIComponent(id)}`,
+      );
+      if (request === this.routeRequest) this.sharedActivity.set(data.activity);
+    } catch (error) {
+      if (request === this.routeRequest) this.sharedActivityError.set(this.message(error));
+    } finally {
+      if (request === this.routeRequest) this.sharedActivityLoading.set(false);
+    }
   }
 
   private async loadClub(request: number, slug: string): Promise<void> {

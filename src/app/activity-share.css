@@ -1,0 +1,65 @@
+:host {
+  display: block;
+  margin-top: 12px;
+}
+.share-panel {
+  display: grid;
+  gap: 12px;
+}
+.share-preview {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1200 / 630;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--green);
+}
+.share-targets,
+.share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.share-target,
+.share-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: 600 12px var(--heading);
+  text-decoration: none;
+  cursor: pointer;
+}
+.share-target:hover,
+.share-action:hover {
+  border-color: var(--border-hover);
+}
+.mastodon-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.mastodon-form label {
+  font: 600 12px var(--heading);
+  color: var(--muted);
+}
+.mastodon-form input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  background: var(--surface);
+  color: var(--text);
+}
+.share-error {
+  color: #a43c2f;
+  font-size: 12px;
+  margin: 0;
+}

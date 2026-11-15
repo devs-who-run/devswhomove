@@ -24,6 +24,8 @@ import {
 import type { Agent } from '@atproto/api';
 import { MAX_PHOTO_BYTES, sanitizeImage } from './images';
 import { handleMcp } from './mcp';
+import { cardSvg, cardVersion, shareMeta } from './share-card';
+import { renderPng } from './share-render';
 import { getWeeklyRecap, getGithubInsights } from './insights';
 import { date, HttpError, number, sport, text, visibility } from './validation';
 import {
@@ -73,6 +75,17 @@ const ACTIVITY_SELECT = `SELECT a.id, a.user_id AS userId, u.username, u.name, u
   CASE WHEN a.photo_key IS NULL THEN NULL
     ELSE '/api/activities/' || a.id || '/photo?v=' || substr(a.photo_key, -12) END AS photo
   FROM activities a JOIN users u ON u.id = a.user_id`;
+const ATPROTO_ACTIVITY_SELECT = `SELECT a.uri AS id, a.did AS userId, u.handle AS username,
+  u.name, u.avatar,
+  json_extract(a.record_json, '$.title') AS title,
+  json_extract(a.record_json, '$.sport') AS sport,
+  json_extract(a.record_json, '$.occurredAt') AS occurredAt,
+  json_extract(a.record_json, '$.duration') AS duration,
+  json_extract(a.record_json, '$.distance') AS distance,
+  json_extract(a.record_json, '$.notes') AS notes,
+  'public' AS visibility, json_extract(a.record_json, '$.source') AS source,
+  NULL AS photo
+  FROM atproto_activities a JOIN atproto_accounts u ON u.did = a.did`;
 
 const json = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -370,16 +383,7 @@ async function activities(env: Env, userId?: string, audience?: Audience): Promi
   const [githubResult, atproto] = await Promise.all([
     (audience ? github.bind('', audience.binding) : github.bind(userId || '')).all<Activity>(),
     env.DB.prepare(
-      `SELECT a.uri AS id, a.did AS userId, u.handle AS username, u.name, u.avatar,
-        json_extract(a.record_json, '$.title') AS title,
-        json_extract(a.record_json, '$.sport') AS sport,
-        json_extract(a.record_json, '$.occurredAt') AS occurredAt,
-        json_extract(a.record_json, '$.duration') AS duration,
-        json_extract(a.record_json, '$.distance') AS distance,
-        json_extract(a.record_json, '$.notes') AS notes,
-        'public' AS visibility, json_extract(a.record_json, '$.source') AS source,
-        NULL AS photo
-      FROM atproto_activities a JOIN atproto_accounts u ON u.did = a.did
+      `${ATPROTO_ACTIVITY_SELECT}
       ${atprotoFilter}
       ORDER BY json_extract(a.record_json, '$.occurredAt') DESC LIMIT 100`,
     )
@@ -398,21 +402,92 @@ async function atprotoActivitiesByDid(
   recentOnly = false,
 ): Promise<Activity[]> {
   const result = await env.DB.prepare(
-    `SELECT a.uri AS id, a.did AS userId, u.handle AS username, u.name, u.avatar,
-      json_extract(a.record_json, '$.title') AS title,
-      json_extract(a.record_json, '$.sport') AS sport,
-      json_extract(a.record_json, '$.occurredAt') AS occurredAt,
-      json_extract(a.record_json, '$.duration') AS duration,
-      json_extract(a.record_json, '$.distance') AS distance,
-      json_extract(a.record_json, '$.notes') AS notes,
-      'public' AS visibility, json_extract(a.record_json, '$.source') AS source,
-      NULL AS photo
-    FROM atproto_activities a JOIN atproto_accounts u ON u.did = a.did
+    `${ATPROTO_ACTIVITY_SELECT}
     WHERE a.did = ? ORDER BY json_extract(a.record_json, '$.occurredAt') DESC${recentOnly ? ' LIMIT 100' : ''}`,
   )
     .bind(did)
     .all<Activity>();
   return result.results;
+}
+
+/** Return one activity the viewer may see: their own, or public on a public profile. */
+async function visibleActivity(env: Env, id: string, viewerId: string): Promise<Activity | null> {
+  if (id.startsWith('at://'))
+    return env.DB.prepare(`${ATPROTO_ACTIVITY_SELECT} WHERE a.uri = ?`).bind(id).first<Activity>();
+  return env.DB.prepare(
+    `${ACTIVITY_SELECT} WHERE a.id = ?
+    AND (a.user_id = ? OR (a.visibility = 'public' AND u.visibility = 'public'))`,
+  )
+    .bind(id, viewerId)
+    .first<Activity>();
+}
+
+/** Return an activity only if anyone may see it. Share cards and link previews never use the viewer. */
+async function publicActivity(env: Env, id: string): Promise<Activity | null> {
+  const activity = await visibleActivity(env, id, '');
+  return activity?.visibility === 'public' ? activity : null;
+}
+
+/** Serve the SPA for a shared activity, with OpenGraph tags when the activity is public. */
+async function activityPage(request: Request, env: Env, rawId: string): Promise<Response> {
+  const page = await env.ASSETS.fetch(request);
+  let id: string;
+  try {
+    id = decodeURIComponent(rawId);
+  } catch {
+    return page;
+  }
+  if (!page.ok || !page.headers.get('Content-Type')?.includes('text/html')) return page;
+  const activity = await publicActivity(env, id);
+  const headers = new Headers(page.headers);
+  headers.set('Cache-Control', 'no-cache');
+  const response = new Response(page.body, { status: page.status, headers });
+  if (!activity) return response;
+  const origin = new URL(env.APP_URL).origin;
+  const meta = shareMeta(activity, origin, await cardVersion(activity));
+  return new HTMLRewriter()
+    .on('title', {
+      element(element) {
+        element.setInnerContent(meta.title);
+      },
+    })
+    .on('meta[name="description"]', {
+      element(element) {
+        element.setAttribute('content', meta.description);
+      },
+    })
+    .on('head', {
+      element(element) {
+        element.append(meta.tags, { html: true });
+      },
+    })
+    .transform(response);
+}
+
+/** Render a public activity's 1200x630 PNG share card, cached by content version. */
+async function activityCard(env: Env, id: string): Promise<Response> {
+  const activity = await publicActivity(env, id);
+  if (!activity) throw new HttpError(404, 'Activity not found.');
+  const version = await cardVersion(activity);
+  const cacheKey = new Request(
+    `${new URL(env.APP_URL).origin}/__cards/${encodeURIComponent(id)}/${version}.png`,
+  );
+  const cache = typeof caches === 'undefined' ? undefined : caches.default;
+  const cached = await cache?.match(cacheKey);
+  if (cached) return cached;
+  const png = await renderPng(cardSvg(activity, new URL(env.APP_URL).host));
+  const response = new Response(png, {
+    headers: {
+      'Content-Type': 'image/png',
+      'Content-Length': String(png.byteLength),
+      'Cache-Control': 'public, max-age=600',
+      'Content-Disposition': 'inline; filename="devs-who-move-activity.png"',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
+  await cache?.put(cacheKey, response.clone());
+  return response;
 }
 
 /** Return activities visible on a GitHub profile or all public activities for a DID. */
@@ -1168,6 +1243,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
       () => identity(request, env),
       (apiRequest) => handle(apiRequest, env),
     );
+  const sharedActivity = /^\/activities\/([^/]+)\/?$/.exec(url.pathname);
+  if (sharedActivity && (method === 'GET' || method === 'HEAD'))
+    return activityPage(request, env, sharedActivity[1]);
   if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
 
   if (!['GET', 'HEAD'].includes(method) && !request.headers.has('Authorization')) {
@@ -1327,6 +1405,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
     return json({ results });
   }
+  const cardMatch = /^\/api\/activities\/([^/]+)\/card\.png$/.exec(url.pathname);
+  if (cardMatch && (method === 'GET' || method === 'HEAD'))
+    return activityCard(env, decodedPathPart(cardMatch[1]));
   const photoMatch = /^\/api\/activities\/([^/]+)\/photo$/.exec(url.pathname);
   if (photoMatch && method === 'GET') {
     if (auth) requireIdentity(auth, 'activities:read');
@@ -1402,6 +1483,17 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return json({ ok: true, updated: ids.length });
   }
   const activityMatch = /^\/api\/activities\/([^/]+)$/.exec(url.pathname);
+  if (activityMatch && method === 'GET') {
+    if (auth) requireIdentity(auth, 'activities:read');
+    const activity = await visibleActivity(
+      env,
+      decodedPathPart(activityMatch[1]),
+      auth?.user.id || '',
+    );
+    if (!activity) throw new HttpError(404, 'Activity is private or does not exist.');
+    const [withCounts] = await withSocial(env.DB, [activity], auth?.user.id);
+    return json({ activity: withCounts });
+  }
   if (activityMatch && (method === 'PATCH' || method === 'DELETE')) {
     const identity = requireIdentity(auth, undefined, true);
     const activityId = decodedPathPart(activityMatch[1]);

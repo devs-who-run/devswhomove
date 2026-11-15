@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { workerModules } from './testing/bundle';
 import { convertV4MiniflareOptions, Miniflare, Response } from 'miniflare';
-import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import {
@@ -25,18 +25,10 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
   const atprotoSessionKey = Buffer.alloc(32, 7).toString('base64');
 
   beforeAll(async () => {
-    const bundled = await build({
-      entryPoints: ['worker/index.ts'],
-      bundle: true,
-      write: false,
-      format: 'esm',
-      platform: 'browser',
-      target: 'es2022',
-    });
+    const bundled = await workerModules();
     runtime = new Miniflare(
       convertV4MiniflareOptions({
-        modules: true,
-        script: bundled.outputFiles[0].text,
+        ...bundled,
         compatibilityDate: '2026-11-03',
         d1Databases: ['DB'],
         r2Buckets: ['PHOTOS'],
