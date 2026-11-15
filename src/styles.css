@@ -212,7 +212,13 @@ html:root[data-theme='dark'] :is(.heatmap .moved, .heatmap-legend i.moved) {
   background: #82a65f;
 }
 html:root[data-theme='dark'] :is(.heatmap .more, .heatmap-legend i.more) {
+  background: #a4c67f;
+}
+html:root[data-theme='dark'] :is(.heatmap .many, .heatmap-legend i.many) {
   background: #c4de9b;
+}
+html:root[data-theme='dark'] :is(.heatmap .most, .heatmap-legend i.most) {
+  background: #e0f2bd;
 }
 html:root[data-theme='dark'] .activity-glyph {
   color: #608250;

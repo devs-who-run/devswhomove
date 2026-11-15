@@ -55,10 +55,10 @@ The PDS is canonical for AT Protocol profiles, activities, and hosted events. Cl
 - Light, dark, and system themes, with a saved browser preference and live OS-theme updates in system mode.
 - Activity logging, distance/time/pace, privacy changes, deletion and agent attribution.
 - One optional photo per activity, stored in Cloudflare R2. The browser resizes photos to at most 2048px and re-encodes them as JPEG. The Worker also strips EXIF/GPS, XMP and text metadata from JPEG, PNG and WebP uploads. Photos are only served to people who can see the activity.
-- Profiles with sports, editable bio, visibility controls, summaries and a 13-week activity calendar.
+- Profiles with sports, editable bio, visibility controls, summaries and a GitHub-style daily contribution calendar, defaulting to the last 12 months with a calendar-year filter.
 - Clean Angular routes: `/feed`, `/events`, `/profile`, and `/agents`. `/profile` shows your account or a sign-in prompt, never a sample identity.
 - Public profiles have a **Copy profile link** button. GitHub links use `/profile/GITHUB_USERNAME` and AT Protocol links use the account DID. Private profiles return 404 to other users. Cloudflare's SPA fallback supports direct links and refreshes.
-- Profile statistics include all visible indexed activities. Month and activity filters apply to the activity list and calendar; the community feed remains limited to recent activities.
+- Profile statistics include all visible indexed activities. The activity filter applies to both the list and calendar; the month filter applies only to the list, independently of the calendar's year filter. Rest days remain visible in the calendar, with daily summaries and session-intensity colors. The community feed remains limited to recent activities.
 - Public events with local-time display, capacity, host RSVP, joining/leaving, host editing and host cancellation. Hosts cannot lower capacity below the number of people already going. Capacity is enforced in one database statement.
 - Optional conference names and HTTPS links on events, including conference runs. These details are public, and AT Protocol events publish them to the host's PDS.
 - Private developer insights on your own profile: a last-completed-week training recap and, for GitHub accounts, a public commit/push comparison with kilometres. Both use Monday-to-Monday UTC windows, not a rolling seven days.

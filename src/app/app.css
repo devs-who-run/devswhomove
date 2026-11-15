@@ -1135,22 +1135,66 @@ h1 span {
 .profile-filters select {
   margin: 6px 0 0;
 }
-.heatmap-month h3 {
-  margin: 20px 0 0;
-  font-size: 14px;
+.heatmap-filters {
+  margin: 12px 0;
+}
+.heatmap-scroll {
+  overflow-x: auto;
+  padding: 10px 0;
+}
+.heatmap-calendar {
+  display: grid;
+  grid-template-columns: 32px max-content;
+  grid-template-rows: 20px auto;
+  gap: 5px;
+  width: max-content;
+  font-size: 12px;
+  color: var(--muted);
+}
+.heatmap-months {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(var(--weeks), 12px);
+  gap: 3px;
+}
+.heatmap-months span {
+  grid-row: 1;
+}
+.heatmap-weekdays {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  gap: 3px;
+  line-height: 12px;
+}
+.heatmap-weekdays span:nth-child(1) {
+  grid-row: 2;
+}
+.heatmap-weekdays span:nth-child(2) {
+  grid-row: 4;
+}
+.heatmap-weekdays span:nth-child(3) {
+  grid-row: 6;
 }
 .heatmap {
   display: grid;
-  grid-template-rows: repeat(7, 1fr);
+  grid-template-rows: repeat(7, 12px);
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 5px;
-  margin-top: 10px;
+  grid-auto-columns: 12px;
+  gap: 3px;
 }
 .heatmap > span {
-  height: 22px;
+  width: 12px;
+  height: 12px;
   background: #f0f3ea;
-  border-radius: 3px;
+  border-radius: 2px;
+}
+.heatmap > .heatmap-padding,
+.heatmap > .future {
+  visibility: hidden;
+}
+.heatmap > span:not(.heatmap-padding, .future):hover {
+  outline: 1px solid var(--text);
+  outline-offset: 1px;
 }
 .heatmap .moved,
 .heatmap-legend i.moved {
@@ -1158,7 +1202,15 @@ h1 span {
 }
 .heatmap .more,
 .heatmap-legend i.more {
+  background: #7aa35b;
+}
+.heatmap .many,
+.heatmap-legend i.many {
   background: #527d3d;
+}
+.heatmap .most,
+.heatmap-legend i.most {
+  background: #2f5425;
 }
 .heatmap-legend {
   display: flex;
@@ -2384,15 +2436,10 @@ fieldset .sport-filters {
   .consistency-card .small-text {
     font-size: 12px;
   }
-  .heatmap {
-    gap: 3px;
-  }
-  .heatmap > span {
-    height: 16px;
-    border-radius: 2px;
-  }
   .heatmap-legend {
     font-size: 12px;
+    flex-wrap: wrap;
+    gap: 10px;
   }
   .heatmap-legend i {
     width: 7px;
