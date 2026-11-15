@@ -894,6 +894,7 @@
                 <span>WAYS TO MOVE</span><strong>{{ profileStats().sports }}</strong>
               </div>
             </div>
+            <app-profile-badges [activities]="profileActivities()" />
             @if (!remoteProfile() && !preview()) {
               @if (viewer(); as ownProfile) {
                 <app-developer-insights [profile]="ownProfile" />

@@ -11,6 +11,7 @@ import { Theme } from './theme';
 import { preparePhoto } from './photo';
 import { DEMO_ACTIVITIES, DEMO_EVENTS, DEMO_PROFILE } from './demo';
 import { SportFilter } from './sport-filter';
+import { ProfileBadges } from './badges';
 import { DeveloperInsights } from './developer-insights';
 import {
   SPORTS,
@@ -51,6 +52,7 @@ const formatMonth = (month: string) => {
     RouterOutlet,
     SportFilter,
     DeveloperInsights,
+    ProfileBadges,
   ],
   selector: 'app-root',
   styleUrl: './app.css',
