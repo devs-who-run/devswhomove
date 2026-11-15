@@ -60,6 +60,8 @@ The PDS is canonical for AT Protocol profiles, activities, and hosted events. Cl
 - Public profiles have a **Copy profile link** button. GitHub links use `/profile/GITHUB_USERNAME` and AT Protocol links use the account DID. Private profiles return 404 to other users. Cloudflare's SPA fallback supports direct links and refreshes.
 - Profile statistics include all visible indexed activities. Month and activity filters apply to the activity list and calendar; the community feed remains limited to recent activities.
 - Public events with local-time display, capacity, host RSVP, joining/leaving, host editing and host cancellation. Hosts cannot lower capacity below the number of people already going. Capacity is enforced in one database statement.
+- Optional conference names and HTTPS links on events, including conference runs. These details are public, and AT Protocol events publish them to the host's PDS.
+- Private developer insights on your own profile: a last-completed-week training recap and, for GitHub accounts, a public commit/push comparison with kilometres. Both use Monday-to-Monday UTC windows, not a rolling seven days.
 - GitHub OAuth sign-in, D1-backed sessions and origin checks for cookie-authenticated mutations.
 - AT Protocol OAuth sign-in with PDS-backed public profiles, activities and hosted events; private RSVP identities and agent tokens remain in Cloudflare.
 - Scoped, hashed, expiring and revocable agent bearer tokens, with idempotent private uploads.
@@ -139,6 +141,31 @@ reject the request before any activities are saved.
 | `PUT /api/activities/:id/photo`    | `activities:write` — own sessions (GitHub only) |
 | `DELETE /api/activities/:id/photo` | `activities:write` — own sessions (GitHub only) |
 | `GET /api/events`                  | `events:read` — upcoming public events          |
+| `GET /api/insights/weekly`         | `activities:read` — own weekly aggregate totals |
+| `GET /api/insights/github`         | GitHub browser session — public GitHub comparison |
+
+## Developer insights
+
+The weekly recap compares the last completed UTC week with the preceding week.
+It includes session counts, minutes, kilometres, active days and per-sport totals,
+including your private activities. It is not limited to the recent community
+feed. AT Protocol totals reflect the validated records indexed in Cloudflare,
+and retain the PDS synchronization limits described above.
+
+The GitHub card uses your signed-in username to read public GitHub push events
+and search for commits authored during the week. Commit search covers only
+default branches of public repositories and may miss unindexed results; pushes
+are a separate measure with a limited event history. Neither is a complete
+count of GitHub contributions. The app does not retain OAuth tokens, request
+additional permissions, or include private repositories. GitHub's event and
+search APIs have separate rate limits; failures are shown in the card.
+
+The in-app recap is a factual summary, not AI-generated coaching. To get an
+AI-written recap, explicitly ask your connected MCP agent to call
+`get_weekly_recap` with an `activities:read` token and summarize the returned
+totals, dates and coverage limits. That supplies aggregate training data to the
+agent you chose; no model provider or API key is configured in this app. The
+tool does not return activity notes, titles or locations.
 
 ## MCP server
 
@@ -160,7 +187,7 @@ and an existing scoped agent token:
 ```
 
 The server implements `server/discover`, `tools/list` and `tools/call`. It
-exposes `list_activities` (`activities:read`), `create_activity` / `create_activities`
+exposes `list_activities` / `get_weekly_recap` (`activities:read`), `create_activity` / `create_activities`
 (`activities:write`) and `list_upcoming_events` (`events:read`) according to
 the token's scopes. `create_activities` accepts the same `activities` array as
 the bulk API and returns the same per-item results. Agent-created activities are public; activity

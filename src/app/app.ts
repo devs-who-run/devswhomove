@@ -9,6 +9,7 @@ import { Theme } from './theme';
 import { preparePhoto } from './photo';
 import { DEMO_ACTIVITIES, DEMO_EVENTS, DEMO_PROFILE } from './demo';
 import { SportFilter } from './sport-filter';
+import { DeveloperInsights } from './developer-insights';
 import {
   SPORTS,
   type Activity,
@@ -44,6 +45,7 @@ const formatMonth = (month: string) => {
     RouterLink,
     RouterOutlet,
     SportFilter,
+    DeveloperInsights,
   ],
   selector: 'app-root',
   styleUrl: './app.css',
@@ -292,7 +294,28 @@ export class App {
       description: '',
       level: 'All levels welcome',
       capacity: 12,
+      conferenceName: '',
+      conferenceUrl: '',
     };
+  }
+
+  conferenceLink(value?: string | null): string | null {
+    if (
+      !value ||
+      value.length > 2048 ||
+      !/^https:\/\/[^/?#]+/i.test(value) ||
+      /^https:\/\/[^/?#]*@/i.test(value) ||
+      /[\s\\\u0000-\u001f\u007f]/.test(value)
+    )
+      return null;
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && url.hostname && !url.username && !url.password
+        ? value
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   private async api<T>(path: string, method = 'GET', data?: unknown): Promise<T> {
@@ -560,11 +583,24 @@ export class App {
             : 'Activity logged. Every little move counts.',
         );
       } else if (this.modal() === 'event') {
+        const conferenceName = this.eventForm.conferenceName.trim();
+        const conferenceUrl = this.eventForm.conferenceUrl.trim();
+        if (conferenceName.length > 100)
+          throw new Error('Conference name must be at most 100 characters.');
+        if (conferenceUrl && !conferenceName)
+          throw new Error('Add a conference name for the conference URL.');
+        if (conferenceUrl && !this.conferenceLink(conferenceUrl))
+          throw new Error('Conference URL must be a safe HTTPS URL without credentials.');
         const editing = this.editingEvent();
         await this.api(
           editing ? `/api/events/${encodeURIComponent(editing)}` : '/api/events',
           editing ? 'PATCH' : 'POST',
-          { ...this.eventForm, startsAt: new Date(this.eventForm.startsAt).toISOString() },
+          {
+            ...this.eventForm,
+            conferenceName: conferenceName || null,
+            conferenceUrl: conferenceUrl || null,
+            startsAt: new Date(this.eventForm.startsAt).toISOString(),
+          },
         );
         this.notice.set(
           editing
@@ -639,6 +675,8 @@ export class App {
       description: event.description,
       level: event.level,
       capacity: event.capacity,
+      conferenceName: event.conferenceName ?? '',
+      conferenceUrl: event.conferenceUrl ?? '',
     };
   }
 

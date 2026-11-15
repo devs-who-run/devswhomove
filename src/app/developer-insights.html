@@ -1,0 +1,133 @@
+<section class="insights" aria-label="Developer insights">
+  <article class="insight-card weekly-card" [attr.aria-busy]="weekly().loading">
+    <header>
+      <span class="eyebrow">Your last completed week</span>
+      <h2>Weekly recap</h2>
+      <p>
+        Monday–Sunday, UTC. A factual summary of your logged activities, not AI-generated advice.
+      </p>
+    </header>
+    @if (weekly().loading) {
+      <p role="status">Loading your weekly recap…</p>
+    } @else if (weekly().error) {
+      <p role="alert">{{ weekly().error }}</p>
+      <button type="button" (click)="retryWeekly()">Retry weekly recap</button>
+    } @else if (weekly().data; as recap) {
+      <p class="period">{{ recap.period.start }} – {{ recap.period.end }} (UTC)</p>
+      <p class="summary">{{ recap.summary }}</p>
+      <dl class="metrics">
+        <div>
+          <dt>Sessions</dt>
+          <dd>{{ recap.current.sessions | number }}</dd>
+        </div>
+        <div>
+          <dt>Moving time</dt>
+          <dd>{{ recap.current.minutes | number: '1.0-2' }} <small>min</small></dd>
+        </div>
+        <div>
+          <dt>Distance</dt>
+          <dd>{{ recap.current.distanceKm | number: '1.0-2' }} <small>km</small></dd>
+        </div>
+        <div>
+          <dt>Active days</dt>
+          <dd>{{ recap.current.activeDays | number }}</dd>
+        </div>
+      </dl>
+      <h3>Compared with the previous week</h3>
+      <p class="period">{{ recap.previousPeriod.start }} – {{ recap.previousPeriod.end }} (UTC)</p>
+      <ul class="deltas">
+        <li>{{ delta(recap.current.sessions, recap.previous.sessions, 'session') }}</li>
+        <li>{{ delta(recap.current.minutes, recap.previous.minutes, 'minute') }}</li>
+        <li>{{ delta(recap.current.distanceKm, recap.previous.distanceKm, 'km', 'km') }}</li>
+        <li>{{ delta(recap.current.activeDays, recap.previous.activeDays, 'active day') }}</li>
+      </ul>
+      @if (recap.current.bySport.length) {
+        <h3>By sport</h3>
+        <ul class="sport-totals">
+          @for (sport of recap.current.bySport; track sport.sport) {
+            <li>
+              <strong>{{ sport.sport }}</strong>
+              <span
+                >{{ sport.sessions | number }} {{ sport.sessions === 1 ? 'session' : 'sessions' }} ·
+                {{ sport.minutes | number: '1.0-2' }} min ·
+                {{ sport.distanceKm | number: '1.0-2' }} km</span
+              >
+            </li>
+          }
+        </ul>
+      }
+      <p class="coverage">{{ recap.coverage }}</p>
+    }
+    <footer class="agent-note">
+      <h3>Let your connected agent tell the story</h3>
+      <p>
+        In your own MCP client, ask: “Use get_weekly_recap to narrate my last completed UTC week and
+        compare it with the previous week. Stick to the recorded totals.”
+      </p>
+      <code>{{ agentExample }}</code>
+      <p>Requires an agent token with <code>activities:read</code>. No hosted LLM runs here.</p>
+    </footer>
+  </article>
+
+  <article class="insight-card github-card" [attr.aria-busy]="isGithub() && github().loading">
+    <header>
+      <span class="eyebrow">Code meets movement</span>
+      <h2>Commits vs kilometres</h2>
+      <p>Two separate totals, not a productivity score. Last completed Monday–Sunday, UTC.</p>
+    </header>
+    @if (!isGithub()) {
+      <p>
+        GitHub comparison needs a GitHub account. Your AT Protocol account can still use the weekly
+        recap.
+      </p>
+    } @else if (github().loading) {
+      <p role="status">Loading your GitHub comparison…</p>
+    } @else if (github().error) {
+      <p role="alert">{{ github().error }}</p>
+      <button type="button" (click)="retryGithub()">Retry GitHub comparison</button>
+    } @else if (github().data; as comparison) {
+      <p class="period">{{ comparison.period.start }} – {{ comparison.period.end }} (UTC)</p>
+      <p>Public GitHub activity for &#64;{{ comparison.username }}</p>
+      <dl class="metrics comparison-metrics">
+        <div>
+          <dt>Public commits authored</dt>
+          <dd>
+            @if (comparison.commits === null) {
+              <span class="unavailable">Unavailable</span>
+            } @else {
+              {{ comparison.commits | number }}
+            }
+          </dd>
+        </div>
+        <div>
+          <dt>Logged distance</dt>
+          <dd>
+            @if (weekly().data; as recap) {
+              @if (
+                recap.period.start === comparison.period.start &&
+                recap.period.end === comparison.period.end
+              ) {
+                {{ recap.current.distanceKm | number: '1.0-2' }} <small>km</small>
+              } @else {
+                <span class="unavailable">Unavailable for this period</span>
+              }
+            } @else if (weekly().loading) {
+              <span class="unavailable">Loading…</span>
+            } @else {
+              <span class="unavailable">Unavailable — retry weekly recap</span>
+            }
+          </dd>
+        </div>
+      </dl>
+      <p class="public-pushes">{{ comparison.pushEvents | number }} public pushes</p>
+      <p class="coverage">{{ comparison.coverage }}</p>
+      @if (!comparison.complete) {
+        <p class="coverage">Incomplete coverage: this is not your total GitHub commit count.</p>
+      }
+    }
+    <footer class="coverage">
+      Public commits cover default branches only; public pushes exclude private repositories. No
+      extra OAuth scopes are requested.
+    </footer>
+  </article>
+</section>

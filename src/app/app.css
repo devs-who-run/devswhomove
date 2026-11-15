@@ -907,6 +907,17 @@ h1 span {
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
+.event-conference {
+  font-size: 13px;
+  color: inherit;
+  overflow-wrap: anywhere;
+  margin: 0 0 12px;
+}
+.event-conference a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .event-detail {
   display: flex;
   gap: 7px;

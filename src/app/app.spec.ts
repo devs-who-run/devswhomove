@@ -5,6 +5,7 @@ import { DEMO_ACTIVITIES, DEMO_EVENTS, DEMO_PROFILE } from './demo';
 import type { Bootstrap } from './models';
 import { provideRouter, Router } from '@angular/router';
 import { routes } from './app.routes';
+import type { GithubInsights, WeeklyRecap } from './insights.models';
 
 describe('App', () => {
   const bootstrap: Bootstrap = {
@@ -13,6 +14,30 @@ describe('App', () => {
     events: [],
     githubConfigured: false,
   };
+  function insightsResponse(path: string): Response | undefined {
+    const period = { start: '2026-11-02', end: '2026-11-08' };
+    if (path === '/api/insights/weekly') {
+      const totals = { sessions: 0, minutes: 0, distanceKm: 0, activeDays: 0, bySport: [] };
+      return Response.json({
+        period,
+        previousPeriod: { start: '2026-10-26', end: '2026-11-01' },
+        current: totals,
+        previous: totals,
+        summary: 'No activities logged last week.',
+        coverage: 'Your logged activities, including private activities.',
+      } satisfies WeeklyRecap);
+    }
+    if (path === '/api/insights/github')
+      return Response.json({
+        period,
+        pushEvents: 0,
+        commits: 0,
+        coverage: 'Public commits and pushes are incomplete.',
+        complete: false,
+        username: DEMO_PROFILE.username,
+      } satisfies GithubInsights);
+    return undefined;
+  }
 
   beforeEach(async () => {
     window.location.hash = '';
@@ -205,16 +230,18 @@ describe('App', () => {
   });
 
   it('loads the signed-in identity on a direct /profile route', async () => {
-    vi.mocked(fetch).mockImplementation(async () =>
-      Response.json({
-        ...bootstrap,
-        viewer: {
-          ...DEMO_PROFILE,
-          id: 'real-user',
-          name: 'Signed-in developer',
-          username: 'real-dev',
-        },
-      }),
+    vi.mocked(fetch).mockImplementation(
+      async (path) =>
+        insightsResponse(String(path)) ??
+        Response.json({
+          ...bootstrap,
+          viewer: {
+            ...DEMO_PROFILE,
+            id: 'real-user',
+            name: 'Signed-in developer',
+            username: 'real-dev',
+          },
+        }),
     );
     await TestBed.inject(Router).navigateByUrl('/profile');
     const fixture = TestBed.createComponent(App);
@@ -224,6 +251,39 @@ describe('App', () => {
     expect(fixture.nativeElement.querySelector('h1')?.textContent).toBe('Signed-in developer');
     expect(fixture.nativeElement.textContent).not.toContain('Avery Chen');
     expect(fixture.nativeElement.textContent).toContain('No activities match these filters.');
+  });
+
+  it('mounts developer insights only for the signed-in own profile, never remote, anonymous or preview profiles', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string) => {
+        const insights = insightsResponse(path);
+        if (insights) return insights;
+        if (path === '/api/activities') return Response.json({ activities: [] });
+        return Response.json({ ...bootstrap, viewer: DEMO_PROFILE });
+      }),
+    );
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('app-developer-insights')).toBeTruthy();
+
+    app.remoteProfile.set({ ...DEMO_PROFILE, id: 'someone-else', username: 'someone-else' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-developer-insights')).toBeNull();
+
+    app.remoteProfile.set(null);
+    app.preview.set(true);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-developer-insights')).toBeNull();
+
+    app.preview.set(false);
+    app.viewer.set(null);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-developer-insights')).toBeNull();
   });
 
   it('loads all profile activities separately from the feed and filters the calendar and list', async () => {
@@ -237,10 +297,12 @@ describe('App', () => {
     }));
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (path: string) =>
-        path === '/api/bootstrap'
-          ? Response.json({ ...bootstrap, viewer, activities: activities.slice(0, 100) })
-          : Response.json({ profile: viewer, activities }),
+      vi.fn(
+        async (path: string) =>
+          insightsResponse(path) ??
+          (path === '/api/bootstrap'
+            ? Response.json({ ...bootstrap, viewer, activities: activities.slice(0, 100) })
+            : Response.json({ profile: viewer, activities })),
       ),
     );
     const fixture = TestBed.createComponent(App);
@@ -315,7 +377,10 @@ describe('App', () => {
     ];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => Response.json({ ...bootstrap, viewer, activities })),
+      vi.fn(
+        async (path: string) =>
+          insightsResponse(path) ?? Response.json({ ...bootstrap, viewer, activities }),
+      ),
     );
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
@@ -366,6 +431,8 @@ describe('App', () => {
     HTMLDialogElement.prototype.close = vi.fn();
     const viewer = { ...DEMO_PROFILE, visibility: 'private', provider: 'github' };
     const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      const insights = insightsResponse(path);
+      if (insights) return insights;
       if (path === '/api/me' && init?.method === 'PATCH') {
         viewer.visibility = 'public';
         return Response.json({ ok: true });
@@ -399,7 +466,9 @@ describe('App', () => {
 
   it('copies a public profile link and reports clipboard failures with a manual link', async () => {
     const viewer = { ...DEMO_PROFILE, username: 'alice', visibility: 'public' as const };
-    vi.mocked(fetch).mockImplementation(async () => Response.json({ ...bootstrap, viewer }));
+    vi.mocked(fetch).mockImplementation(
+      async (path) => insightsResponse(String(path)) ?? Response.json({ ...bootstrap, viewer }),
+    );
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     await TestBed.inject(Router).navigateByUrl('/profile');
@@ -504,6 +573,8 @@ describe('App', () => {
       userId: 'me',
     }));
     const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      const insights = insightsResponse(path);
+      if (insights) return insights;
       if (path === '/api/activities/bulk-visibility')
         return Response.json({ ok: true, updated: 1 });
       return Response.json({ ...bootstrap, viewer, activities });
@@ -682,6 +753,8 @@ describe('App', () => {
       capacity: 4,
       attendees: 2,
       joined: true,
+      conferenceName: 'NG-Conf',
+      conferenceUrl: 'https://ng-conf.example',
     };
     const fetchMock = vi.fn(async (path: string, init?: RequestInit) =>
       init?.method === 'PATCH'
@@ -705,6 +778,8 @@ describe('App', () => {
       title: 'Morning tennis',
       capacity: 4,
       location: 'City courts',
+      conferenceName: 'NG-Conf',
+      conferenceUrl: 'https://ng-conf.example',
     });
     expect(fixture.nativeElement.querySelector('#modal-title')?.textContent).toContain(
       'Fine-tune your event.',
@@ -716,7 +791,116 @@ describe('App', () => {
     expect(JSON.parse(patch?.[1]?.body as string)).toMatchObject({
       capacity: 8,
       startsAt: '2098-01-01T09:00:00.000Z',
+      conferenceName: 'NG-Conf',
+      conferenceUrl: 'https://ng-conf.example',
     });
     expect(app.notice()).toContain('Event updated');
+  });
+
+  it.each(['github', 'atproto'] as const)(
+    'creates optional conference events for %s with public disclosure preserved',
+    async (provider) => {
+      HTMLDialogElement.prototype.showModal = vi.fn();
+      HTMLDialogElement.prototype.close = vi.fn();
+      const fetchMock = vi.fn(async (_path: string, init?: RequestInit) =>
+        init?.method === 'POST'
+          ? Response.json({ id: 'new' }, { status: 201 })
+          : Response.json({ ...bootstrap, viewer: { ...DEMO_PROFILE, provider } }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      const fixture = TestBed.createComponent(App);
+      const app = fixture.componentInstance;
+      await fixture.whenStable();
+      app.openModal('event');
+      expect(app.eventForm).toMatchObject({ conferenceName: '', conferenceUrl: '' });
+      Object.assign(app.eventForm, {
+        title: 'Morning 5K',
+        location: 'Park',
+        conferenceName: ' NG-Conf ',
+        conferenceUrl: ' https://ng-conf.example ',
+      });
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('#conference-name')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('#conference-url')).toBeTruthy();
+      if (provider === 'atproto') {
+        await app.save();
+        expect(app.error()).toContain('publicly visible');
+        expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+        app.publicDisclosure.set(true);
+      }
+      await app.save();
+      const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+      expect(JSON.parse(post?.[1]?.body as string)).toMatchObject({
+        conferenceName: 'NG-Conf',
+        conferenceUrl: 'https://ng-conf.example',
+      });
+    },
+  );
+
+  it.each([
+    'http://ng-conf.example',
+    'javascript:alert(1)',
+    '//ng-conf.example',
+    'https://user:password@ng-conf.example',
+    'https://@ng-conf.example',
+    'https:///ng-conf.example',
+    'https://ng-conf.exa\nmple',
+    'https://ng-conf.example\\@evil.example',
+  ])(
+    'rejects unsafe conference URL %s before saving or rendering a link',
+    async (conferenceUrl) => {
+      const event = { ...DEMO_EVENTS[0], conferenceName: 'NG-Conf', conferenceUrl };
+      const fetchMock = vi.fn(async () =>
+        Response.json({ ...bootstrap, viewer: DEMO_PROFILE, events: [event] }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      const fixture = TestBed.createComponent(App);
+      const app = fixture.componentInstance;
+      await fixture.whenStable();
+      await TestBed.inject(Router).navigateByUrl('/events');
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.event-conference')?.textContent).toContain(
+        'NG-Conf',
+      );
+      expect(fixture.nativeElement.querySelector('.event-conference a')).toBeNull();
+      app.modal.set('event');
+      Object.assign(app.eventForm, { conferenceName: 'NG-Conf', conferenceUrl });
+      const callsBefore = fetchMock.mock.calls.length;
+      await app.save();
+      expect(app.error()).toContain('safe HTTPS URL');
+      expect(fetchMock.mock.calls).toHaveLength(callsBefore);
+    },
+  );
+
+  it('renders conference links and name-only associations without changing legacy events', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    const events = [
+      { ...DEMO_EVENTS[0], conferenceName: 'NG-Conf', conferenceUrl: 'https://ng-conf.example' },
+      { ...DEMO_EVENTS[1], conferenceName: 'BikeConf' },
+      DEMO_EVENTS[2],
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ ...bootstrap, viewer: DEMO_PROFILE, events })),
+    );
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/events');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const cards = fixture.nativeElement.querySelectorAll('.event-card');
+    const link = cards[0].querySelector('.event-conference a');
+    expect(link.getAttribute('href')).toBe('https://ng-conf.example');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(cards[1].querySelector('.event-conference')?.textContent).toContain('BikeConf');
+    expect(cards[1].querySelector('.event-conference a')).toBeNull();
+    expect(cards[2].querySelector('.event-conference')).toBeNull();
+    app.editEvent(DEMO_EVENTS[2]);
+    expect(app.eventForm).toMatchObject({ conferenceName: '', conferenceUrl: '' });
+    app.eventForm.conferenceUrl = 'https://ng-conf.example';
+    await app.save();
+    expect(app.error()).toContain('Add a conference name');
   });
 });

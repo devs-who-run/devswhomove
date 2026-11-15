@@ -24,6 +24,7 @@ import {
 import type { Agent } from '@atproto/api';
 import { MAX_PHOTO_BYTES, sanitizeImage } from './images';
 import { handleMcp } from './mcp';
+import { getWeeklyRecap, getGithubInsights } from './insights';
 import { date, HttpError, number, sport, text, visibility } from './validation';
 
 interface Env {
@@ -406,6 +407,7 @@ async function events(env: Env, userId?: string): Promise<SportEvent[]> {
     env.DB.prepare(
       `SELECT e.id, e.host_id AS hostId, u.name AS hostName,
     e.title, e.sport, e.starts_at AS startsAt, e.location, e.description, e.level, e.capacity,
+    e.conference_name AS conferenceName, e.conference_url AS conferenceUrl,
     (SELECT COUNT(*) FROM event_attendees WHERE event_id = e.id) +
     (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = e.id) AS attendees,
     EXISTS(SELECT 1 FROM event_attendees WHERE event_id = e.id AND user_id = ?) OR
@@ -423,6 +425,7 @@ async function events(env: Env, userId?: string): Promise<SportEvent[]> {
     env.DB.prepare(
       `SELECT e.uri AS id, e.did AS hostId, u.name AS hostName, e.title, e.sport,
         e.starts_at AS startsAt, e.location, e.description, e.level, e.capacity,
+        e.conference_name AS conferenceName, e.conference_url AS conferenceUrl,
         (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = e.uri) AS attendees,
         EXISTS(SELECT 1 FROM atproto_event_attendees
           WHERE event_uri = e.uri AND attendee_id = ?) AS joined
@@ -456,8 +459,18 @@ function activityRecord(row: Record<string, unknown>, source: 'web' | 'agent') {
 }
 
 /** Build the public event lexicon record from validated event fields. */
-function eventRecord(fields: readonly [string, string, string, string, string, string, number]) {
-  const [title, eventSport, startsAt, location, description, level, capacity] = fields;
+function eventRecord(fields: ReturnType<typeof eventFields>) {
+  const [
+    title,
+    eventSport,
+    startsAt,
+    location,
+    description,
+    level,
+    capacity,
+    conferenceName,
+    conferenceUrl,
+  ] = fields;
   return {
     $type: EVENT_COLLECTION,
     title,
@@ -467,6 +480,8 @@ function eventRecord(fields: readonly [string, string, string, string, string, s
     description,
     level,
     capacity,
+    ...(conferenceName ? { conferenceName } : {}),
+    ...(conferenceUrl ? { conferenceUrl } : {}),
   };
 }
 
@@ -590,8 +605,8 @@ async function saveAtprotoEvent(
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO atproto_events
-    (uri, did, rkey, record_json, title, sport, starts_at, location, description, level, capacity, indexed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    (uri, did, rkey, record_json, title, sport, starts_at, location, description, level, capacity, conference_name, conference_url, indexed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       uri,
       actor.user.id,
@@ -700,6 +715,13 @@ function atprotoEventRecord(value: unknown): Record<string, unknown> | undefined
     capacity > 200
   )
     return;
+  let conferenceName: string | null;
+  let conferenceUrl: string | null;
+  try {
+    [conferenceName, conferenceUrl] = conferenceFields(record);
+  } catch {
+    return;
+  }
   return {
     $type: EVENT_COLLECTION,
     title: title.trim(),
@@ -709,6 +731,8 @@ function atprotoEventRecord(value: unknown): Record<string, unknown> | undefined
     description,
     level,
     capacity,
+    ...(conferenceName ? { conferenceName } : {}),
+    ...(conferenceUrl ? { conferenceUrl } : {}),
   };
 }
 
@@ -792,12 +816,14 @@ async function syncAtprotoData(env: Env, auth: Identity): Promise<void> {
       const { record } = item;
       return env.DB.prepare(
         `INSERT INTO atproto_events
-        (uri, did, rkey, record_json, title, sport, starts_at, location, description, level, capacity, indexed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (uri, did, rkey, record_json, title, sport, starts_at, location, description, level, capacity, conference_name, conference_url, indexed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(uri) DO UPDATE SET record_json = excluded.record_json,
           title = excluded.title, sport = excluded.sport, starts_at = excluded.starts_at,
           location = excluded.location, description = excluded.description,
-          level = excluded.level, capacity = excluded.capacity, indexed_at = excluded.indexed_at`,
+          level = excluded.level, capacity = excluded.capacity,
+          conference_name = excluded.conference_name, conference_url = excluded.conference_url,
+          indexed_at = excluded.indexed_at`,
       ).bind(
         item.uri,
         auth.user.id,
@@ -810,6 +836,8 @@ async function syncAtprotoData(env: Env, auth: Identity): Promise<void> {
         record['description'],
         record['level'],
         record['capacity'],
+        record['conferenceName'] ?? null,
+        record['conferenceUrl'] ?? null,
         new Date().toISOString(),
       );
     }),
@@ -840,6 +868,31 @@ async function syncAtprotoData(env: Env, auth: Identity): Promise<void> {
     .run();
 }
 
+function conferenceFields(data: Record<string, unknown>): readonly [string | null, string | null] {
+  const name = text(data['conferenceName'] ?? '', 'Conference name', 100, false) || null;
+  const link = text(data['conferenceUrl'] ?? '', 'Conference URL', 2048, false) || null;
+  if (link) {
+    if (!name) throw new HttpError(400, 'Add a conference name for the conference URL.');
+    let url: URL;
+    try {
+      url = new URL(link);
+    } catch {
+      throw new HttpError(400, 'Conference URL must be a safe HTTPS URL without credentials.');
+    }
+    if (
+      !/^https:\/\/[^/?#]+/i.test(link) ||
+      /^https:\/\/[^/?#]*@/i.test(link) ||
+      /[\s\\\u0000-\u001f\u007f]/.test(link) ||
+      url.protocol !== 'https:' ||
+      !url.hostname ||
+      url.username ||
+      url.password
+    )
+      throw new HttpError(400, 'Conference URL must be a safe HTTPS URL without credentials.');
+  }
+  return [name, link];
+}
+
 /** Validate hosted-event input fields and enforce the supported capacity range. */
 function eventFields(data: Record<string, unknown>) {
   const capacity = number(data['capacity'], 'Capacity', 2, 200);
@@ -852,6 +905,7 @@ function eventFields(data: Record<string, unknown>) {
     text(data['description'] ?? '', 'Description', 1000, false),
     text(data['level'], 'Level', 60),
     capacity,
+    ...conferenceFields(data),
   ] as const;
 }
 
@@ -1069,6 +1123,14 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
   }
   const auth = await identity(request, env);
+  if (url.pathname === '/api/insights/weekly' && method === 'GET') {
+    const who = requireIdentity(auth, 'activities:read');
+    return json(await getWeeklyRecap(env.DB, who));
+  }
+  if (url.pathname === '/api/insights/github' && method === 'GET') {
+    const who = requireIdentity(auth, undefined, true);
+    return json(await getGithubInsights(env.DB, who));
+  }
   if (url.pathname === '/api/bootstrap' && method === 'GET') {
     if (auth?.agent)
       throw new HttpError(403, 'Use the scoped /api/activities and /api/events endpoints.');
@@ -1347,8 +1409,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const id = crypto.randomUUID();
     await env.DB.batch([
       env.DB.prepare(
-        `INSERT INTO events (id, host_id, title, sport, starts_at, location, description, level, capacity)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO events (id, host_id, title, sport, starts_at, location, description, level, capacity, conference_name, conference_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(id, identity.user.id, ...fields),
       env.DB.prepare('INSERT INTO event_attendees (event_id, user_id) VALUES (?, ?)').bind(
         id,
@@ -1435,19 +1497,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
       const nextRecord = eventRecord(fields);
       const indexed = await env.DB.prepare(
         `UPDATE atproto_events SET record_json = ?, title = ?, sport = ?, starts_at = ?,
-          location = ?, description = ?, level = ?, capacity = ?
+          location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ?
         WHERE uri = ? AND did = ? AND
           (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = ?) <= ?`,
       )
-        .bind(
-          JSON.stringify(nextRecord),
-          ...fields.slice(0, 6),
-          fields[6],
-          eventId,
-          identity.user.id,
-          eventId,
-          fields[6],
-        )
+        .bind(JSON.stringify(nextRecord), ...fields, eventId, identity.user.id, eventId, fields[6])
         .run();
       if (!indexed.meta.changes)
         throw new HttpError(409, 'Event capacity changed. Please review the attendee count.');
@@ -1462,7 +1516,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         const previous = JSON.parse(event.record) as Record<string, unknown>;
         await env.DB.prepare(
           `UPDATE atproto_events SET record_json = ?, title = ?, sport = ?, starts_at = ?,
-            location = ?, description = ?, level = ?, capacity = ? WHERE uri = ? AND did = ?`,
+            location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ? WHERE uri = ? AND did = ?`,
         )
           .bind(
             event.record,
@@ -1473,6 +1527,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
             previous['description'],
             previous['level'],
             previous['capacity'],
+            previous['conferenceName'] ?? null,
+            previous['conferenceUrl'] ?? null,
             eventId,
             identity.user.id,
           )
@@ -1496,7 +1552,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       throw new HttpError(403, 'Only the host can edit an event.');
     const result = await env.DB.prepare(
       `UPDATE events SET title = ?, sport = ?, starts_at = ?, location = ?, description = ?,
-      level = ?, capacity = ? WHERE id = ? AND host_id = ? AND cancelled = 0
+      level = ?, capacity = ?, conference_name = ?, conference_url = ? WHERE id = ? AND host_id = ? AND cancelled = 0
       AND (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) +
       (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = ?) <= ?`,
     )

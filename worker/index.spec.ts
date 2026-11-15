@@ -18,6 +18,8 @@ describe('Worker with real D1 storage', () => {
   ).toString('base64');
   const atprotoSessionKey = Buffer.alloc(32, 7).toString('base64');
   const publishedAtprotoRecords: Record<string, unknown>[] = [];
+  let remoteAtprotoEvents: { uri: string; cid: string; value: Record<string, unknown> }[] = [];
+  let failAtprotoEventUpdate = false;
   const hash = (value: string) => createHash('sha256').update(value).digest('hex');
   function encryptedAtprotoSession(did: string): string {
     const iv = randomBytes(12);
@@ -169,6 +171,46 @@ describe('Worker with real D1 storage', () => {
           ATPROTO_SESSION_KEY: atprotoSessionKey,
         },
         outboundService: async (request) => {
+          const url = new URL(request.url);
+          if (
+            url.origin === 'https://pds.example' &&
+            url.pathname.endsWith('/com.atproto.repo.describeRepo')
+          )
+            return WorkerResponse.json({
+              did: url.searchParams.get('repo'),
+              didDoc: {},
+              handle: 'conference.example',
+              collections: [],
+              handleIsCorrect: true,
+            });
+          if (
+            url.origin === 'https://pds.example' &&
+            url.pathname.endsWith('/com.atproto.repo.listRecords')
+          )
+            return WorkerResponse.json({
+              records:
+                url.searchParams.get('collection') === 'dev.devswhorun.event'
+                  ? remoteAtprotoEvents
+                  : [],
+            });
+          if (request.url === 'https://pds.example/xrpc/com.atproto.repo.putRecord') {
+            if (failAtprotoEventUpdate)
+              return WorkerResponse.json(
+                { error: 'InternalServerError', message: 'PDS unavailable' },
+                { status: 500 },
+              );
+            const data = await request.json<{
+              repo: string;
+              collection: string;
+              rkey: string;
+              record: Record<string, unknown>;
+            }>();
+            publishedAtprotoRecords.push(data.record);
+            return WorkerResponse.json({
+              uri: `at://${data.repo}/${data.collection}/${data.rkey}`,
+              cid: 'bafyreie5cvnrvd6gd3wmqx5r3gkqjfwq3fvmsk6i3q4c2av4d6sp6j5sja',
+            });
+          }
           if (request.url === 'https://pds.example/xrpc/com.atproto.repo.createRecord') {
             const data = await request.json<{
               repo: string;
@@ -205,6 +247,7 @@ describe('Worker with real D1 storage', () => {
         '0002_activity_photos.sql',
         '0003_atproto.sql',
         '0004_atproto_handle_index.sql',
+        '0005_event_conferences.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -270,7 +313,9 @@ describe('Worker with real D1 storage', () => {
         '2099-01-01',
       )
       .run();
-    for (const statement of migrations[3]
+    for (const statement of migrations
+      .slice(3)
+      .join(';')
       .split(';')
       .map((part) => part.trim())
       .filter(Boolean))
@@ -766,6 +811,7 @@ describe('Worker with real D1 storage', () => {
       result: { tools: { name: string }[]; cacheScope: string; ttlMs: number };
     }>();
     expect(availableTools.result.tools.map(({ name }) => name)).toEqual([
+      'get_weekly_recap',
       'list_activities',
       'create_activity',
       'create_activities',
@@ -1137,6 +1183,210 @@ describe('Worker with real D1 storage', () => {
       404,
     );
     expect(await (await request('/api/events')).json()).toEqual({ events: [] });
+  });
+
+  const conferenceEvent = {
+    title: 'NG-Conf morning 5K',
+    sport: 'Running',
+    startsAt: '2098-01-01T09:00:00.000Z',
+    location: 'Convention center entrance',
+    description: 'An easy morning run.',
+    level: 'All levels welcome',
+    capacity: 4,
+    conferenceName: 'NG-Conf',
+    conferenceUrl: 'https://ng-conf.example/2026',
+  };
+  const conferenceDid = 'did:plc:7sagqfh4v4t6zl7bdwbikdc2';
+  const conferenceSession = 'atproto-conference-session';
+  async function setupConferenceHost() {
+    await db.batch([
+      db
+        .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+        .bind(conferenceDid, 'conference.example', 'Conference Host', new Date().toISOString()),
+      db
+        .prepare('INSERT INTO atproto_sessions (token_hash, did, expires_at) VALUES (?, ?, ?)')
+        .bind(hash(conferenceSession), conferenceDid, '2099-01-01T00:00:00.000Z'),
+      db
+        .prepare(
+          'INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)',
+        )
+        .bind(conferenceDid, encryptedAtprotoSession(conferenceDid), new Date().toISOString()),
+    ]);
+  }
+  async function cleanConferenceHost() {
+    await db.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind(conferenceDid).run();
+    await db.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(conferenceDid).run();
+    remoteAtprotoEvents = [];
+    failAtprotoEventUpdate = false;
+  }
+
+  it.each(['github', 'atproto'])(
+    'round-trips conference events for %s without changing normal events or capacity',
+    async (provider) => {
+      if (provider === 'atproto') await setupConferenceHost();
+      const session = provider === 'atproto' ? conferenceSession : alice;
+      let id = '';
+      try {
+        const created = await request(
+          '/api/events',
+          'POST',
+          { ...conferenceEvent, conferenceName: ' NG-Conf ' },
+          session,
+        );
+        expect(created.status).toBe(201);
+        id = (await created.json<{ id: string }>()).id;
+        const path = `/api/events/${encodeURIComponent(id)}`;
+        const listed = async () => {
+          const response = await request('/api/events');
+          return (await response.json<{ events: Record<string, unknown>[] }>()).events.find(
+            (event) => event['id'] === id,
+          );
+        };
+        expect(await listed()).toMatchObject({ ...conferenceEvent, attendees: 1, joined: false });
+        if (provider === 'atproto')
+          expect(publishedAtprotoRecords.at(-1)).toMatchObject({
+            ...conferenceEvent,
+            $type: 'dev.devswhorun.event',
+          });
+
+        const unsafe = [
+          { conferenceUrl: 'http://ng-conf.example' },
+          { conferenceUrl: 'javascript:alert(1)' },
+          { conferenceUrl: '//ng-conf.example' },
+          { conferenceUrl: 'https://user:password@ng-conf.example' },
+          { conferenceUrl: 'https://@ng-conf.example' },
+          { conferenceUrl: 'https://ng-conf.example\\@evil.example' },
+          { conferenceUrl: 'https://ng-conf.exa\nmple' },
+          { conferenceUrl: 'https:///ng-conf.example' },
+          { conferenceUrl: 'https://ng-conf.example/' + 'x'.repeat(2048) },
+          { conferenceUrl: 123 },
+          { conferenceName: '' },
+          { conferenceName: 'x'.repeat(101) },
+          { conferenceName: ['NG-Conf'] },
+        ];
+        for (const invalid of unsafe) {
+          expect(
+            (await request('/api/events', 'POST', { ...conferenceEvent, ...invalid }, session))
+              .status,
+          ).toBe(400);
+          expect(
+            (await request(path, 'PATCH', { ...conferenceEvent, ...invalid }, session)).status,
+          ).toBe(400);
+        }
+        expect(await listed()).toMatchObject(conferenceEvent);
+        const edited = {
+          ...conferenceEvent,
+          sport: 'Cycling',
+          conferenceName: 'BikeConf',
+          conferenceUrl: 'https://bikeconf.example/schedule',
+        };
+        expect((await request(path, 'PATCH', edited, session)).status).toBe(200);
+        expect(await listed()).toMatchObject(edited);
+        expect((await request(`${path}/join`, 'POST', { join: true }, bob)).status).toBe(200);
+        expect((await request(`${path}/join`, 'POST', { join: true }, charlie)).status).toBe(200);
+        expect((await request(path, 'PATCH', { ...edited, capacity: 2 }, session)).status).toBe(
+          409,
+        );
+        expect(await listed()).toMatchObject({ ...edited, attendees: 3 });
+        expect(
+          (await request(path, 'PATCH', { ...edited, conferenceUrl: '' }, session)).status,
+        ).toBe(200);
+        expect(await listed()).toMatchObject({ conferenceName: 'BikeConf', conferenceUrl: null });
+        const { conferenceName, conferenceUrl, ...normal } = edited;
+        expect((await request(path, 'PATCH', normal, session)).status).toBe(200);
+        expect(await listed()).toMatchObject({ conferenceName: null, conferenceUrl: null });
+        if (provider === 'atproto') {
+          expect(publishedAtprotoRecords.at(-1)).not.toHaveProperty('conferenceName');
+          expect(publishedAtprotoRecords.at(-1)).not.toHaveProperty('conferenceUrl');
+        }
+      } finally {
+        if (provider === 'atproto') await cleanConferenceHost();
+        else if (id) await db.prepare('DELETE FROM events WHERE id = ?').bind(id).run();
+      }
+    },
+  );
+
+  it('restores conference projections when an AT Protocol event update fails', async () => {
+    await setupConferenceHost();
+    try {
+      const created = await request('/api/events', 'POST', conferenceEvent, conferenceSession);
+      const { id } = await created.json<{ id: string }>();
+      failAtprotoEventUpdate = true;
+      const response = await request(
+        `/api/events/${encodeURIComponent(id)}`,
+        'PATCH',
+        { ...conferenceEvent, conferenceName: 'Changed', conferenceUrl: null },
+        conferenceSession,
+      );
+      expect(response.status).toBe(500);
+      const indexed = await db
+        .prepare(
+          'SELECT conference_name, conference_url, record_json FROM atproto_events WHERE uri = ?',
+        )
+        .bind(id)
+        .first<{ conference_name: string; conference_url: string; record_json: string }>();
+      expect(indexed).toMatchObject({
+        conference_name: conferenceEvent.conferenceName,
+        conference_url: conferenceEvent.conferenceUrl,
+      });
+      expect(JSON.parse(indexed!.record_json)).toMatchObject(conferenceEvent);
+    } finally {
+      await cleanConferenceHost();
+    }
+  });
+
+  it('validates conference fields in PDS event projections and accepts legacy omission', async () => {
+    await setupConferenceHost();
+    const cid = 'bafyreie5cvnrvd6gd3wmqx5r3gkqjfwq3fvmsk6i3q4c2av4d6sp6j5sja';
+    const { conferenceName, conferenceUrl, ...legacy } = conferenceEvent;
+    const records = [
+      conferenceEvent,
+      legacy,
+      { ...conferenceEvent, conferenceUrl: 'http://ng-conf.example' },
+      { ...conferenceEvent, conferenceUrl: 'https://user@ng-conf.example' },
+      { ...conferenceEvent, conferenceName: '' },
+      { ...conferenceEvent, conferenceName: 123 },
+      { ...conferenceEvent, conferenceUrl: 123 },
+    ];
+    remoteAtprotoEvents = records.map((record, index) => ({
+      uri: `at://${conferenceDid}/dev.devswhorun.event/import${index}`,
+      cid,
+      value: { $type: 'dev.devswhorun.event', ...record },
+    }));
+    try {
+      await db
+        .prepare('UPDATE atproto_accounts SET updated_at = ? WHERE did = ?')
+        .bind('2026-01-01', conferenceDid)
+        .run();
+      expect((await request('/api/activities', 'GET', undefined, conferenceSession)).status).toBe(
+        200,
+      );
+      const response = await request('/api/bootstrap', 'GET', undefined, conferenceSession);
+      expect(response.status).toBe(200);
+      const { events } = await response.json<{ events: Record<string, unknown>[] }>();
+      const imported = events.filter((event) => event['hostId'] === conferenceDid);
+      expect(imported).toHaveLength(2);
+      expect(imported.find((event) => String(event['id']).endsWith('/import0'))).toMatchObject(
+        conferenceEvent,
+      );
+      expect(imported.find((event) => String(event['id']).endsWith('/import1'))).toMatchObject({
+        conferenceName: null,
+        conferenceUrl: null,
+      });
+      remoteAtprotoEvents[0].value = { $type: 'dev.devswhorun.event', ...legacy };
+      await db
+        .prepare('UPDATE atproto_accounts SET updated_at = ? WHERE did = ?')
+        .bind('2026-01-01', conferenceDid)
+        .run();
+      await request('/api/bootstrap', 'GET', undefined, conferenceSession);
+      const updated = await db
+        .prepare('SELECT conference_name, conference_url FROM atproto_events WHERE uri = ?')
+        .bind(remoteAtprotoEvents[0].uri)
+        .first();
+      expect(updated).toEqual({ conference_name: null, conference_url: null });
+    } finally {
+      await cleanConferenceHost();
+    }
   });
 
   it('fails explicitly when GitHub is not configured', async () => {
