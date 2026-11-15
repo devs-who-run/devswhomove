@@ -41,6 +41,13 @@
   color: #4b6c3e;
   font: 650 13px var(--heading);
   border: 1px solid #d8e4c9;
+  overflow: hidden;
+}
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }
 .avatar.orange {
   background: #f6e8d7;
