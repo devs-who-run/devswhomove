@@ -1,13 +1,8 @@
 :host {
   display: block;
-  width: 100%;
-  min-width: 0;
 }
 
 .activity-card {
-  width: 100%;
-  min-width: 0;
-  overflow: hidden;
   border: 1px solid var(--border);
   background: #fff;
   border-radius: 10px;
@@ -98,7 +93,7 @@
 .activity-photo {
   display: block;
   width: 100%;
-  height: clamp(180px, 30vw, 320px);
+  max-height: 420px;
   object-fit: cover;
   border-radius: 10px;
   margin-top: 14px;
