@@ -600,6 +600,36 @@ describe('App', () => {
     ).toBe('6:00');
   });
 
+  it('sends step counts only for walking activities', async () => {
+    const viewer = { ...DEMO_PROFILE, id: 'me', username: 'me' };
+    const posted: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string, init?: RequestInit) => {
+        if (path === '/api/activities' && init?.method === 'POST') {
+          posted.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+          return Response.json({ id: 'new' }, { status: 201 });
+        }
+        return Response.json({ ...bootstrap, viewer });
+      }),
+    );
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+
+    app.modal.set('activity');
+    app.activityForm.sport = 'Running';
+    app.activityForm.steps = 3842;
+    await app.save();
+    app.modal.set('activity');
+    app.activityForm.sport = 'Walking';
+    app.activityForm.steps = 3842;
+    await app.save();
+
+    expect(posted[0]).not.toHaveProperty('steps');
+    expect(posted[1]).toHaveProperty('steps', 3842);
+  });
+
   it('uploads a prepared photo after logging an activity and shows it in the feed', async () => {
     HTMLDialogElement.prototype.close = vi.fn();
     const viewer = { ...DEMO_PROFILE, id: 'me', username: 'me' };

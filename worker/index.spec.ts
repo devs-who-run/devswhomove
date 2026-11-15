@@ -369,6 +369,57 @@ describe('Worker with real D1 storage', () => {
     await db.prepare('DELETE FROM activities WHERE id = ?').bind(id).run();
   });
 
+  it('preserves legacy idempotency hashes when no step count is provided', async () => {
+    const idempotencyKey = 'legacy-without-steps';
+    const payloadHash = hash(
+      JSON.stringify({
+        title: activity.title,
+        sport: activity.sport,
+        occurredAt: activity.occurredAt,
+        duration: activity.duration,
+        distance: activity.distance,
+        notes: activity.notes,
+        visibility: activity.visibility,
+      }),
+    );
+    await db
+      .prepare(
+        'INSERT INTO activities (id, user_id, title, sport, occurred_at, duration, distance, notes, visibility, source, idempotency_key, payload_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .bind(
+        'legacy-activity',
+        'alice',
+        activity.title,
+        activity.sport,
+        activity.occurredAt,
+        activity.duration,
+        activity.distance,
+        activity.notes,
+        activity.visibility,
+        'web',
+        idempotencyKey,
+        payloadHash,
+      )
+      .run();
+
+    const replay = await request('/api/activities', 'POST', activity, alice, undefined, {
+      'Idempotency-Key': idempotencyKey,
+    });
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual({ id: 'legacy-activity' });
+
+    const changedSteps = await request(
+      '/api/activities',
+      'POST',
+      { ...activity, steps: 3842 },
+      alice,
+      undefined,
+      { 'Idempotency-Key': idempotencyKey },
+    );
+    expect(changedSteps.status).toBe(409);
+    await db.prepare('DELETE FROM activities WHERE id = ?').bind('legacy-activity').run();
+  });
+
   it('returns more than 100 visible profile activities without exposing private ones', async () => {
     await db
       .prepare(

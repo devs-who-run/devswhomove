@@ -542,8 +542,10 @@ export class App {
     this.error.set('');
     try {
       if (this.modal() === 'activity') {
+        const { steps, ...activityForm } = this.activityForm;
         const { id } = await this.api<{ id: string }>('/api/activities', 'POST', {
-          ...this.activityForm,
+          ...activityForm,
+          ...(activityForm.sport === 'Walking' ? { steps } : {}),
           occurredAt: new Date(this.activityForm.occurredAt).toISOString(),
         });
         const photo = this.photo();

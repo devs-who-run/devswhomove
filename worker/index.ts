@@ -549,7 +549,8 @@ async function saveActivity(
     visibility: actor.agent ? 'public' : requestedVisibility,
   };
   const key = keyInput == null ? null : text(keyInput, 'Idempotency key', 128);
-  const payloadHash = await hash(JSON.stringify(entry));
+  const { steps, ...legacyEntry } = entry;
+  const payloadHash = await hash(JSON.stringify(steps === null ? legacyEntry : entry));
   const id = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO activities
