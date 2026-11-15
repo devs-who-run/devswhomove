@@ -656,6 +656,30 @@ export class App {
     }
   }
 
+  async shareClub(club: Club): Promise<void> {
+    const url = new URL(`/clubs/${encodeURIComponent(club.slug)}`, window.location.origin).href;
+    this.error.set('');
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: club.name,
+          text: `Join ${club.name} on Devs Who Move`,
+          url,
+        });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      this.notice.set('Club invite link copied. Share it so people can join.');
+    } catch {
+      this.notice.set('');
+      this.error.set(`Could not copy the club link. Copy it manually: ${url}`);
+    }
+  }
+
   closeModal(): void {
     if (this.saving()) return;
     this.dialog()?.nativeElement.close();

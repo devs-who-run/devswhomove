@@ -1059,5 +1059,30 @@ describe('App', () => {
       expect(TestBed.inject(Router).url).toBe('/clubs/ng-riders');
       expect(app.clubDetail()?.club.name).toBe('NG riders');
     });
+
+    it('shares a club invite link from the club page', async () => {
+      mockApi(viewer, {
+        [`GET /api/clubs/${club.slug}`]: () => ({ club, members: [], activities: [], events: [] }),
+      });
+      const fixture = TestBed.createComponent(App);
+      const app = fixture.componentInstance;
+      await fixture.whenStable();
+      await TestBed.inject(Router).navigateByUrl(`/clubs/${club.slug}`);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal('navigator', { clipboard: { writeText } });
+      button(fixture.nativeElement as HTMLElement, 'Invite people').click();
+      await fixture.whenStable();
+      const url = `${window.location.origin}/clubs/${club.slug}`;
+      expect(writeText).toHaveBeenCalledWith(url);
+      expect(app.notice()).toContain('invite link copied');
+
+      const share = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal('navigator', { share, clipboard: { writeText } });
+      await app.shareClub(club);
+      expect(share).toHaveBeenCalledWith(expect.objectContaining({ url }));
+      expect(writeText).toHaveBeenCalledTimes(1);
+    });
   });
 });
