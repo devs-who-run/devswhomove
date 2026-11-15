@@ -4,12 +4,14 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivityCard } from './activity-card';
+import { ActivityCalendar } from './activity-calendar';
 import type { Participation } from './activity-social';
 import { errorMessage, request } from './api';
 import { Icon } from './icon';
 import { Theme } from './theme';
 import { preparePhoto } from './photo';
 import { DEMO_ACTIVITIES, DEMO_EVENTS, DEMO_PROFILE } from './demo';
+import { localDate } from './date';
 import { SportFilter } from './sport-filter';
 import { ProfileBadges } from './badges';
 import { DeveloperInsights } from './developer-insights';
@@ -31,8 +33,6 @@ import {
 
 type Page = 'feed' | 'events' | 'clubs' | 'profile' | 'agents' | 'activity';
 type Modal = 'activity' | 'event' | 'profile' | 'club' | 'atproto-login' | null;
-const localDate = (date: Date) =>
-  new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 const formatMonth = (month: string) => {
   const [year, monthNumber] = month.split('-').map(Number);
   return new Date(year, monthNumber - 1, 1).toLocaleDateString(undefined, {
@@ -44,6 +44,7 @@ const formatMonth = (month: string) => {
 @Component({
   imports: [
     ActivityCard,
+    ActivityCalendar,
     DatePipe,
     DecimalPipe,
     FormsModule,
@@ -101,6 +102,7 @@ export class App {
   readonly ownProfileActivities = signal<Activity[]>([]);
   readonly profileMonth = signal('All');
   readonly profileSport = signal<Sport | 'All'>('All');
+  readonly heatmapYear = signal('last-12-months');
   readonly profileLoading = signal(false);
   readonly profileError = signal('');
   readonly sharedActivity = signal<Activity | null>(null);
@@ -229,53 +231,6 @@ export class App {
       sports: new Set(activities.map((activity) => activity.sport)).size,
     };
   });
-  readonly heatmapMonths = computed(() => {
-    const activitiesByDay = new Map<string, Activity[]>();
-    for (const activity of this.filteredProfileActivities()) {
-      const day = localDate(new Date(activity.occurredAt)).slice(0, 10);
-      const activities = activitiesByDay.get(day) ?? [];
-      activities.push(activity);
-      activitiesByDay.set(day, activities);
-    }
-    const months =
-      this.profileMonth() === 'All'
-        ? [...new Set([...activitiesByDay.keys()].map((day) => day.slice(0, 7)))].sort().reverse()
-        : [this.profileMonth()];
-    return months.map((month) => {
-      const [year, monthNumber] = month.split('-').map(Number);
-      const length = new Date(year, monthNumber, 0).getDate();
-      return {
-        month,
-        offset: Array.from({ length: (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7 }),
-        label: formatMonth(month),
-        days: Array.from({ length }, (_, index) => {
-          const date = new Date(year, monthNumber - 1, index + 1);
-          const activities = activitiesByDay.get(localDate(date).slice(0, 10)) ?? [];
-          const count = activities.length;
-          const minutes = activities.reduce((sum, activity) => sum + activity.duration, 0);
-          const distances = activities.flatMap((activity) =>
-            activity.distance === null ? [] : [activity.distance],
-          );
-          const sports = [...new Set(activities.map((activity) => activity.sport))];
-          const dateLabel = date.toLocaleDateString(undefined, {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-          });
-          const format = (value: number) =>
-            value.toLocaleString(undefined, { maximumFractionDigits: 2 });
-          return {
-            date: dateLabel,
-            count,
-            summary: `${dateLabel}: ${count} ${count === 1 ? 'session' : 'sessions'}${
-              count ? ` · ${sports.join(', ')} · ${format(minutes)} min` : ''
-            }${distances.length ? ` · ${format(distances.reduce((sum, distance) => sum + distance, 0))} km recorded` : ''}`,
-          };
-        }),
-      };
-    });
-  });
-
   activityForm = this.emptyActivity();
   eventForm = this.emptyEvent();
   clubForm = this.emptyClub();
@@ -403,6 +358,7 @@ export class App {
     this.ownProfileActivities.set([]);
     this.profileMonth.set('All');
     this.profileSport.set('All');
+    this.heatmapYear.set('last-12-months');
     this.profileError.set('');
     this.profileLoading.set(false);
     this.sharedActivity.set(null);

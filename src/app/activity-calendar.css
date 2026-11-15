@@ -1,0 +1,230 @@
+.consistency-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 25px;
+  margin-top: 22px;
+}
+.consistency-card .small-text {
+  margin-top: 7px;
+}
+.consistency-card > summary {
+  cursor: pointer;
+  min-height: 44px;
+}
+.section-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.section-top h2 {
+  font: 700 14px var(--heading);
+  letter-spacing: -0.3px;
+}
+.text-button {
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #3e6042;
+  font-weight: 550;
+  font-size: 13px;
+}
+.text-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.muted {
+  color: var(--muted);
+}
+.small-text {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.heatmap-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 12px 0;
+}
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #61734d;
+}
+.heatmap-filters label {
+  flex: 1 1 180px;
+  margin: 0;
+}
+select {
+  width: 100%;
+  border: 1px solid #dce4d1;
+  border-radius: 6px;
+  background: #fdfefa;
+  color: #3f5136;
+  min-height: 41px;
+  padding: 10px 12px;
+  font-size: 13px;
+  outline-offset: 2px !important;
+}
+.heatmap-filters select {
+  margin: 6px 0 0;
+}
+.heatmap-scroll {
+  overflow-x: auto;
+  padding: 10px 0;
+}
+.heatmap-calendar {
+  display: grid;
+  grid-template-columns: 32px max-content;
+  grid-template-rows: 20px auto;
+  gap: 5px;
+  width: max-content;
+  font-size: 12px;
+  color: var(--muted);
+}
+.heatmap-months {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(var(--weeks), 12px);
+  gap: 3px;
+}
+.heatmap-months span {
+  grid-row: 1;
+}
+.heatmap-weekdays {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  gap: 3px;
+  line-height: 12px;
+}
+.heatmap-weekdays span:nth-child(1) {
+  grid-row: 2;
+}
+.heatmap-weekdays span:nth-child(2) {
+  grid-row: 4;
+}
+.heatmap-weekdays span:nth-child(3) {
+  grid-row: 6;
+}
+.heatmap {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  grid-auto-flow: column;
+  grid-auto-columns: 12px;
+  gap: 3px;
+}
+.heatmap > span {
+  width: 12px;
+  height: 12px;
+  background: #f0f3ea;
+  border-radius: 2px;
+}
+.heatmap > .heatmap-padding,
+.heatmap > .future {
+  visibility: hidden;
+}
+.heatmap > span:not(.heatmap-padding, .future):hover {
+  outline: 1px solid var(--text);
+  outline-offset: 1px;
+}
+.heatmap .moved,
+.heatmap-legend i.moved {
+  background: #a9c783;
+}
+.heatmap .more,
+.heatmap-legend i.more {
+  background: #7aa35b;
+}
+.heatmap .many,
+.heatmap-legend i.many {
+  background: #527d3d;
+}
+.heatmap .most,
+.heatmap-legend i.most {
+  background: #2f5425;
+}
+.heatmap-legend {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 13px;
+  font-size: max(12px, 0.85em);
+  color: var(--muted);
+}
+.heatmap-legend > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.heatmap-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #f0f3ea;
+}
+.heatmap-details {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.heatmap-details summary {
+  width: fit-content;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.heatmap-details ul {
+  columns: 2;
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.8;
+}
+@media (max-width: 1050px) {
+  .section-top h2 {
+    font-size: 13px;
+  }
+}
+@media (max-width: 700px) {
+  .consistency-card {
+    padding: 20px;
+  }
+}
+@media (max-width: 520px) {
+  label {
+    font-size: 12px;
+  }
+  select {
+    font-size: 16px;
+    padding: 9px;
+    min-width: 0;
+  }
+  .consistency-card {
+    padding: 18px;
+  }
+  .consistency-card h2 {
+    font-size: 13px;
+  }
+  .consistency-card .small-text {
+    font-size: 12px;
+  }
+  .heatmap-legend {
+    font-size: max(12px, 0.85em);
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .heatmap-legend i {
+    width: 7px;
+    height: 7px;
+  }
+  .heatmap-details ul {
+    columns: 1;
+  }
+}

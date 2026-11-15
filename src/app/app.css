@@ -1108,20 +1108,6 @@ h1 span {
   margin-top: 10px;
   letter-spacing: -1px;
 }
-.consistency-card {
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 25px;
-  margin-top: 22px;
-}
-.consistency-card .small-text {
-  margin-top: 7px;
-}
-.consistency-card > summary {
-  cursor: pointer;
-  min-height: 44px;
-}
 .profile-filters {
   display: flex;
   flex-wrap: wrap;
@@ -1134,51 +1120,6 @@ h1 span {
 }
 .profile-filters select {
   margin: 6px 0 0;
-}
-.heatmap-month h3 {
-  margin: 20px 0 0;
-  font-size: 14px;
-}
-.heatmap {
-  display: grid;
-  grid-template-rows: repeat(7, 1fr);
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 5px;
-  margin-top: 10px;
-}
-.heatmap > span {
-  height: 22px;
-  background: #f0f3ea;
-  border-radius: 3px;
-}
-.heatmap .moved,
-.heatmap-legend i.moved {
-  background: #a9c783;
-}
-.heatmap .more,
-.heatmap-legend i.more {
-  background: #527d3d;
-}
-.heatmap-legend {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 13px;
-  font-size: 12px;
-  color: #96a087;
-}
-.heatmap-legend > span:last-child {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.heatmap-legend i {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  background: #f0f3ea;
 }
 .profile-recent {
   margin-top: 32px;
@@ -2024,9 +1965,6 @@ fieldset .sport-filters {
   .profile-stats strong {
     font-size: 27px;
   }
-  .consistency-card {
-    padding: 20px;
-  }
   .profile-activity-actions {
     flex-basis: 100%;
     flex-direction: row;
@@ -2375,29 +2313,6 @@ fieldset .sport-filters {
   .profile-stats strong {
     font-size: 24px;
   }
-  .consistency-card {
-    padding: 18px;
-  }
-  .consistency-card h2 {
-    font-size: 13px;
-  }
-  .consistency-card .small-text {
-    font-size: 12px;
-  }
-  .heatmap {
-    gap: 3px;
-  }
-  .heatmap > span {
-    height: 16px;
-    border-radius: 2px;
-  }
-  .heatmap-legend {
-    font-size: 12px;
-  }
-  .heatmap-legend i {
-    width: 7px;
-    height: 7px;
-  }
   .profile-activity {
     padding: 16px;
     gap: 12px;
@@ -2592,29 +2507,6 @@ nav a {
   min-height: 46px;
 }
 
-.heatmap-details {
-  margin-top: 12px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.heatmap-details summary {
-  width: fit-content;
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.heatmap-details ul {
-  columns: 2;
-  margin: 0;
-  padding-left: 20px;
-  line-height: 1.8;
-}
-
 @media (max-width: 520px) {
   .sidebar {
     height: calc(72px + env(safe-area-inset-bottom));
@@ -2645,10 +2537,6 @@ nav a {
   .profile-stats > div + div:nth-child(odd) {
     border-left: 0;
   }
-
-  .heatmap-details ul {
-    columns: 1;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2675,7 +2563,6 @@ nav a {
 .event-detail,
 .profile-cover > span,
 .profile-stats span,
-.heatmap-legend,
 .profile-activity small,
 .profile-activity-metric > span,
 .visibility-pill,

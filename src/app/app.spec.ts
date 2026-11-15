@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './app';
+import { ActivityCalendar } from './activity-calendar';
+import { By } from '@angular/platform-browser';
 import { DEMO_ACTIVITIES, DEMO_EVENTS, DEMO_PROFILE } from './demo';
 import type { Bootstrap } from './models';
 import { provideRouter, Router } from '@angular/router';
@@ -61,6 +63,7 @@ describe('App', () => {
     delete document.documentElement.dataset['themePreference'];
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('offers an accessible theme control and applies the selected theme', async () => {
@@ -250,7 +253,10 @@ describe('App', () => {
     expect(fixture.componentInstance.page()).toBe('profile');
     expect(fixture.nativeElement.querySelector('h1')?.textContent).toBe('Signed-in developer');
     expect(fixture.nativeElement.textContent).not.toContain('Avery Chen');
-    expect(fixture.nativeElement.textContent).toContain('No activities match these filters.');
+    expect(fixture.nativeElement.textContent).toContain('No matching activities.');
+    expect(fixture.nativeElement.querySelector('.heatmap-toggle')?.textContent).toContain(
+      '0 sessions',
+    );
   });
 
   it('mounts developer insights only for the signed-in own profile, never remote, anonymous or preview profiles', async () => {
@@ -286,7 +292,7 @@ describe('App', () => {
     expect(fixture.nativeElement.querySelector('app-developer-insights')).toBeNull();
   });
 
-  it('loads all profile activities separately from the feed and filters the calendar and list', async () => {
+  it('loads all profile activities and filters the calendar by year independently of the list month', async () => {
     const viewer = { ...DEMO_PROFILE, id: 'me', username: 'me' };
     const activities = Array.from({ length: 102 }, (_, index) => ({
       ...DEMO_ACTIVITIES[0],
@@ -311,18 +317,29 @@ describe('App', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     const app = fixture.componentInstance;
+    const calendar = fixture.debugElement.query(By.directive(ActivityCalendar))
+      .componentInstance as ActivityCalendar;
     expect(app.profileStats().sessions).toBe(102);
-    expect(app.heatmapMonths().find((month) => month.month === '2024-01')?.days[14].count).toBe(1);
+    expect(calendar.years()).toEqual(expect.arrayContaining([2025, 2024]));
     expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(102);
     app.selectAllProfileActivities();
     expect(app.selectedActivityIds()).toHaveLength(100);
     app.clearActivitySelection();
 
-    const selects = fixture.nativeElement.querySelectorAll(
-      '.profile-filters select',
+    const graphSelects = fixture.nativeElement.querySelectorAll(
+      '.heatmap-filters select',
     ) as NodeListOf<HTMLSelectElement>;
-    expect(selects[0].options[1].textContent).toBe('Feb 25');
-    expect(fixture.nativeElement.querySelector('.heatmap-month h3')?.textContent).toBe('Feb 25');
+    const monthSelect = fixture.nativeElement.querySelector(
+      '.profile-filters:not(.heatmap-filters) select',
+    ) as HTMLSelectElement;
+    expect(monthSelect.options[1].textContent).toBe('Feb 25');
+    graphSelects[0].value = '2024';
+    graphSelects[0].dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(app.heatmapYear()).toBe('2024');
+    expect(calendar.heatmap().days.find((day) => day.date === '2024-01-15')?.count).toBe(1);
+    expect(calendar.heatmap().sessions).toBe(1);
+    expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(102);
     const activityMetric = fixture.nativeElement.querySelector(
       '.profile-activity-metric',
     ) as HTMLElement;
@@ -339,18 +356,33 @@ describe('App', () => {
     expect(graph.open).toBe(false);
     (graph.querySelector('summary') as HTMLElement).click();
     expect(graph.open).toBe(true);
-    selects[0].value = '2024-01';
-    selects[0].dispatchEvent(new Event('change'));
-    selects[1].value = 'Cycling';
-    selects[1].dispatchEvent(new Event('change'));
+    monthSelect.value = '2025-02';
+    monthSelect.dispatchEvent(new Event('change'));
     fixture.detectChanges();
+    expect(calendar.heatmap().sessions).toBe(1);
+    monthSelect.value = '2024-01';
+    monthSelect.dispatchEvent(new Event('change'));
+    graphSelects[1].value = 'Cycling';
+    graphSelects[1].dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(app.profileSport()).toBe('Cycling');
     expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(1);
-    expect(app.heatmapMonths()[0].days[14].count).toBe(1);
+    expect(calendar.heatmap().days.find((day) => day.date === '2024-01-15')?.count).toBe(1);
     app.profileSport.set('Running');
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(0);
-    expect(app.heatmapMonths()[0].days[14].count).toBe(0);
+    expect(calendar.heatmap().sessions).toBe(0);
+    expect(calendar.heatmap().days).toHaveLength(366);
     expect(app.profileStats().sessions).toBe(102);
+    await TestBed.inject(Router).navigateByUrl('/feed');
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(app.heatmapYear()).toBe('last-12-months');
+    expect(app.profileSport()).toBe('All');
+    expect(
+      (fixture.nativeElement.querySelector('.heatmap-filters select') as HTMLSelectElement).value,
+    ).toBe('last-12-months');
   });
 
   it('shows a daily summary in the graph and accessible details, respecting activity filters', async () => {
@@ -386,6 +418,7 @@ describe('App', () => {
     await fixture.whenStable();
     await TestBed.inject(Router).navigateByUrl('/profile');
     await fixture.whenStable();
+    fixture.componentInstance.heatmapYear.set('2025');
     fixture.detectChanges();
 
     const summary = fixture.nativeElement.querySelector('.heatmap .more')?.getAttribute('title');
