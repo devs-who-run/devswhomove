@@ -99,6 +99,25 @@ describe('App', () => {
     expect(html.querySelector('.week-chart')?.getAttribute('aria-label')).toContain('Monday');
   });
 
+  it('connects the feed sidebar shortcuts to navigation and event creation', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const html = fixture.nativeElement as HTMLElement;
+    html.querySelector<HTMLButtonElement>('.host-button')!.click();
+    expect(fixture.componentInstance.notice()).toContain('Sign in with GitHub');
+
+    html.querySelector<HTMLButtonElement>('.mini-event')!.click();
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/events');
+
+    await TestBed.inject(Router).navigateByUrl('/feed');
+    await fixture.whenStable();
+    html.querySelector<HTMLButtonElement>('.agent-promo button')!.click();
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/agents');
+  });
+
   it('filters activities by sport without changing the source data', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
