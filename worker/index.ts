@@ -800,6 +800,21 @@ async function removeStaleAtprotoRecords(
   }
 }
 
+/** Remove queued photos from R2; failures stay queued and are retried on the next activity delete. */
+async function purgeDeletedPhotos(env: Env): Promise<void> {
+  try {
+    const queued = await env.DB.prepare(
+      'SELECT key FROM photo_deletions ORDER BY queued_at LIMIT 20',
+    ).all<{ key: string }>();
+    for (const { key } of queued.results) {
+      await env.PHOTOS.delete(key);
+      await env.DB.prepare('DELETE FROM photo_deletions WHERE key = ?').bind(key).run();
+    }
+  } catch (error) {
+    console.error('Photo cleanup failed; it will be retried.', error);
+  }
+}
+
 /** Refresh the bounded D1 projection from the user's PDS when its sync interval has elapsed. */
 async function syncAtprotoData(env: Env, auth: Identity): Promise<void> {
   const agent = auth.atprotoAgent;
@@ -1421,22 +1436,30 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return json({ ok: true });
     }
     if (method === 'DELETE') {
-      // Read the photo key first so a failed batch leaves it available for a retry.
-      const current = await env.DB.prepare(
-        'SELECT photo_key AS key FROM activities WHERE id = ? AND user_id = ?',
-      )
-        .bind(activityId, identity.user.id)
-        .first<{ key: string | null }>();
-      if (!current) throw new HttpError(404, 'Activity not found.');
-      const [deleted] = await env.DB.batch([
-        env.DB.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(
-          activityId,
-          identity.user.id,
-        ),
-        ...deleteActivitySocial(env.DB, activityId),
-      ]);
-      if (!deleted?.meta.changes) throw new HttpError(404, 'Activity not found.');
-      if (current.key) await env.PHOTOS.delete(current.key);
+      try {
+        const owned = await env.DB.prepare(
+          'SELECT 1 AS found FROM activities WHERE id = ? AND user_id = ?',
+        )
+          .bind(activityId, identity.user.id)
+          .first();
+        if (!owned) throw new HttpError(404, 'Activity not found.');
+        // The photo key is queued in the same transaction as the delete, so it survives R2 failures.
+        const [, deleted] = await env.DB.batch([
+          env.DB.prepare(
+            `INSERT OR IGNORE INTO photo_deletions (key, queued_at)
+            SELECT photo_key, ? FROM activities
+            WHERE id = ? AND user_id = ? AND photo_key IS NOT NULL`,
+          ).bind(new Date().toISOString(), activityId, identity.user.id),
+          env.DB.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(
+            activityId,
+            identity.user.id,
+          ),
+          ...deleteActivitySocial(env.DB, activityId),
+        ]);
+        if (!deleted?.meta.changes) throw new HttpError(404, 'Activity not found.');
+      } finally {
+        await purgeDeletedPhotos(env);
+      }
     } else {
       const data = await body(request);
       const result = await env.DB.prepare(

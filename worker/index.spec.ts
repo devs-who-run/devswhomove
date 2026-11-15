@@ -249,6 +249,7 @@ describe('Worker with real D1 storage', () => {
         '0004_atproto_handle_index.sql',
         '0005_event_conferences.sql',
         '0006_social.sql',
+        '0007_photo_deletions.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -664,6 +665,20 @@ describe('Worker with real D1 storage', () => {
       (await request(`/api/activities/${agentActivity}`, 'DELETE', undefined, alice)).status,
     ).toBe(200);
     expect(await storedPhotos()).toBe(0);
+  });
+
+  it('retries queued photo deletions on a later activity delete', async () => {
+    const bucket = await runtime.getR2Bucket('PHOTOS');
+    await bucket.put('activities/orphan/photo', new Uint8Array([1]));
+    await db
+      .prepare('INSERT INTO photo_deletions (key, queued_at) VALUES (?, ?)')
+      .bind('activities/orphan/photo', '2026-01-01T00:00:00.000Z')
+      .run();
+    expect((await request('/api/activities/missing', 'DELETE', undefined, alice)).status).toBe(404);
+    expect(await bucket.get('activities/orphan/photo')).toBeNull();
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM photo_deletions').first('count')).toBe(
+      0,
+    );
   });
 
   it('imports valid bulk items while returning validation and idempotency errors per item', async () => {
