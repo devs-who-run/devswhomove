@@ -1,0 +1,49 @@
+.events-banner {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  border: 1px solid #dfe7d4;
+  background: #edf2e5;
+  border-radius: 10px;
+  padding: 22px;
+  color: #657752;
+}
+.events-banner > app-icon {
+  font-size: 27px;
+}
+.events-banner p {
+  font-size: 13px;
+  line-height: 1.7;
+}
+.events-banner strong {
+  color: #3f5c36;
+  margin-right: 5px;
+}
+.event-filters {
+  margin: 27px 0 22px;
+}
+.privacy-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: #8a9580;
+  font-size: 12px;
+  line-height: 1.7;
+  margin-top: 25px;
+}
+@media (max-width: 520px) {
+  .page-heading:has(+ .events-banner) {
+    flex-direction: column;
+    gap: 17px;
+  }
+  .events-banner {
+    padding: 17px;
+    gap: 13px;
+  }
+  .events-banner p {
+    font-size: 12px;
+  }
+  .events-banner > app-icon {
+    font-size: 24px;
+  }
+}

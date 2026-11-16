@@ -1,0 +1,221 @@
+.section-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.section-top h2 {
+  font: 700 14px var(--heading);
+  letter-spacing: -0.3px;
+}
+.profile-recent {
+  margin-top: 32px;
+  margin-bottom: 16px;
+}
+.profile-bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.profile-bulk-actions > span {
+  color: #7a857c;
+  font-size: 12px;
+}
+.text-button {
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #3e6042;
+  font-weight: 550;
+  font-size: 13px;
+}
+.text-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.danger {
+  color: #a44938 !important;
+}
+.profile-activity {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 22px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  margin-top: 10px;
+}
+.profile-activity.bulk-selected {
+  border-color: #9aad7d;
+}
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #61734d;
+  margin-bottom: 8px;
+}
+input {
+  border: 1px solid #dce4d1;
+  border-radius: 6px;
+  background: #fdfefa;
+  color: #3f5136;
+  min-height: 41px;
+  padding: 10px 12px;
+  font-size: 13px;
+  outline-offset: 2px !important;
+}
+.profile-activity-select {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.profile-activity-select input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+.activity-sport-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: #f0f4e8;
+  border-radius: 9px;
+  color: #819762;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.profile-activity > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.profile-activity small {
+  font-size: 12px;
+  color: #96a085;
+}
+.profile-activity h3 {
+  font: 650 15px var(--heading);
+  margin: 5px 0;
+  letter-spacing: -0.4px;
+}
+.profile-activity p {
+  font-size: 12px;
+  color: #8c9782;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.profile-activity-metric {
+  text-align: right;
+}
+.profile-activity-metric strong {
+  display: block;
+  font: 650 21px var(--heading);
+  white-space: nowrap;
+}
+.profile-activity-metric > span {
+  font-size: 12px;
+  color: #9ba38f;
+}
+.profile-activity-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+.profile-activity-actions > .text-button {
+  font-size: 12px;
+}
+.profile-activity-photo {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  max-height: 200px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-top: 10px;
+}
+.privacy-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: #8a9580;
+  font-size: 12px;
+  line-height: 1.7;
+  margin-top: 25px;
+}
+@media (max-width: 1050px) {
+  .section-top h2 {
+    font-size: 13px;
+  }
+}
+@media (max-width: 850px) {
+  .profile-activity {
+    gap: 13px;
+    padding: 18px;
+  }
+}
+@media (max-width: 700px) {
+  .profile-activity-actions {
+    flex-basis: 100%;
+    flex-direction: row;
+  }
+  .profile-activity {
+    flex-wrap: wrap;
+  }
+  .profile-activity-metric {
+    margin-left: auto;
+  }
+}
+@media (max-width: 520px) {
+  .section-top h2 {
+    font-size: 14px;
+  }
+  .profile-activity {
+    padding: 16px;
+    gap: 12px;
+  }
+  .activity-sport-icon {
+    width: 35px;
+    height: 35px;
+    font-size: 20px;
+  }
+  .profile-activity h3 {
+    font-size: 13px;
+  }
+  .profile-activity p,
+  .profile-activity small {
+    font-size: 12px;
+  }
+  .profile-activity-metric strong {
+    font-size: 18px;
+  }
+  .profile-activity-metric {
+    align-self: flex-start;
+  }
+  label {
+    font-size: 12px;
+  }
+  input {
+    font-size: 16px;
+    padding: 9px;
+    min-width: 0;
+  }
+}
+.profile-activity small,
+.profile-activity-metric > span {
+  color: var(--muted);
+  font-size: max(12px, 0.85em);
+}
+.profile-activity:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 8px 24px rgb(34 54 40 / 7%);
+}

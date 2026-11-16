@@ -1,0 +1,54 @@
+@if (placement() === 'sidebar') {
+  <span class="status-dot"></span> BUILT FOR HUMANS. & AGENTS.
+  @if (viewer(); as user) {
+    <div class="account">
+      <span class="avatar small">
+        @if (user.avatar) {
+          <img [src]="user.avatar" alt="" referrerpolicy="no-referrer" />
+        } @else {
+          {{ initials(user.name) }}
+        }
+      </span>
+      <div>
+        <strong>{{ user.name }}</strong>
+        <span>&#64;{{ user.username }}</span>
+      </div>
+      <button
+        class="icon-button"
+        aria-label="Sign out"
+        (click)="signOut.emit()"
+        [disabled]="saving()"
+      >
+        <app-icon name="logout" />
+      </button>
+    </div>
+  } @else {
+    <button class="github-button" (click)="githubLogin.emit()">
+      <app-icon name="github" /> Join with GitHub <app-icon name="arrow" />
+    </button>
+    <button class="github-button atproto-button" (click)="atprotoLogin.emit()">
+      Join with AT Protocol <app-icon name="arrow" />
+    </button>
+  }
+} @else if (placement() === 'header') {
+  <button class="button primary compact" (click)="githubLogin.emit()">
+    <app-icon name="github" /> GitHub
+  </button>
+  <button class="button outline compact" (click)="atprotoLogin.emit()">AT Protocol</button>
+} @else if (placement() === 'profile') {
+  <div class="login-buttons profile-login">
+    <button class="button primary" (click)="githubLogin.emit()">
+      <app-icon name="github" /> Sign in with GitHub
+    </button>
+    <button class="button outline" (click)="atprotoLogin.emit()">Sign in with AT Protocol</button>
+  </div>
+} @else {
+  <div class="login-buttons agents-login">
+    <button class="button primary full" (click)="githubLogin.emit()">
+      <app-icon name="github" /> Connect with GitHub
+    </button>
+    <button class="button outline full" (click)="atprotoLogin.emit()">
+      Connect with AT Protocol
+    </button>
+  </div>
+}

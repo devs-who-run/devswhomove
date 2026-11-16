@@ -3,117 +3,29 @@
   >Skip to content</a
 >
 <div class="app-shell">
-  <aside class="sidebar">
-    <a class="brand" routerLink="/feed" aria-label="Devs Who Move home">
-      <span class="brand-mark"><app-icon name="move" /></span>
-      <span>devs<span class="brand-light">who</span>move<span class="brand-dot">.</span></span>
-    </a>
-    <div class="workspace-label">A LITTLE LESS SEDENTARY.</div>
-    <nav aria-label="Main navigation">
-      @for (item of nav; track item.page) {
-        <a
-          [routerLink]="'/' + item.page"
-          [class.active]="page() === item.page"
-          [attr.aria-label]="item.label"
-          [attr.aria-current]="page() === item.page ? 'page' : null"
-        >
-          <app-icon [name]="item.icon" /><span>{{ item.label }}</span>
-        </a>
-      }
-    </nav>
-    <div class="sidebar-manifesto">
-      <span class="little-star">✳</span>
-      <h3>Good things happen<br />away from the desk.</h3>
-      <p>Find your pace.<br />Find your people.</p>
-      <button class="text-button" (click)="navigate('events')">
-        Let’s get outside <app-icon name="arrow" />
-      </button>
-    </div>
-    <div class="sidebar-bottom">
-      <span class="status-dot"></span> BUILT FOR HUMANS. & AGENTS.
-      @if (viewer(); as user) {
-        <div class="account">
-          <span class="avatar small">
-            @if (user.avatar) {
-              <img [src]="user.avatar" alt="" referrerpolicy="no-referrer" />
-            } @else {
-              {{ initials(user.name) }}
-            }
-          </span>
-          <div>
-            <strong>{{ user.name }}</strong
-            ><span>&#64;{{ user.username }}</span>
-          </div>
-          <button
-            class="icon-button"
-            aria-label="Sign out"
-            (click)="logout()"
-            [disabled]="saving()"
-          >
-            <app-icon name="logout" />
-          </button>
-        </div>
-      } @else {
-        <button class="github-button" (click)="login()">
-          <app-icon name="github" /> Join with GitHub <app-icon name="arrow" />
-        </button>
-        <button class="github-button atproto-button" (click)="loginAtproto()">
-          Join with AT Protocol <app-icon name="arrow" />
-        </button>
-      }
-    </div>
-  </aside>
+  <app-sidebar
+    [nav]="nav"
+    [page]="page()"
+    [viewer]="viewer()"
+    [saving]="saving()"
+    (navigate)="navigate($event)"
+    (githubLogin)="auth.login()"
+    (atprotoLogin)="auth.loginAtproto()"
+    (signOut)="auth.logout()"
+  />
 
   <div class="main-shell">
-    <header class="topbar">
-      <div class="breadcrumb">Your next commit? <span>A little movement.</span></div>
-      <div class="topbar-actions">
-        <div class="theme-control">
-          <label for="theme-preference" class="sr-only">Color theme</label>
-          <app-icon
-            [name]="
-              theme.preference() === 'system'
-                ? 'monitor'
-                : theme.preference() === 'dark'
-                  ? 'moon'
-                  : 'sun'
-            "
-          />
-          <select
-            id="theme-preference"
-            aria-label="Color theme"
-            [ngModel]="theme.preference()"
-            (ngModelChange)="theme.setPreference($event)"
-          >
-            <option value="system">System theme</option>
-            <option value="light">Light theme</option>
-            <option value="dark">Dark theme</option>
-          </select>
-        </div>
-        <span class="today">{{ '2026' }} <span class="tiny-divider">/</span> EST. IN MOTION</span>
-        @if (viewer()) {
-          <button
-            class="icon-button mobile-signout"
-            aria-label="Sign out"
-            (click)="logout()"
-            [disabled]="saving()"
-          >
-            <app-icon name="logout" />
-          </button>
-          <button class="button primary compact" (click)="openModal('activity')">
-            <app-icon name="plus" /> Log activity
-          </button>
-        } @else {
-          <button class="button primary compact" (click)="login()">
-            <app-icon name="github" /> GitHub
-          </button>
-          <button class="button outline compact" (click)="loginAtproto()">AT Protocol</button>
-        }
-      </div>
-    </header>
+    <app-topbar
+      [viewer]="viewer()"
+      [saving]="saving()"
+      (githubLogin)="auth.login()"
+      (atprotoLogin)="auth.loginAtproto()"
+      (signOut)="auth.logout()"
+      (logActivity)="editor.openModal('activity')"
+    />
 
     <main #main id="main" tabindex="-1">
-      @if (error() && !modal()) {
+      @if (error() && !editor.modal()) {
         <div class="banner error" role="alert">
           <span>{{ error() }}</span
           ><button class="icon-button" aria-label="Dismiss error" (click)="error.set('')">
@@ -142,7 +54,9 @@
           <span><span class="status-dot"></span> YOU’RE EXPLORING A PREVIEW</span
           ><span
             >Sample people. Real possibilities.
-            <button (click)="login()">Make it yours <span aria-hidden="true">↗</span></button></span
+            <button (click)="auth.login()">
+              Make it yours <span aria-hidden="true">↗</span>
+            </button></span
           >
         </div>
       }
@@ -154,318 +68,44 @@
         </div>
       } @else {
         @if (page() === 'feed') {
-          <div class="page-heading">
-            <div>
-              <p class="eyebrow">LESS SCROLLING. MORE STRIDING.</p>
-              <h1>Your people. <span>Your pace.</span></h1>
-              <p>A place for developers who move. Every sport. Every starting point.</p>
-            </div>
-            <button class="button outline heading-button" (click)="openModal('activity')">
-              <app-icon name="plus" /> Log a little progress
-            </button>
-          </div>
-          <div class="dashboard-grid">
-            <section class="feed-column" aria-label="Community feed">
-              <div class="hero">
-                <div class="hero-art" aria-hidden="true">
-                  <svg viewBox="0 0 600 340" preserveAspectRatio="xMidYMid slice">
-                    <defs>
-                      <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
-                        <path d="M32 0H0V32" fill="none" stroke="#fff" stroke-opacity=".05" />
-                      </pattern>
-                    </defs>
-                    <rect width="600" height="340" fill="url(#grid)" />
-                    <g fill="none" stroke="#bce0c7" stroke-opacity=".13" stroke-width="1">
-                      <path
-                        d="M300-40c-80 80 110 75 40 170S440 230 370 380M330-40c-80 80 110 75 40 170S470 230 400 380M360-40c-80 80 110 75 40 170S500 230 430 380M390-40c-80 80 110 75 40 170S530 230 460 380M420-40c-80 80 110 75 40 170S560 230 490 380M450-40c-80 80 110 75 40 170S590 230 520 380M480-40c-80 80 110 75 40 170S620 230 550 380"
-                      />
-                      <path
-                        d="M260-40c-80 80 110 75 40 170S400 230 330 380M230-40c-80 80 110 75 40 170S370 230 300 380"
-                      />
-                    </g>
-                    <path
-                      d="m385 272-21-46 33-38-9-49 61-28 5-42 55-22 33 31-23 42 13 46-48 38-28-10-42 44-29 34Z"
-                      fill="#b9e46d"
-                      fill-opacity=".08"
-                      stroke="#d4f59a"
-                      stroke-width="3"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <circle cx="385" cy="272" r="13" fill="#d4f59a" fill-opacity=".15" />
-                    <circle cx="385" cy="272" r="5" fill="#d4f59a" />
-                    <circle
-                      cx="454"
-                      cy="69"
-                      r="5"
-                      fill="#173f32"
-                      stroke="#d4f59a"
-                      stroke-width="2"
-                    />
-                  </svg>
-                  <div class="route-label">
-                    <span class="status-dot"></span> OUT OF OFFICE. INTO YOUR STRIDE.
-                  </div>
-                </div>
-                <div class="hero-copy">
-                  <span class="hero-label"
-                    ><span class="status-dot"></span> SHIP CODE. COLLECT KILOMETRES.</span
-                  >
-                  <h2>There’s a whole world<br />outside your editor<span>.</span></h2>
-                  <p>
-                    Chase a little fresh air, not another deadline.<br />Your next good session
-                    starts with good company.
-                  </p>
-                  <button class="button lime" (click)="navigate('events')">
-                    Find your next move <app-icon name="arrow" />
-                  </button>
-                </div>
-              </div>
-              <div class="section-top feed-tabs">
-                <div class="tabs" role="group" aria-label="Feed filter">
-                  <button
-                    [class.selected]="feedMode() === 'community'"
-                    [attr.aria-pressed]="feedMode() === 'community'"
-                    (click)="setFeedMode('community')"
-                  >
-                    Community
-                  </button>
-                  @if (!preview()) {
-                    <button
-                      [class.selected]="feedMode() === 'following'"
-                      [attr.aria-pressed]="feedMode() === 'following'"
-                      (click)="setFeedMode('following')"
-                    >
-                      Following
-                    </button>
-                  }
-                  <button
-                    [class.selected]="feedMode() === 'mine'"
-                    [attr.aria-pressed]="feedMode() === 'mine'"
-                    (click)="setFeedMode('mine')"
-                  >
-                    Your activity
-                  </button>
-                </div>
-                <span class="muted small-text">A little progress, shared.</span>
-              </div>
-              <app-sport-filter
-                ariaLabel="Filter activities by sport"
-                allLabel="All movement"
-                [selected]="selectedSport()"
-                (selectedChange)="selectedSport.set($event)"
-              />
-              @if (profileHidden()) {
-                <div class="privacy-callout" style="margin: 0 0 18px" role="note">
-                  <app-icon name="lock" />
-                  <div>
-                    <strong>Your profile is private.</strong>
-                    <p>
-                      Profiles are private by default. Make your profile public to share your public
-                      activities with the community.
-                    </p>
-                  </div>
-                  <button class="text-button" (click)="makeProfilePublic()">
-                    Make profile public <app-icon name="arrow" />
-                  </button>
-                </div>
-              }
-              @for (activity of filteredActivities(); track activity.id) {
-                <app-activity-card
-                  [activity]="activity"
-                  [viewerId]="viewer()?.id ?? null"
-                  [profileHidden]="profileHidden()"
-                  [canChangeVisibility]="!!viewer() && viewer()?.provider !== 'atproto'"
-                  [saving]="saving()"
-                  [social]="!preview()"
-                  [participation]="participation()"
-                  (visibilityChange)="toggleVisibility($event)"
-                />
-              } @empty {
-                @if (feedMode() === 'following') {
-                  <div class="empty-state" [attr.aria-busy]="followingLoading()">
-                    <app-icon name="people" />
-                    <h3>{{ followingLoading() ? 'Loading your people…' : 'Find your people.' }}</h3>
-                    @if (!followingLoading()) {
-                      <p>Follow people from their profile to see their public activities here.</p>
-                      <button class="button outline" (click)="setFeedMode('community')">
-                        Browse the community <app-icon name="arrow" />
-                      </button>
-                    }
-                  </div>
-                } @else {
-                  <div class="empty-state">
-                    <app-icon name="move" />
-                    <h3>A fresh starting line.</h3>
-                    <p>No activities here yet. Your first little move belongs here.</p>
-                    <button class="button outline" (click)="openModal('activity')">
-                      Log an activity <app-icon name="plus" />
-                    </button>
-                  </div>
-                }
-              }
-              <p class="feed-end">YOU DON’T HAVE TO GO FAST. JUST GO.</p>
-            </section>
-
-            <app-feed-sidebar
-              [activities]="myActivities()"
-              [events]="events()"
-              [preview]="preview()"
-              (navigate)="navigate($event)"
-              (hostEvent)="openModal('event')"
-            />
-          </div>
+          <app-feed-page
+            [viewer]="viewer()"
+            [preview]="preview()"
+            [saving]="saving()"
+            [profileHidden]="profileHidden()"
+            [participation]="participation()"
+            [feedMode]="feed.mode()"
+            [followingLoading]="feed.followingLoading()"
+            [selectedSport]="selectedSport()"
+            [activities]="feed.filteredActivities()"
+            [myActivities]="feed.myActivities()"
+            [events]="events()"
+            (feedModeChange)="feed.setMode($event)"
+            (selectedSportChange)="selectedSport.set($event)"
+            (visibilityChange)="activityActions.toggleVisibility($event)"
+            (navigate)="navigate($event)"
+            (logActivity)="editor.openModal('activity')"
+            (hostEvent)="editor.openModal('event')"
+            (makeProfilePublic)="editor.makeProfilePublic()"
+          />
         }
 
         @if (page() === 'events') {
-          <div class="page-heading">
-            <div>
-              <p class="eyebrow">GOOD COMPANY. GREAT REASON TO GO.</p>
-              <h1>Better <span>together.</span></h1>
-              <p>A morning run, a friendly match, a ride with no rush. Find your people.</p>
-            </div>
-            <button class="button primary" (click)="openModal('event')">
-              <app-icon name="plus" /> Host an event
-            </button>
-          </div>
-          <div class="events-banner">
-            <app-icon name="people" />
-            <p>
-              <strong>No qualifying pace. No gatekeeping.</strong> Just developers making time to
-              move. Every starting point is welcome.
-            </p>
-          </div>
-          <app-sport-filter
-            class="event-filters"
-            ariaLabel="Filter events by sport"
-            allLabel="All sports"
-            [selected]="selectedSport()"
-            (selectedChange)="selectedSport.set($event)"
+          <app-events-page
+            [events]="filteredEvents()"
+            [viewer]="viewer()"
+            [selectedSport]="selectedSport()"
+            [saving]="saving()"
+            [attendeeEvent]="eventActions.attendeeEvent()"
+            [loadingAttendees]="eventActions.loadingAttendees()"
+            [eventAttendees]="eventActions.eventAttendees()"
+            (selectedSportChange)="selectedSport.set($event)"
+            (hostEvent)="editor.openModal('event')"
+            (toggleAttendees)="eventActions.toggleAttendees($event)"
+            (editEvent)="editor.editEvent($event)"
+            (cancelEvent)="eventActions.cancel($event)"
+            (joinEvent)="eventActions.join($event)"
           />
-          <div class="event-grid">
-            @for (event of filteredEvents(); track event.id) {
-              <article class="event-card">
-                <div
-                  class="event-art"
-                  [class.tennis]="event.sport === 'Tennis'"
-                  [class.cycling]="event.sport === 'Cycling'"
-                >
-                  <span class="sport-label"><app-icon [name]="event.sport" />{{ event.sport }}</span
-                  ><app-icon class="event-big-icon" [name]="event.sport" /><span
-                    class="event-art-caption"
-                    >FIND YOUR PEOPLE. MAKE YOUR MOVE.</span
-                  >
-                </div>
-                <div class="event-body">
-                  <div class="event-date">
-                    {{ event.startsAt | date: 'EEEE, MMM d' }} <span>·</span>
-                    {{ event.startsAt | date: 'h:mm a' }}
-                  </div>
-                  <h2>{{ event.title }}</h2>
-                  @if (event.clubSlug) {
-                    <p class="event-conference">
-                      Club: <a [routerLink]="['/clubs', event.clubSlug]">{{ event.clubName }}</a>
-                    </p>
-                  }
-                  @if (event.conferenceName) {
-                    <p class="event-conference">
-                      Conference:
-                      @if (conferenceLink(event.conferenceUrl); as link) {
-                        <a [href]="link" target="_blank" rel="noopener noreferrer">{{
-                          event.conferenceName
-                        }}</a>
-                      } @else {
-                        <span>{{ event.conferenceName }}</span>
-                      }
-                    </p>
-                  }
-                  <p class="event-description">{{ event.description }}</p>
-                  <p class="event-detail"><app-icon name="pin" />{{ event.location }}</p>
-                  <p class="event-detail"><app-icon name="move" />{{ event.level }}</p>
-                  <p class="event-detail">
-                    <app-icon name="people" />{{ event.attendees }} / {{ event.capacity }} going
-                    <span class="host-name">· Hosted by {{ event.hostName }}</span>
-                  </p>
-                  @if (event.hostId === viewer()?.id) {
-                    <button
-                      class="button outline full"
-                      (click)="toggleAttendees(event)"
-                      [disabled]="loadingAttendees() === event.id"
-                      [attr.aria-expanded]="attendeeEvent() === event.id"
-                    >
-                      {{
-                        loadingAttendees() === event.id
-                          ? 'Loading attendees…'
-                          : attendeeEvent() === event.id
-                            ? 'Hide attendees'
-                            : 'View attendees'
-                      }}
-                    </button>
-                    @if (attendeeEvent() === event.id && loadingAttendees() !== event.id) {
-                      <ul class="attendee-list" aria-live="polite">
-                        @for (attendee of eventAttendees(); track $index) {
-                          <li class="attendee">
-                            @if (attendee.avatar) {
-                              <img [src]="attendee.avatar" alt="" referrerpolicy="no-referrer" />
-                            } @else {
-                              <app-icon name="user" />
-                            }
-                            <span>{{ attendee.name }}</span>
-                          </li>
-                        } @empty {
-                          <li>No one has joined yet.</li>
-                        }
-                      </ul>
-                    }
-                    <div class="host-actions">
-                      <button
-                        class="button primary"
-                        (click)="editEvent(event)"
-                        [disabled]="saving()"
-                      >
-                        Edit event</button
-                      ><button
-                        class="button outline"
-                        (click)="cancelEvent(event)"
-                        [disabled]="saving()"
-                      >
-                        Cancel event
-                      </button>
-                    </div>
-                  } @else {
-                    <button
-                      class="button full"
-                      [class.primary]="!event.joined"
-                      [class.outline]="event.joined"
-                      [disabled]="saving() || (!event.joined && event.attendees >= event.capacity)"
-                      (click)="join(event)"
-                    >
-                      <app-icon [name]="event.joined ? 'check' : 'plus'" />{{
-                        event.joined
-                          ? 'You’re going · Leave event'
-                          : event.attendees >= event.capacity
-                            ? 'This one’s full'
-                            : 'Count me in'
-                      }}
-                    </button>
-                  }
-                </div>
-              </article>
-            } @empty {
-              <div class="empty-state full">
-                <app-icon name="calendar" />
-                <h3>Be the reason someone gets outside.</h3>
-                <p>No upcoming events for this sport yet. Start with a simple invitation.</p>
-                <button class="button primary" (click)="openModal('event')">
-                  Host the first one <app-icon name="plus" />
-                </button>
-              </div>
-            }
-          </div>
-          <p class="privacy-note">
-            <app-icon name="globe" /> Events are public. Use a general meeting area, not your home
-            address. Event times are shown in your local time zone.
-          </p>
         }
 
         @if (page() === 'activity') {
@@ -496,208 +136,23 @@
         }
 
         @if (page() === 'clubs') {
-          @if (clubLoading()) {
-            <div class="loading-state" role="status">Loading club…</div>
-          } @else if (clubError()) {
-            <div class="empty-state">
-              <app-icon name="people" />
-              <h2>We couldn’t find that club.</h2>
-              <p>{{ clubError() }}</p>
-              <a class="button outline" routerLink="/clubs">Back to clubs</a>
-            </div>
-          } @else if (clubDetail(); as detail) {
-            <div class="page-heading">
-              <div>
-                <p class="eyebrow">
-                  <a routerLink="/clubs">CLUBS</a> ·
-                  {{ detail.club.sport ? detail.club.sport.toUpperCase() : 'ALL SPORTS' }}
-                </p>
-                <h1>{{ detail.club.name }}</h1>
-                <p>{{ detail.club.description || 'Developers who move together.' }}</p>
-                <p class="muted small-text">
-                  {{ detail.club.members }}
-                  {{ detail.club.members === 1 ? 'member' : 'members' }}
-                  @if (detail.club.ownerName) {
-                    · Started by {{ detail.club.ownerName }}
-                  }
-                </p>
-              </div>
-              <div class="club-actions">
-                <button class="button outline" (click)="shareClub(detail.club)">
-                  <app-icon name="share" /> Invite people
-                </button>
-                @if (detail.club.owned) {
-                  <button
-                    class="button outline"
-                    (click)="deleteClub(detail.club)"
-                    [disabled]="saving()"
-                  >
-                    Delete club
-                  </button>
-                } @else {
-                  <button
-                    class="button"
-                    [class.primary]="!detail.club.joined"
-                    [class.outline]="detail.club.joined"
-                    (click)="toggleMembership(detail.club)"
-                    [disabled]="saving()"
-                  >
-                    {{ detail.club.joined ? 'Leave club' : 'Join club' }}
-                  </button>
-                }
-                @if (detail.club.joined) {
-                  <button class="button primary" (click)="openModal('event')">
-                    <app-icon name="plus" /> Host a club event
-                  </button>
-                }
-              </div>
-            </div>
-            <div class="club-layout">
-              <section aria-labelledby="club-feed-title">
-                <h2 id="club-feed-title">Club feed</h2>
-                @for (activity of detail.activities; track activity.id) {
-                  <app-activity-card
-                    [activity]="activity"
-                    [viewerId]="viewer()?.id ?? null"
-                    [profileHidden]="profileHidden()"
-                    [social]="true"
-                    [participation]="participation()"
-                  />
-                } @empty {
-                  <div class="empty-state">
-                    <app-icon name="move" />
-                    <h3>Quiet start.</h3>
-                    <p>Public activities from club members show up here.</p>
-                  </div>
-                }
-              </section>
-              <aside class="club-sidebar">
-                <section aria-labelledby="club-events-title">
-                  <h2 id="club-events-title">Upcoming club events</h2>
-                  <ul class="club-list">
-                    @for (event of detail.events; track event.id) {
-                      <li>
-                        <strong>{{ event.title }}</strong>
-                        <span class="muted small-text"
-                          >{{ event.startsAt | date: 'EEE, MMM d · h:mm a' }} ·
-                          {{ event.location }}</span
-                        >
-                        <span class="muted small-text"
-                          >{{ event.attendees }} / {{ event.capacity }} going</span
-                        >
-                        @if (event.hostId !== viewer()?.id) {
-                          <button
-                            class="text-button"
-                            [disabled]="
-                              saving() || (!event.joined && event.attendees >= event.capacity)
-                            "
-                            (click)="join(event)"
-                          >
-                            {{
-                              event.joined
-                                ? 'Leave event'
-                                : event.attendees >= event.capacity
-                                  ? 'Full'
-                                  : 'Count me in'
-                            }}
-                          </button>
-                        }
-                      </li>
-                    } @empty {
-                      <li class="muted small-text">No upcoming club events yet.</li>
-                    }
-                  </ul>
-                </section>
-                <section aria-labelledby="club-members-title">
-                  <h2 id="club-members-title">Members</h2>
-                  <ul class="club-list">
-                    @for (member of detail.members; track member.id) {
-                      <li class="attendee">
-                        @if (member.avatar) {
-                          <img [src]="member.avatar" alt="" referrerpolicy="no-referrer" />
-                        } @else {
-                          <app-icon name="user" />
-                        }
-                        <a
-                          [routerLink]="[
-                            '/profile',
-                            member.id.startsWith('did:') ? member.id : member.username,
-                          ]"
-                          >{{ member.name }}</a
-                        >
-                        @if (member.role === 'owner') {
-                          <span class="muted small-text">· Owner</span>
-                        }
-                      </li>
-                    }
-                  </ul>
-                </section>
-              </aside>
-            </div>
-          } @else {
-            <div class="page-heading">
-              <div>
-                <p class="eyebrow">YOUR PEOPLE. YOUR PACE.</p>
-                <h1>Find your <span>club.</span></h1>
-                <p>Open clubs for developers who move. Join one, or start your own.</p>
-              </div>
-              <button class="button primary" (click)="openModal('club')">
-                <app-icon name="plus" /> Start a club
-              </button>
-            </div>
-            @if (viewer() && participation() === 'private') {
-              <div class="privacy-callout" role="note">
-                <app-icon name="lock" />
-                <div>
-                  <strong>Clubs are public.</strong>
-                  <p>Make your profile public to join or start a club.</p>
-                </div>
-                <button class="text-button" (click)="makeProfilePublic()">
-                  Make profile public <app-icon name="arrow" />
-                </button>
-              </div>
-            }
-            <div class="event-grid">
-              @for (club of clubs(); track club.id) {
-                <article class="event-card">
-                  <div class="event-body">
-                    <div class="event-date">
-                      {{ club.sport || 'All sports' }} · {{ club.members }}
-                      {{ club.members === 1 ? 'member' : 'members' }}
-                    </div>
-                    <h2>
-                      <a [routerLink]="['/clubs', club.slug]">{{ club.name }}</a>
-                    </h2>
-                    <p class="event-description">{{ club.description }}</p>
-                    @if (!club.owned) {
-                      <button
-                        class="button full"
-                        [class.primary]="!club.joined"
-                        [class.outline]="club.joined"
-                        (click)="toggleMembership(club)"
-                        [disabled]="saving()"
-                      >
-                        {{ club.joined ? 'Joined · Leave' : 'Join club' }}
-                      </button>
-                    } @else {
-                      <a class="button outline full" [routerLink]="['/clubs', club.slug]"
-                        >Your club</a
-                      >
-                    }
-                  </div>
-                </article>
-              } @empty {
-                <div class="empty-state full">
-                  <app-icon name="people" />
-                  <h3>No clubs yet.</h3>
-                  <p>Start the first one, like “Angular devs who run”.</p>
-                  <button class="button primary" (click)="openModal('club')">
-                    Start a club <app-icon name="plus" />
-                  </button>
-                </div>
-              }
-            </div>
-          }
+          <app-clubs-page
+            [loading]="clubActions.loading()"
+            [error]="clubActions.error()"
+            [detail]="clubActions.detail()"
+            [clubs]="clubs()"
+            [viewer]="viewer()"
+            [profileHidden]="profileHidden()"
+            [participation]="participation()"
+            [saving]="saving()"
+            (shareClub)="clubActions.share($event)"
+            (deleteClub)="clubActions.delete($event)"
+            (toggleMembership)="clubActions.toggleMembership($event)"
+            (hostEvent)="editor.openModal('event')"
+            (joinEvent)="eventActions.join($event)"
+            (startClub)="editor.openModal('club')"
+            (makeProfilePublic)="editor.makeProfilePublic()"
+          />
         }
 
         @if (page() === 'profile') {
@@ -711,113 +166,18 @@
               <a class="button outline" routerLink="/feed">Back to the community</a>
             </div>
           } @else if (displayedProfile(); as profile) {
-            <div class="profile-cover">
-              <div class="cover-lines" aria-hidden="true"></div>
-              <span>MORE THAN YOUR CONTRIBUTION GRAPH.</span><app-icon name="move" />
-            </div>
-            <section class="profile-intro">
-              <div class="profile-avatar">
-                @if (profile.avatar) {
-                  <img [src]="profile.avatar" alt="" referrerpolicy="no-referrer" />
-                } @else {
-                  {{ initials(profile.name) }}
-                }
-              </div>
-              <div class="profile-actions">
-                @if (viewer() && !remoteProfile()) {
-                  <span class="visibility-pill"
-                    ><app-icon [name]="profile.visibility === 'private' ? 'lock' : 'globe'" />{{
-                      profile.visibility
-                    }}
-                    profile</span
-                  ><button class="button outline" (click)="openModal('profile')">
-                    <app-icon name="edit" /> Edit profile
-                  </button>
-                }
-                @if (remoteProfile() && viewer() && profile.id !== viewer()?.id) {
-                  <button
-                    class="button"
-                    [class.primary]="!socialCounts()?.viewerFollows"
-                    [class.outline]="socialCounts()?.viewerFollows"
-                    [attr.aria-pressed]="!!socialCounts()?.viewerFollows"
-                    [disabled]="saving()"
-                    (click)="toggleFollow(profile)"
-                  >
-                    {{ socialCounts()?.viewerFollows ? 'Following' : 'Follow' }}
-                  </button>
-                }
-                @if (profile.visibility === 'public') {
-                  <button class="button outline" (click)="copyProfileLink(profile)">
-                    Copy profile link
-                  </button>
-                }
-              </div>
-              <p class="eyebrow">DEVELOPER. HUMAN. WORK IN PROGRESS.</p>
-              <h1>{{ profile.name }}</h1>
-              <a
-                class="github-profile"
-                [href]="
-                  profile.provider === 'atproto'
-                    ? 'https://bsky.app/profile/' + profile.username
-                    : 'https://github.com/' + profile.username
-                "
-                target="_blank"
-                rel="noopener noreferrer"
-                ><app-icon [name]="profile.provider === 'atproto' ? 'globe' : 'github'" />&#64;{{
-                  profile.username
-                }}
-                <span aria-hidden="true">↗</span></a
-              >
-              <p class="profile-bio">
-                {{ profile.bio || 'Your next chapter starts away from the desk.' }}
-              </p>
-              @if (profile.location) {
-                <p class="profile-location"><app-icon name="pin" />{{ profile.location }}</p>
-              }
-              @if (socialCounts(); as social) {
-                <p class="profile-location">
-                  <app-icon name="people" /><strong>{{ social.followers }}</strong>
-                  {{ social.followers === 1 ? 'follower' : 'followers' }} ·
-                  <strong>{{ social.following }}</strong> following
-                </p>
-              }
-              <div class="sport-filters profile-sports">
-                @for (sport of profile.sports; track sport) {
-                  <span><app-icon [name]="sport" />{{ sport }}</span>
-                }
-              </div>
-            </section>
-            @if (viewer() && !remoteProfile() && profile.visibility === 'private') {
-              <div class="privacy-callout">
-                <app-icon name="lock" />
-                <div>
-                  <strong>Your story, on your terms.</strong>
-                  <p>
-                    Your profile is private. Your activities stay out of the community feed, even
-                    when marked public. Events you host or join are still public.
-                  </p>
-                </div>
-                <button class="text-button" (click)="makeProfilePublic()">
-                  Make profile public <app-icon name="arrow" />
-                </button>
-              </div>
-            }
-            <div class="profile-stats">
-              <div>
-                <span>SESSIONS</span><strong>{{ profileStats().sessions }}</strong>
-              </div>
-              <div>
-                <span>KILOMETRES</span
-                ><strong>{{ profileStats().distance | number: '1.0-1' }}</strong>
-              </div>
-              <div>
-                <span>HOURS IN MOTION</span
-                ><strong>{{ profileStats().hours | number: '1.0-1' }}</strong>
-              </div>
-              <div>
-                <span>WAYS TO MOVE</span><strong>{{ profileStats().sports }}</strong>
-              </div>
-            </div>
+            <app-profile-header
+              [profileData]="profile"
+              [viewer]="viewer()"
+              [remote]="!!remoteProfile()"
+              [social]="socialCounts()"
+              [saving]="saving()"
+              [stats]="profileSummary.stats()"
+              (edit)="editor.openModal('profile')"
+              (follow)="toggleFollow($event)"
+              (copyLink)="copyProfileLink($event)"
+              (makePublic)="editor.makeProfilePublic()"
+            />
             <app-profile-badges [activities]="profileActivities()" />
             @if (!remoteProfile() && !preview()) {
               @if (viewer(); as ownProfile) {
@@ -834,148 +194,22 @@
                 Recent movement month
                 <select [ngModel]="profileMonth()" (ngModelChange)="profileMonth.set($event)">
                   <option value="All">All months</option>
-                  @for (month of profileMonths(); track month.value) {
+                  @for (month of profileSummary.months(); track month.value) {
                     <option [value]="month.value">{{ month.label }}</option>
                   }
                 </select>
               </label>
             </div>
-            <div class="section-top profile-recent">
-              <h2>Recent movement</h2>
-              <div class="profile-bulk-actions">
-                @if (
-                  viewer() &&
-                  viewer()?.provider !== 'atproto' &&
-                  !remoteProfile() &&
-                  profileActivities().length
-                ) {
-                  @if (bulkVisibilityMode()) {
-                    <button class="text-button" (click)="selectAllProfileActivities()">
-                      Select up to 100 matching activities
-                    </button>
-                    @if (selectedProfileActivityCount()) {
-                      <span>{{ selectedProfileActivityCount() }} selected</span>
-                      <button
-                        class="text-button"
-                        (click)="setSelectedVisibility('private')"
-                        [disabled]="saving()"
-                      >
-                        Make private
-                      </button>
-                      <button
-                        class="text-button"
-                        (click)="setSelectedVisibility('public')"
-                        [disabled]="saving()"
-                      >
-                        Make public
-                      </button>
-                      <button class="text-button" (click)="clearActivitySelection()">Clear</button>
-                    }
-                    <button class="text-button" (click)="toggleBulkVisibilityMode()">Done</button>
-                  } @else {
-                    <button class="text-button" (click)="toggleBulkVisibilityMode()">
-                      Select activities
-                    </button>
-                  }
-                }
-                @if (viewer() && !remoteProfile()) {
-                  <button class="text-button" (click)="openModal('activity')">
-                    Log activity <app-icon name="plus" />
-                  </button>
-                }
-              </div>
-            </div>
-            @for (activity of filteredProfileActivities(); track activity.id) {
-              <article
-                class="profile-activity"
-                [class.bulk-selected]="selectedActivityIds().includes(activity.id)"
-              >
-                @if (bulkVisibilityMode() && activity.userId === viewer()?.id) {
-                  <label class="profile-activity-select">
-                    <input
-                      type="checkbox"
-                      [checked]="selectedActivityIds().includes(activity.id)"
-                      [attr.aria-label]="'Select ' + activity.title"
-                      [disabled]="
-                        saving() ||
-                        (!selectedActivityIds().includes(activity.id) &&
-                          selectedProfileActivityCount() >= 100)
-                      "
-                      (change)="toggleActivitySelection(activity.id)"
-                    />
-                  </label>
-                }
-                <span class="activity-sport-icon"><app-icon [name]="activity.sport" /></span>
-                <div>
-                  <small
-                    >{{ activity.sport }} · {{ activity.occurredAt | date: 'MMM d, y' }}
-                    @if (activity.source === 'agent') {
-                      · Logged by agent
-                    }
-                  </small>
-                  <h3>{{ activity.title }}</h3>
-                  <p>{{ activity.notes }}</p>
-                  @if (activity.kudos || activity.comments) {
-                    <small
-                      >{{ activity.kudos ?? 0 }} kudos ·
-                      {{ activity.comments ?? 0 }}
-                      {{ activity.comments === 1 ? 'comment' : 'comments' }}</small
-                    >
-                  }
-                  @if (activity.photo) {
-                    <img
-                      class="profile-activity-photo"
-                      [src]="activity.photo"
-                      [alt]="'Photo from ' + activity.title"
-                      loading="lazy"
-                    />
-                  }
-                </div>
-                <div class="profile-activity-metric">
-                  @if (activity.distance !== null) {
-                    <strong>{{ activity.distance }} <small>km</small></strong>
-                    <span>{{ activity.duration }} min</span>
-                  } @else {
-                    <strong>{{ activity.duration }} <small>min</small></strong>
-                  }
-                </div>
-                @if (activity.userId === viewer()?.id) {
-                  <div class="profile-activity-actions">
-                    @if (viewer()?.provider !== 'atproto') {
-                      <button
-                        class="text-button"
-                        (click)="toggleVisibility(activity)"
-                        [disabled]="saving()"
-                      >
-                        <app-icon [name]="activity.visibility === 'private' ? 'lock' : 'globe'" />{{
-                          activity.visibility
-                        }}
-                      </button>
-                    }
-                    <button
-                      class="text-button danger"
-                      (click)="deleteActivity(activity)"
-                      [disabled]="saving()"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                }
-              </article>
-            } @empty {
-              <div class="empty-state">
-                <app-icon name="move" />
-                <h3>No matching activities.</h3>
-                <p>Try another month or activity filter, or log a new activity.</p>
-              </div>
-            }
-            <p class="privacy-note">
-              Progress summaries include all visible indexed sessions. Rest days belong here, too.
-              @if (profile.provider === 'atproto') {
-                AT Protocol history is limited to the records indexed from the PDS, currently up to
-                1,000 per sync.
-              }
-            </p>
+            <app-profile-activities
+              [actions]="activityActions"
+              [activities]="profileSummary.filteredActivities()"
+              [totalActivities]="profileActivities()"
+              [profile]="profile"
+              [viewer]="viewer()"
+              [remote]="!!remoteProfile()"
+              [saving]="saving()"
+              (logActivity)="editor.openModal('activity')"
+            />
           } @else {
             <div class="empty-state">
               <app-icon name="user" />
@@ -984,201 +218,23 @@
                 Sign in with GitHub or AT Protocol to create your own sports profile and track your
                 progress.
               </p>
-              <button class="button primary" (click)="login()">
-                <app-icon name="github" /> Sign in with GitHub
-              </button>
-              <button class="button outline" (click)="loginAtproto()">
-                Sign in with AT Protocol
-              </button>
+              <app-login
+                placement="profile"
+                (githubLogin)="auth.login()"
+                (atprotoLogin)="auth.loginAtproto()"
+              />
             </div>
           }
         }
 
         @if (page() === 'agents') {
-          <div class="page-heading">
-            <div>
-              <p class="eyebrow">MORE MOVEMENT. LESS MANUAL ENTRY.</p>
-              <h1>Your agent. <span>Your wingmate.</span></h1>
-              <p>You live the session. Your agent takes care of the details.</p>
-            </div>
-          </div>
-          <div class="agents-layout">
-            <section class="agent-explainer">
-              <div class="terminal-window">
-                <div class="terminal-top">
-                  <span></span><span></span><span></span><small>you + your favourite agent</small>
-                </div>
-                <div class="terminal-content">
-                  <p>
-                    <span class="terminal-prompt">you ›</span> Log my 5K run. 31 minutes.<br />Felt
-                    great.
-                  </p>
-                  <p>
-                    <span class="terminal-prompt">agent ›</span>
-                    <span class="terminal-comment"
-                      >With a connected MCP client or API tool, your agent can:</span
-                    >
-                  </p>
-                  <div class="terminal-result">
-                    <app-icon name="check" /><span
-                      >Create an activity on your account<br /><small
-                        >5.0 km · 31 min · API/MCP-created activities are public</small
-                      ></span
-                    >
-                  </div>
-                </div>
-              </div>
-              <div class="agent-principles">
-                <h2>One identity. Clear boundaries.</h2>
-                <p>
-                  Sign in with GitHub or AT Protocol, then give each agent its own scoped access.
-                  Your sign-in credentials are never shared with an agent.
-                </p>
-                <div>
-                  <app-icon name="lock" /><span
-                    ><strong>Your data, your rules</strong>GitHub accounts can log private sessions.
-                    AT Protocol accounts publish activity records publicly.</span
-                  >
-                </div>
-                <div>
-                  <app-icon name="clock" /><span
-                    ><strong>Access that expires</strong>Tokens expire after 90 days. Revoke them
-                    whenever you like.</span
-                  >
-                </div>
-                <div>
-                  <app-icon name="terminal" /><span
-                    ><strong>MCP is ready to connect</strong>Use a scoped agent token with the
-                    Streamable HTTP endpoint. Tools are enabled by the token’s permissions;
-                    interactive OAuth is not supported.</span
-                  >
-                </div>
-              </div>
-            </section>
-            <section class="connect-card">
-              <p class="eyebrow">YOUR CONNECTED AGENTS</p>
-              <h2>A little help goes a long way.</h2>
-              @if (!viewer()) {
-                <p>
-                  Sign in to create a scoped token and let your favourite agent log sessions for
-                  you.
-                </p>
-                <button class="button primary full" (click)="login()">
-                  <app-icon name="github" /> Connect with GitHub
-                </button>
-                <button class="button outline full" (click)="loginAtproto()">
-                  Connect with AT Protocol
-                </button>
-              } @else {
-                <form ngNativeValidate (ngSubmit)="createToken()">
-                  <label for="agent-name">Give your agent a name</label
-                  ><input
-                    id="agent-name"
-                    name="agentName"
-                    [(ngModel)]="agentName"
-                    placeholder="e.g. My running companion"
-                    maxlength="60"
-                    required
-                  />
-                  <fieldset>
-                    <legend>What can it do?</legend>
-                    <label class="checkbox-label"
-                      ><input type="checkbox" name="agentWrite" [(ngModel)]="agentWrite" /><span
-                        >Log public activities</span
-                      ></label
-                    >
-                    <label class="checkbox-label"
-                      ><input type="checkbox" name="agentRead" [(ngModel)]="agentRead" /><span
-                        >Read your activity history</span
-                      ></label
-                    ><label class="checkbox-label"
-                      ><input type="checkbox" name="agentEvents" [(ngModel)]="agentEvents" /><span
-                        >Discover public events</span
-                      ></label
-                    >
-                  </fieldset>
-                  <button
-                    class="button primary full"
-                    type="submit"
-                    [disabled]="
-                      saving() ||
-                      (!agentRead &&
-                        (viewer()?.provider === 'atproto' || !agentWrite) &&
-                        !agentEvents)
-                    "
-                  >
-                    {{ saving() ? 'Creating…' : 'Create agent token' }}<app-icon name="plus" />
-                  </button>
-                </form>
-                @if (newToken()) {
-                  <div class="token-reveal" role="status">
-                    <strong>Copy this token now.</strong>
-                    <p>
-                      It is shown once. Store it in your agent’s secret manager, never in source
-                      code.
-                    </p>
-                    <label for="new-token" class="sr-only">New agent token</label
-                    ><textarea id="new-token" readonly [value]="newToken()" rows="3"></textarea
-                    ><button class="text-button" (click)="newToken.set('')">
-                      I’ve saved it · Hide token <app-icon name="check" />
-                    </button>
-                  </div>
-                }
-                <div class="token-list">
-                  @for (token of tokens(); track token.id) {
-                    <div class="token-item">
-                      <app-icon name="terminal" />
-                      <div>
-                        <strong>{{ token.name }}</strong
-                        ><small>Expires {{ token.expiresAt | date: 'MMM d, y' }}</small
-                        ><small>{{ token.scopes.join(' · ') }}</small>
-                      </div>
-                      <button
-                        class="text-button danger"
-                        (click)="revokeToken(token)"
-                        [disabled]="saving()"
-                      >
-                        Revoke
-                      </button>
-                    </div>
-                  } @empty {
-                    <p class="muted small-text">
-                      No connected agents yet. Your next routine starts here.
-                    </p>
-                  }
-                </div>
-              }
-            </section>
-          </div>
-          <section class="connect-card mcp-setup" aria-labelledby="mcp-setup-title">
-            <div>
-              <p class="eyebrow">MODEL CONTEXT PROTOCOL</p>
-              <h2 id="mcp-setup-title">Bring your agent along.</h2>
-              <p>
-                This endpoint supports MCP protocol version <code>2026-07-28</code> only. Configure
-                your client to use this version, then add the server below. Replace
-                <code>YOUR_AGENT_TOKEN</code> with a token you create above and keep it in your
-                client’s secret storage.
-              </p>
-              <p class="small-text muted">
-                Available tools depend on the token’s scopes: read your activities, log private
-                activities, and discover upcoming public events. MCP uses your existing token;
-                interactive OAuth is not available.
-              </p>
-            </div>
-            <div class="terminal-window">
-              <pre class="terminal-content"><code>{{ '{' }}
-  "mcpServers": {{ '{' }}
-    "devs-who-move": {{ '{' }}
-      "url": "https://devswhorun.dev/mcp",
-      "headers": {{ '{' }}
-        "Authorization": "Bearer YOUR_AGENT_TOKEN"
-      {{ '}' }}
-    {{ '}' }}
-  {{ '}' }}
-{{ '}' }}</code></pre>
-            </div>
-          </section>
+          <app-agent-page
+            [viewer]="viewer()"
+            [saving]="saving()"
+            [agent]="agent"
+            (githubLogin)="auth.login()"
+            (atprotoLogin)="auth.loginAtproto()"
+          />
         }
       }
       <footer class="page-footer">
@@ -1190,432 +246,26 @@
   </div>
 </div>
 
-<dialog #dialog aria-labelledby="modal-title" (cancel)="$event.preventDefault(); closeModal()">
-  <div class="modal-heading">
-    <div>
-      <p class="eyebrow">EVERY LITTLE MOVE COUNTS.</p>
-      <h2 id="modal-title">
-        {{
-          modal() === 'atproto-login'
-            ? 'Connect with AT Protocol.'
-            : modal() === 'activity'
-              ? 'A little progress, logged.'
-              : modal() === 'event'
-                ? editingEvent()
-                  ? 'Fine-tune your event.'
-                  : 'Good company starts here.'
-                : modal() === 'club'
-                  ? 'Start a club.'
-                  : 'Make this space yours.'
-        }}
-      </h2>
-    </div>
-    <button
-      type="button"
-      class="icon-button"
-      aria-label="Close dialog"
-      (click)="closeModal()"
-      [disabled]="saving()"
-    >
-      <app-icon name="close" />
-    </button>
-  </div>
-  @if (error() && modal()) {
-    <div class="banner error" role="alert">{{ error() }}</div>
-  }
-  <form ngNativeValidate (ngSubmit)="modal() === 'atproto-login' ? beginAtprotoLogin() : save()">
-    @if (modal() === 'atproto-login') {
-      <p class="small-text">
-        Sign in with the handle or DID for your Bluesky account. We’ll send you to your account’s
-        hosting provider to review and approve access.
-      </p>
-      <label for="atproto-handle">Bluesky handle or DID</label>
-      <input
-        id="atproto-handle"
-        name="atprotoHandle"
-        type="text"
-        [(ngModel)]="atprotoHandle"
-        autocomplete="username"
-        autocapitalize="none"
-        spellcheck="false"
-        maxlength="253"
-        placeholder="you.bsky.social"
-        required
-        autofocus
-      />
-      <div class="banner public-data-warning" role="note">
-        This app can write your profile, activities, and hosted events to your public AT Protocol
-        repository. Those records can be copied by others. Review the requested access on the next
-        screen before approving.
-      </div>
-    } @else if (modal() === 'activity') {
-      @if (viewer()?.provider === 'atproto') {
-        <div class="banner public-data-warning" role="note">
-          This activity will be written to your public PDS repository. Its title, sport, exact time,
-          duration, distance, and notes are public and may be copied permanently. Avoid health
-          details and precise locations; photos are disabled for AT Protocol accounts.
-        </div>
-        <label class="checkbox-label public-confirm"
-          ><input
-            type="checkbox"
-            name="publicDisclosure"
-            [(ngModel)]="publicDisclosure"
-            required
-          /><span>I understand this activity will be public.</span></label
-        >
-      }
-      <label for="activity-title">Give your session a title</label
-      ><input
-        id="activity-title"
-        name="title"
-        [(ngModel)]="activityForm.title"
-        maxlength="100"
-        placeholder="A little fresh air before standup"
-        required
-      />
-      <div class="form-row">
-        <div>
-          <label for="activity-sport">Sport</label
-          ><select id="activity-sport" name="sport" [(ngModel)]="activityForm.sport">
-            @for (sport of sports; track sport) {
-              <option [value]="sport">{{ sport }}</option>
-            }
-          </select>
-        </div>
-        <div>
-          <label for="activity-date">When did you move?</label
-          ><input
-            id="activity-date"
-            name="occurredAt"
-            type="datetime-local"
-            [(ngModel)]="activityForm.occurredAt"
-            required
-          />
-        </div>
-      </div>
-      <div class="form-row">
-        <div>
-          <label for="duration">Moving time (minutes)</label
-          ><input
-            id="duration"
-            name="duration"
-            type="number"
-            min="1"
-            max="1440"
-            step="0.1"
-            [(ngModel)]="activityForm.duration"
-            required
-          />
-        </div>
-        <div>
-          <label for="distance">Distance (km, optional)</label
-          ><input
-            id="distance"
-            name="distance"
-            type="number"
-            min="0"
-            max="2000"
-            step="0.01"
-            [(ngModel)]="activityForm.distance"
-          />
-        </div>
-      </div>
-      <label for="activity-notes">How did it feel?</label
-      ><textarea
-        id="activity-notes"
-        name="notes"
-        rows="3"
-        [(ngModel)]="activityForm.notes"
-        maxlength="2000"
-        placeholder="The little things are worth remembering."
-      ></textarea>
-      @if (viewer()?.provider !== 'atproto') {
-        <label for="activity-photo">Add a photo <span class="optional">(optional)</span></label>
-        @if (photoPreview()) {
-          <figure class="photo-preview">
-            <img [src]="photoPreview()" alt="Preview of the photo you chose" />
-            <figcaption>
-              <span><app-icon name="lock" />Location data removed</span
-              ><button type="button" class="text-button danger" (click)="removePhoto()">
-                Remove photo
-              </button>
-            </figcaption>
-          </figure>
-        }
-        <div class="photo-picker" [class.has-photo]="photoPreview()">
-          <input
-            id="activity-photo"
-            name="photo"
-            type="file"
-            accept="image/*"
-            (change)="choosePhoto($event)"
-            [disabled]="photoBusy() || saving()"
-          />
-          <span class="photo-picker-label" aria-hidden="true">
-            <app-icon name="plus" />
-            <span
-              ><strong>{{
-                photoBusy()
-                  ? 'Preparing photo…'
-                  : photoPreview()
-                    ? 'Choose a different photo'
-                    : 'Choose a photo'
-              }}</strong
-              ><small>We resize it and strip location data before upload.</small></span
-            >
-          </span>
-        </div>
-        <label for="activity-visibility">Who can see it?</label
-        ><select id="activity-visibility" name="visibility" [(ngModel)]="activityForm.visibility">
-          <option value="private">Only me · Private</option>
-          <option value="public">Everyone · Public when my profile is public</option>
-        </select>
-        <p class="form-help">
-          <app-icon name="lock" />Private by default. Share only when you’re ready.
-        </p>
-        @if (activityForm.visibility === 'public' && profileHidden()) {
-          <div class="banner public-data-warning" role="note">
-            Your profile is private, so this activity stays hidden until you make your profile
-            public.
-          </div>
-        }
-      }
-    }
-    @if (modal() === 'event') {
-      <p class="form-help">
-        Events are public, including the host name. Use an approximate meeting area, not a private
-        address.
-      </p>
-      @if (viewer()?.provider === 'atproto') {
-        <div class="banner public-data-warning" role="note">
-          Event details, including conference associations, are saved as public PDS records. Use a
-          public meeting point; do not include private contact details or a home address. RSVP
-          identities remain in Cloudflare.
-        </div>
-        <label class="checkbox-label public-confirm"
-          ><input
-            type="checkbox"
-            name="publicDisclosure"
-            [(ngModel)]="publicDisclosure"
-            required
-          /><span>I understand this event will be public.</span></label
-        >
-      }
-      <label for="event-title">What are we doing?</label
-      ><input
-        id="event-title"
-        name="title"
-        [(ngModel)]="eventForm.title"
-        maxlength="100"
-        placeholder="The no-standup run club"
-        required
-      />
-      <label for="conference-name">Conference name (optional)</label>
-      <input
-        id="conference-name"
-        name="conferenceName"
-        [(ngModel)]="eventForm.conferenceName"
-        maxlength="100"
-        placeholder="e.g. NG-Conf"
-      />
-      <label for="conference-url">Conference URL (optional, HTTPS)</label>
-      <input
-        id="conference-url"
-        name="conferenceUrl"
-        type="url"
-        [(ngModel)]="eventForm.conferenceUrl"
-        maxlength="2048"
-        placeholder="https://example.com/conference"
-        aria-describedby="conference-help"
-      />
-      <p id="conference-help" class="muted small-text">
-        Link any sport to a tech conference. Add a name before a URL; conference details are public.
-      </p>
-      @if (eventClubOptions().length) {
-        <label for="event-club">Club (optional)</label>
-        <select id="event-club" name="clubId" [(ngModel)]="eventForm.clubId">
-          <option value="">No club</option>
-          @for (club of eventClubOptions(); track club.id) {
-            <option [value]="club.id">{{ club.name }}</option>
-          }
-        </select>
-      }
-      <div class="form-row">
-        <div>
-          <label for="event-sport">Sport</label
-          ><select id="event-sport" name="sport" [(ngModel)]="eventForm.sport">
-            @for (sport of sports; track sport) {
-              <option [value]="sport">{{ sport }}</option>
-            }
-          </select>
-        </div>
-        <div>
-          <label for="event-date">Date and time (your local time)</label
-          ><input
-            id="event-date"
-            name="startsAt"
-            type="datetime-local"
-            [(ngModel)]="eventForm.startsAt"
-            required
-          />
-        </div>
-      </div>
-      <label for="event-location">Meeting area</label
-      ><input
-        id="event-location"
-        name="location"
-        [(ngModel)]="eventForm.location"
-        maxlength="150"
-        placeholder="e.g. North entrance, city park"
-        required
-      />
-      <div class="form-row">
-        <div>
-          <label for="level">Pace / ability level</label
-          ><input id="level" name="level" [(ngModel)]="eventForm.level" maxlength="60" required />
-        </div>
-        <div>
-          <label for="capacity">Total spots (including you)</label
-          ><input
-            id="capacity"
-            name="capacity"
-            type="number"
-            min="2"
-            max="200"
-            [(ngModel)]="eventForm.capacity"
-            required
-          />
-        </div>
-      </div>
-      <label for="event-description">The plan</label
-      ><textarea
-        id="event-description"
-        name="description"
-        rows="4"
-        [(ngModel)]="eventForm.description"
-        maxlength="1000"
-        placeholder="Duration, equipment, weather plans, and anything that helps someone feel welcome."
-      ></textarea>
-    }
-    @if (modal() === 'club') {
-      <p class="form-help">
-        Clubs are public and open: anyone with a public profile can join. Members can link their
-        events to the club.
-      </p>
-      <label for="club-name">Club name</label
-      ><input
-        id="club-name"
-        name="clubName"
-        [(ngModel)]="clubForm.name"
-        maxlength="60"
-        placeholder="Angular devs who run"
-        required
-      />
-      <label for="club-sport">Main sport</label
-      ><select id="club-sport" name="clubSport" [(ngModel)]="clubForm.sport">
-        <option value="">All sports</option>
-        @for (sport of sports; track sport) {
-          <option [value]="sport">{{ sport }}</option>
-        }
-      </select>
-      <label for="club-description">What’s it about?</label
-      ><textarea
-        id="club-description"
-        name="clubDescription"
-        rows="3"
-        [(ngModel)]="clubForm.description"
-        maxlength="300"
-        placeholder="Weekly easy runs, all paces welcome."
-      ></textarea>
-    }
-    @if (modal() === 'profile') {
-      @if (viewer()?.provider === 'atproto') {
-        <div class="banner public-data-warning" role="note">
-          Your name, bio, and selected sports are public PDS records. Avoid personal contact details
-          or sensitive information. AT Protocol profiles cannot be private in this app.
-        </div>
-        <label class="checkbox-label public-confirm"
-          ><input
-            type="checkbox"
-            name="publicDisclosure"
-            [(ngModel)]="publicDisclosure"
-            required
-          /><span>I understand my profile will be public.</span></label
-        >
-      }
-      <label for="profile-name">Your name</label
-      ><input
-        id="profile-name"
-        name="name"
-        [(ngModel)]="profileForm.name"
-        maxlength="80"
-        required
-      />
-      <label for="profile-bio">A little about you</label
-      ><textarea
-        id="profile-bio"
-        name="bio"
-        rows="3"
-        [(ngModel)]="profileForm.bio"
-        maxlength="300"
-      ></textarea>
-      @if (viewer()?.provider !== 'atproto') {
-        <label for="profile-location">City or general area (optional)</label
-        ><input
-          id="profile-location"
-          name="location"
-          [(ngModel)]="profileForm.location"
-          maxlength="80"
-        />
-      }
-      <fieldset>
-        <legend>Your ways to move</legend>
-        <div class="sport-filters" role="group" aria-label="Choose your sports">
-          @for (sport of sports; track sport) {
-            <button
-              type="button"
-              [class.selected]="profileForm.sports.includes(sport)"
-              [attr.aria-pressed]="profileForm.sports.includes(sport)"
-              (click)="toggleSport(sport)"
-            >
-              <app-icon [name]="sport" />{{ sport }}
-            </button>
-          }
-        </div>
-      </fieldset>
-      @if (viewer()?.provider !== 'atproto') {
-        <label for="profile-visibility">Profile visibility</label
-        ><select id="profile-visibility" name="visibility" [(ngModel)]="profileForm.visibility">
-          <option value="private">Private · Only I can view my profile</option>
-          <option value="public">Public · Anyone can view my profile</option>
-        </select>
-        <p class="form-help">
-          <app-icon name="lock" />Profiles are private by default. Make yours public to share public
-          activities with the community. Private activities stay private, even with a public
-          profile. Hosted events remain public.
-        </p>
-      }
-    }
-    <div class="modal-footer">
-      <button type="button" class="button outline" (click)="closeModal()" [disabled]="saving()">
-        Not now</button
-      ><button class="button primary" type="submit" [disabled]="saving() || photoBusy()">
-        {{
-          modal() === 'atproto-login'
-            ? 'Continue to Bluesky'
-            : saving()
-              ? 'Saving…'
-              : modal() === 'activity'
-                ? 'Save my session'
-                : modal() === 'event'
-                  ? editingEvent()
-                    ? 'Save changes'
-                    : 'Create event'
-                  : modal() === 'club'
-                    ? 'Create club'
-                    : 'Save profile'
-        }}<app-icon name="arrow" />
-      </button>
-    </div>
-  </form>
-</dialog>
+<app-dialog
+  [modal]="editor.modal()"
+  [viewer]="viewer()"
+  [saving]="saving()"
+  [error]="error()"
+  [editingEvent]="editor.editingEvent()"
+  [activityForm]="editor.activityForm"
+  [eventForm]="editor.eventForm"
+  [clubForm]="editor.clubForm"
+  [profileForm]="editor.profileForm"
+  [eventClubOptions]="editor.eventClubOptions()"
+  [profileHidden]="profileHidden()"
+  [photoPreview]="editor.photoPreview()"
+  [photoBusy]="editor.photoBusy()"
+  [(publicDisclosure)]="editor.publicDisclosure"
+  [(atprotoHandle)]="editor.atprotoHandle"
+  (closeModal)="editor.closeModal()"
+  (save)="editor.save()"
+  (beginAtprotoLogin)="editor.beginAtprotoLogin()"
+  (toggleSport)="editor.toggleSport($event)"
+  (choosePhoto)="editor.choosePhoto($event)"
+  (removePhoto)="editor.removePhoto()"
+/>

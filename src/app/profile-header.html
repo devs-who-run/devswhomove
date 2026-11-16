@@ -1,0 +1,104 @@
+@let profile = profileData();
+<div class="profile-cover">
+  <div class="cover-lines" aria-hidden="true"></div>
+  <span>MORE THAN YOUR CONTRIBUTION GRAPH.</span><app-icon name="move" />
+</div>
+<section class="profile-intro">
+  <div class="profile-avatar">
+    @if (profile.avatar) {
+      <img [src]="profile.avatar" alt="" referrerpolicy="no-referrer" />
+    } @else {
+      {{ initials(profile.name) }}
+    }
+  </div>
+  <div class="profile-actions">
+    @if (viewer() && !remote()) {
+      <span class="visibility-pill"
+        ><app-icon [name]="profile.visibility === 'private' ? 'lock' : 'globe'" />{{
+          profile.visibility
+        }}
+        profile</span
+      ><button class="button outline" (click)="edit.emit()">
+        <app-icon name="edit" /> Edit profile
+      </button>
+    }
+    @if (remote() && viewer() && profile.id !== viewer()?.id) {
+      <button
+        class="button"
+        [class.primary]="!social()?.viewerFollows"
+        [class.outline]="social()?.viewerFollows"
+        [attr.aria-pressed]="!!social()?.viewerFollows"
+        [disabled]="saving()"
+        (click)="follow.emit(profile)"
+      >
+        {{ social()?.viewerFollows ? 'Following' : 'Follow' }}
+      </button>
+    }
+    @if (profile.visibility === 'public') {
+      <button class="button outline" (click)="copyLink.emit(profile)">Copy profile link</button>
+    }
+  </div>
+  <p class="eyebrow">DEVELOPER. HUMAN. WORK IN PROGRESS.</p>
+  <h1>{{ profile.name }}</h1>
+  <a
+    class="github-profile"
+    [href]="
+      profile.provider === 'atproto'
+        ? 'https://bsky.app/profile/' + profile.username
+        : 'https://github.com/' + profile.username
+    "
+    target="_blank"
+    rel="noopener noreferrer"
+    ><app-icon [name]="profile.provider === 'atproto' ? 'globe' : 'github'" />&#64;{{
+      profile.username
+    }}
+    <span aria-hidden="true">↗</span></a
+  >
+  <p class="profile-bio">
+    {{ profile.bio || 'Your next chapter starts away from the desk.' }}
+  </p>
+  @if (profile.location) {
+    <p class="profile-location"><app-icon name="pin" />{{ profile.location }}</p>
+  }
+  @if (social(); as social) {
+    <p class="profile-location">
+      <app-icon name="people" /><strong>{{ social.followers }}</strong>
+      {{ social.followers === 1 ? 'follower' : 'followers' }} ·
+      <strong>{{ social.following }}</strong> following
+    </p>
+  }
+  <div class="sport-filters profile-sports">
+    @for (sport of profile.sports; track sport) {
+      <span><app-icon [name]="sport" />{{ sport }}</span>
+    }
+  </div>
+</section>
+@if (viewer() && !remote() && profile.visibility === 'private') {
+  <div class="privacy-callout">
+    <app-icon name="lock" />
+    <div>
+      <strong>Your story, on your terms.</strong>
+      <p>
+        Your profile is private. Your activities stay out of the community feed, even when marked
+        public. Events you host or join are still public.
+      </p>
+    </div>
+    <button class="text-button" (click)="makePublic.emit()">
+      Make profile public <app-icon name="arrow" />
+    </button>
+  </div>
+}
+<div class="profile-stats">
+  <div>
+    <span>SESSIONS</span><strong>{{ stats().sessions }}</strong>
+  </div>
+  <div>
+    <span>KILOMETRES</span><strong>{{ stats().distance | number: '1.0-1' }}</strong>
+  </div>
+  <div>
+    <span>HOURS IN MOTION</span><strong>{{ stats().hours | number: '1.0-1' }}</strong>
+  </div>
+  <div>
+    <span>WAYS TO MOVE</span><strong>{{ stats().sports }}</strong>
+  </div>
+</div>

@@ -1,0 +1,121 @@
+:host {
+  display: contents;
+}
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #61734d;
+  margin-bottom: 8px;
+}
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #dce4d1;
+  border-radius: 6px;
+  background: #fdfefa;
+  color: #3f5136;
+  min-height: 41px;
+  padding: 10px 12px;
+  margin-bottom: 17px;
+  font-size: 13px;
+  outline-offset: 2px !important;
+}
+input::placeholder,
+textarea::placeholder {
+  color: #a4ad97;
+}
+textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+.checkbox-label {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-weight: 400;
+  font-size: 13px;
+  margin: 12px 0;
+}
+.checkbox-label > input {
+  width: 15px;
+  height: 15px;
+  min-height: 0;
+  margin: 0;
+  accent-color: #496b35;
+}
+.public-confirm {
+  padding: 10px 12px;
+  border: 1px solid #eadca8;
+  border-radius: 7px;
+  background: #fff8df;
+}
+.banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 13px 17px;
+  border-radius: 8px;
+  margin-bottom: 22px;
+  overflow-wrap: anywhere;
+}
+.public-data-warning {
+  display: block;
+  color: #604d1f;
+  background: #fff8df;
+  border: 1px solid #eadca8;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+.form-help {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  font-size: 12px;
+  line-height: 1.8;
+  color: #89967b;
+  margin-bottom: 17px;
+}
+.form-help > app-icon {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.muted {
+  color: var(--muted);
+}
+.small-text {
+  font-size: 12px;
+  line-height: 1.7;
+}
+@media (max-width: 520px) {
+  .form-row {
+    gap: 12px;
+  }
+  label {
+    font-size: 12px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+    padding: 9px;
+    min-width: 0;
+  }
+  .form-help {
+    font-size: 12px;
+  }
+  .small-text {
+    font-size: 13px;
+  }
+}
+.form-help {
+  color: var(--muted);
+  font-size: max(12px, 0.85em);
+}

@@ -1,0 +1,138 @@
+dialog {
+  border: 1px solid #dce3d2;
+  border-radius: 15px;
+  box-shadow: 0 20px 100px #20372030;
+  background: #fff;
+  color: #2c3d2e;
+  width: 560px;
+  max-width: calc(100vw - 28px);
+  max-height: calc(100dvh - 40px);
+  padding: 28px;
+}
+dialog::backdrop {
+  background: #172a2177;
+  backdrop-filter: blur(4px);
+}
+.modal-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+.modal-heading h2 {
+  font: 700 23px/1.4 var(--heading);
+  letter-spacing: -0.7px;
+}
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 1.8px;
+  font-weight: 650;
+  color: var(--muted);
+  margin-bottom: 12px;
+  font-size: max(12px, 0.85em);
+}
+.banner.error {
+  color: #973f2e;
+  background: #fff0eb;
+  border: 1px solid #efc8b9;
+}
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 43px;
+  padding: 11px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 7px;
+  line-height: 1.4;
+  transition:
+    background 0.15s,
+    transform 0.15s;
+  white-space: nowrap;
+}
+.button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.primary {
+  background: var(--green);
+  color: #fff;
+}
+.primary:hover:not(:disabled) {
+  background: #153b2b;
+}
+.outline {
+  border: 1px solid #d9e1d3;
+  background: #fff;
+}
+.outline:hover:not(:disabled) {
+  background: #f0f5e9;
+}
+.icon-button {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: transparent;
+  border-radius: 6px;
+}
+.icon-button:hover {
+  background: #e7eddf;
+}
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 3px 0 20px;
+}
+legend {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #61734d;
+  padding: 0;
+  margin-bottom: 12px;
+}
+.sport-filters {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+  margin-top: 10px;
+}
+.modal-footer .button {
+  font-size: 13px;
+}
+@media (max-width: 520px) {
+  dialog {
+    padding: 23px;
+    max-height: calc(100dvh - 25px);
+    max-width: calc(100vw - 22px);
+  }
+  .modal-heading h2 {
+    font-size: 21px;
+  }
+  .eyebrow {
+    letter-spacing: 1.4px;
+    margin-bottom: 10px;
+  }
+  legend {
+    font-size: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .button:hover:not(:disabled) {
+    transform: none;
+  }
+}

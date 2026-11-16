@@ -1,0 +1,124 @@
+@if (viewer()?.provider === 'atproto') {
+  <div class="banner public-data-warning" role="note">
+    This activity will be written to your public PDS repository. Its title, sport, exact time,
+    duration, distance, and notes are public and may be copied permanently. Avoid health details and
+    precise locations; photos are disabled for AT Protocol accounts.
+  </div>
+  <label class="checkbox-label public-confirm">
+    <input type="checkbox" name="publicDisclosure" [(ngModel)]="publicDisclosure" required />
+    <span>I understand this activity will be public.</span>
+  </label>
+}
+<label for="activity-title">Give your session a title</label>
+<input
+  id="activity-title"
+  name="title"
+  [(ngModel)]="value().title"
+  maxlength="100"
+  placeholder="A little fresh air before standup"
+  required
+/>
+<div class="form-row">
+  <div>
+    <label for="activity-sport">Sport</label>
+    <select id="activity-sport" name="sport" [(ngModel)]="value().sport">
+      @for (sport of sports; track sport) {
+        <option [value]="sport">{{ sport }}</option>
+      }
+    </select>
+  </div>
+  <div>
+    <label for="activity-date">When did you move?</label>
+    <input
+      id="activity-date"
+      name="occurredAt"
+      type="datetime-local"
+      [(ngModel)]="value().occurredAt"
+      required
+    />
+  </div>
+</div>
+<div class="form-row">
+  <div>
+    <label for="duration">Moving time (minutes)</label>
+    <input
+      id="duration"
+      name="duration"
+      type="number"
+      min="1"
+      max="1440"
+      step="0.1"
+      [(ngModel)]="value().duration"
+      required
+    />
+  </div>
+  <div>
+    <label for="distance">Distance (km, optional)</label>
+    <input
+      id="distance"
+      name="distance"
+      type="number"
+      min="0"
+      max="2000"
+      step="0.01"
+      [(ngModel)]="value().distance"
+    />
+  </div>
+</div>
+<label for="activity-notes">How did it feel?</label>
+<textarea
+  id="activity-notes"
+  name="notes"
+  rows="3"
+  [(ngModel)]="value().notes"
+  maxlength="2000"
+  placeholder="The little things are worth remembering."
+></textarea>
+@if (viewer()?.provider !== 'atproto') {
+  <label for="activity-photo">Add a photo <span class="optional">(optional)</span></label>
+  @if (photoPreview()) {
+    <figure class="photo-preview">
+      <img [src]="photoPreview()" alt="Preview of the photo you chose" />
+      <figcaption>
+        <span><app-icon name="lock" />Location data removed</span>
+        <button type="button" class="text-button danger" (click)="removePhoto.emit()">
+          Remove photo
+        </button>
+      </figcaption>
+    </figure>
+  }
+  <div class="photo-picker" [class.has-photo]="photoPreview()">
+    <input
+      id="activity-photo"
+      name="photo"
+      type="file"
+      accept="image/*"
+      (change)="choosePhoto.emit($event)"
+      [disabled]="photoBusy() || saving()"
+    />
+    <span class="photo-picker-label" aria-hidden="true">
+      <app-icon name="plus" />
+      <span>
+        <strong>{{
+          photoBusy()
+            ? 'Preparing photo…'
+            : photoPreview()
+              ? 'Choose a different photo'
+              : 'Choose a photo'
+        }}</strong>
+        <small>We resize it and strip location data before upload.</small>
+      </span>
+    </span>
+  </div>
+  <label for="activity-visibility">Who can see it?</label>
+  <select id="activity-visibility" name="visibility" [(ngModel)]="value().visibility">
+    <option value="private">Only me · Private</option>
+    <option value="public">Everyone · Public when my profile is public</option>
+  </select>
+  <p class="form-help"><app-icon name="lock" />Private by default. Share only when you’re ready.</p>
+  @if (value().visibility === 'public' && profileHidden()) {
+    <div class="banner public-data-warning" role="note">
+      Your profile is private, so this activity stays hidden until you make your profile public.
+    </div>
+  }
+}
