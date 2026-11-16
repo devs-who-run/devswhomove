@@ -99,12 +99,7 @@
         <button
           class="button primary full"
           type="submit"
-          [disabled]="
-            saving() ||
-            (!agent().read &&
-              (viewer()?.provider === 'atproto' || !agent().write) &&
-              !agent().events)
-          "
+          [disabled]="saving() || (!agent().read && !agent().write && !agent().events)"
         >
           {{ saving() ? 'Creating…' : 'Create agent token' }}<app-icon name="plus" />
         </button>
@@ -155,8 +150,8 @@
       secret storage.
     </p>
     <p class="small-text muted">
-      Available tools depend on the token’s scopes: read your activities, log private activities,
-      and discover upcoming public events. MCP uses your existing token; interactive OAuth is not
+      Available tools depend on the token’s scopes: read your activities, log public activities, and
+      discover upcoming public events. MCP uses your existing token; interactive OAuth is not
       available.
     </p>
   </div>

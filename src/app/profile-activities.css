@@ -94,7 +94,7 @@ input {
   font-size: 22px;
   flex-shrink: 0;
 }
-.profile-activity > div:nth-child(2) {
+.profile-activity-content {
   flex: 1;
   min-width: 0;
 }

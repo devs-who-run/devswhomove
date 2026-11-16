@@ -438,6 +438,72 @@ describe('App', () => {
     expect(TestBed.inject(Router).url).toBe('/feed');
   });
 
+  it('clears the viewer on logout even when reloading fails', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ ...bootstrap, viewer: DEMO_PROFILE }));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(Response.json({ error: 'Offline' }, { status: 500 }));
+    await app.auth.logout();
+    expect(app.viewer()).toBeNull();
+  });
+
+  it('ignores agent token loads superseded by a newer load or cleared session', async () => {
+    const token = (id: string) => ({
+      id,
+      name: id,
+      scopes: ['activities:read' as const],
+      createdAt: '2026-01-01T00:00:00Z',
+      expiresAt: '2027-01-01T00:00:00Z',
+    });
+    let resolveFirst!: (response: Response) => void;
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json(bootstrap));
+    const fixture = TestBed.createComponent(App);
+    const agent = fixture.componentInstance.agent;
+    await fixture.whenStable();
+    vi.mocked(fetch)
+      .mockReturnValueOnce(new Promise<Response>((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce(Response.json({ tokens: [token('new')] }));
+    const first = agent.load();
+    await agent.load();
+    resolveFirst(Response.json({ tokens: [token('stale')] }));
+    await first;
+    expect(agent.tokens().map((item) => item.id)).toEqual(['new']);
+
+    vi.mocked(fetch).mockReturnValueOnce(
+      new Promise<Response>((resolve) => (resolveFirst = resolve)),
+    );
+    const pending = agent.load();
+    agent.clear();
+    resolveFirst(Response.json({ tokens: [token('stale')] }));
+    await pending;
+    expect(agent.tokens()).toEqual([]);
+  });
+
+  it('lets AT Protocol viewers create write-only agent tokens', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        Response.json({ ...bootstrap, viewer: { ...DEMO_PROFILE, provider: 'atproto' } }),
+      )
+      .mockResolvedValue(Response.json({ tokens: [] }));
+    await TestBed.inject(Router).navigateByUrl('/agents');
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const html = fixture.nativeElement as HTMLElement;
+    const read = html.querySelector<HTMLInputElement>('input[name="agentRead"]')!;
+    expect(read.checked).toBe(true);
+    read.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const agent = fixture.componentInstance.agent;
+    expect([agent.read, agent.write, agent.events]).toEqual([false, true, false]);
+    const submit = html.querySelector<HTMLButtonElement>('app-agent-page button[type="submit"]')!;
+    expect(submit.disabled).toBe(false);
+  });
+
   it('loads the signed-in identity on a direct /profile route', async () => {
     vi.mocked(fetch).mockImplementation(
       async (path) =>
@@ -989,6 +1055,29 @@ describe('App', () => {
     fixture.detectChanges();
     const image = fixture.nativeElement.querySelector('.activity-photo') as HTMLImageElement;
     expect(image.getAttribute('src')).toBe(photoUrl);
+  });
+
+  it('ignores photo preparation that finishes after the dialog closes', async () => {
+    HTMLDialogElement.prototype.close = vi.fn();
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ ...bootstrap, viewer: DEMO_PROFILE }));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+    let resolvePhoto!: (photo: Blob) => void;
+    app.editor.preparePhoto = vi.fn(() => new Promise<Blob>((resolve) => (resolvePhoto = resolve)));
+    app.editor.modal.set('activity');
+    const input = document.createElement('input');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['raw'], 'run.jpg', { type: 'image/jpeg' })],
+    });
+    const choosing = app.editor.choosePhoto({ target: input } as unknown as Event);
+    expect(app.editor.photoBusy()).toBe(true);
+    app.editor.closeModal();
+    expect(app.editor.photoBusy()).toBe(false);
+    resolvePhoto(new Blob(['jpeg'], { type: 'image/jpeg' }));
+    await choosing;
+    expect(app.editor.photo()).toBeNull();
+    expect(app.editor.photoPreview()).toBe('');
   });
 
   it('keeps the activity and explains when only the photo upload fails', async () => {

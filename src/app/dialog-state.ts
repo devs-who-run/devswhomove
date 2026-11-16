@@ -33,6 +33,7 @@ export class DialogState {
   readonly photo = signal<Blob | null>(null);
   readonly photoPreview = signal('');
   readonly photoBusy = signal(false);
+  private photoRequest = 0;
   readonly publicDisclosure = signal(false);
   readonly editingEvent = signal<string | null>(null);
   preparePhoto = preparePhoto;
@@ -149,6 +150,8 @@ export class DialogState {
     if (this.context.saving()) return;
     this.context.close();
     this.modal.set(null);
+    this.photoRequest++;
+    this.photoBusy.set(false);
     this.removePhoto();
   }
 
@@ -157,17 +160,19 @@ export class DialogState {
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
+    const requestId = ++this.photoRequest;
     this.context.error.set('');
     this.photoBusy.set(true);
     try {
       const photo = await this.preparePhoto(file);
+      if (requestId !== this.photoRequest) return;
       this.removePhoto();
       this.photo.set(photo);
       this.photoPreview.set(URL.createObjectURL(photo));
     } catch (error) {
-      this.context.error.set(this.message(error));
+      if (requestId === this.photoRequest) this.context.error.set(this.message(error));
     } finally {
-      this.photoBusy.set(false);
+      if (requestId === this.photoRequest) this.photoBusy.set(false);
     }
   }
 

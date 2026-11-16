@@ -16,14 +16,17 @@ export class AgentTokens {
   write = true;
   read = true;
   events = false;
+  private loadRequest = 0;
 
   constructor(private readonly context: AgentContext) {}
 
   async load(): Promise<void> {
+    const requestId = ++this.loadRequest;
     try {
-      this.tokens.set((await request<{ tokens: AgentToken[] }>('/api/tokens')).tokens);
+      const { tokens } = await request<{ tokens: AgentToken[] }>('/api/tokens');
+      if (requestId === this.loadRequest) this.tokens.set(tokens);
     } catch (error) {
-      this.context.error.set(errorMessage(error));
+      if (requestId === this.loadRequest) this.context.error.set(errorMessage(error));
     }
   }
 
@@ -55,6 +58,7 @@ export class AgentTokens {
   }
 
   clear(): void {
+    this.loadRequest++;
     this.newToken.set('');
     this.tokens.set([]);
   }

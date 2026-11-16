@@ -66,6 +66,7 @@ export class EventActions {
     await this.context.action(async () => {
       await request(`/api/events/${encodeURIComponent(event.id)}`, 'POST', {});
       await this.context.load();
+      await this.context.refreshClub();
       this.context.notice.set('Event cancelled. It is no longer available to join.');
     });
   }

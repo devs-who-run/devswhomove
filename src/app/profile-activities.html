@@ -59,7 +59,7 @@
       </label>
     }
     <span class="activity-sport-icon"><app-icon [name]="activity.sport" /></span>
-    <div>
+    <div class="profile-activity-content">
       <small>
         {{ activity.sport }} · {{ activity.occurredAt | date: 'MMM d, y' }}
         @if (activity.source === 'agent') {

@@ -193,6 +193,7 @@ export class App {
     openAtprotoLogin: () => this.editor.openAtprotoLogin(),
     action: (work) => this.action(work),
     clearSession: () => {
+      this.viewer.set(null);
       this.agent.clear();
       this.remoteProfile.set(null);
       this.feed.clear();
