@@ -1,0 +1,145 @@
+:host {
+  display: block;
+}
+.page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  margin: 12px 0 31px;
+}
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 1.8px;
+  font-weight: 650;
+  color: #77826a;
+  margin-bottom: 12px;
+}
+h1 {
+  font: 750 clamp(28px, 2.7vw, 39px)/1.2 var(--heading);
+  letter-spacing: -1.65px;
+}
+h1 span {
+  color: #7b8866;
+}
+.page-heading > div > p:last-child {
+  color: #7c857c;
+  font-size: 13px;
+  margin-top: 13px;
+  line-height: 1.6;
+}
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 43px;
+  padding: 11px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 7px;
+  line-height: 1.4;
+  transition:
+    background 0.15s,
+    transform 0.15s;
+  white-space: nowrap;
+}
+.button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.primary {
+  background: var(--green);
+  color: #fff;
+}
+.primary:hover:not(:disabled) {
+  background: #153b2b;
+}
+.outline {
+  border: 1px solid #d9e1d3;
+  background: #fff;
+}
+.outline:hover:not(:disabled) {
+  background: #f0f5e9;
+}
+.full {
+  width: 100%;
+}
+.empty-state {
+  text-align: center;
+  padding: 50px 20px;
+  background: #fdfefa;
+  border: 1px dashed #dce3d0;
+  border-radius: 11px;
+  margin-top: 20px;
+  grid-column: 1/-1;
+}
+.empty-state > app-icon {
+  font-size: 33px;
+  color: #91a773;
+}
+.empty-state h3,
+.empty-state h2 {
+  font: 650 21px var(--heading);
+  letter-spacing: -0.6px;
+  margin: 17px 0 12px;
+}
+.empty-state p {
+  color: #8e9a80;
+  font-size: 13px;
+  line-height: 1.8;
+  margin-bottom: 22px;
+}
+@media (max-width: 850px) {
+  .page-heading {
+    margin-top: 15px;
+  }
+  .page-heading > div > p:last-child {
+    font-size: 13px;
+  }
+}
+@media (max-width: 700px) {
+  .page-heading > div > p:last-child {
+    max-width: 400px;
+  }
+  .page-heading > .button {
+    font-size: 12px;
+    padding: 10px 12px;
+  }
+}
+@media (max-width: 520px) {
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 1.4px;
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-size: 31px;
+    letter-spacing: -1.4px;
+  }
+  .page-heading {
+    margin-bottom: 25px;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .page-heading > div > p:last-child {
+    font-size: 13px;
+    line-height: 1.8;
+    margin-top: 12px;
+  }
+  .page-heading > .button {
+    font-size: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .button:hover:not(:disabled) {
+    transform: none;
+  }
+}
+.eyebrow {
+  color: var(--muted);
+  font-size: max(12px, 0.85em);
+}
+:host-context([data-theme='dark']) .page-heading > div > p:last-child,
+:host-context([data-theme='dark']) .empty-state p {
+  color: var(--muted);
+}

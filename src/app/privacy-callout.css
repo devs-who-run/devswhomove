@@ -1,0 +1,82 @@
+.text-button {
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #3e6042;
+  font-weight: 550;
+  font-size: 13px;
+}
+
+.text-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.privacy-callout {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  background: #edf1e4;
+  border: 1px solid #dce5ce;
+  padding: 18px 22px;
+  border-radius: 9px;
+  margin-top: 26px;
+}
+
+.privacy-callout > app-icon {
+  font-size: 22px;
+  color: #7d915d;
+}
+
+.privacy-callout > div {
+  flex: 1;
+}
+
+.privacy-callout strong {
+  font-size: 13px;
+}
+
+.privacy-callout p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #82916f;
+  margin-top: 5px;
+}
+
+.privacy-callout > .text-button {
+  white-space: nowrap;
+}
+@media (max-width: 850px) {
+  .privacy-callout {
+    flex-wrap: wrap;
+  }
+
+  .privacy-callout > .text-button {
+    margin-left: 38px;
+  }
+}
+@media (max-width: 520px) {
+  .privacy-callout {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .privacy-callout > div {
+    flex-basis: calc(100% - 38px);
+  }
+
+  .privacy-callout p {
+    font-size: 12px;
+  }
+
+  .privacy-callout strong {
+    font-size: 13px;
+  }
+
+  .privacy-callout > .text-button {
+    font-size: 12px;
+    margin-left: 32px;
+  }
+}

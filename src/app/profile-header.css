@@ -1,0 +1,324 @@
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.sport-filters {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin: 17px 0;
+}
+
+.sport-filters > span {
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 31px;
+  padding: 6px 10px;
+  border: 1px solid #e1e6dc;
+  border-radius: 5px;
+  font-size: 12px;
+  color: #7c8578;
+}
+
+.sport-filters > span {
+  background: #eff3e8;
+  border-color: #dbe5cc;
+  color: #3c5735;
+}
+
+.profile-cover {
+  height: 188px;
+  background: #254b37;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+  margin-top: 15px;
+}
+
+.profile-cover > span {
+  position: absolute;
+  top: 30px;
+  left: 30px;
+  font: 12px monospace;
+  letter-spacing: 2px;
+  color: #bacf9e;
+}
+
+.profile-cover > app-icon {
+  font-size: 115px;
+  position: absolute;
+  right: 80px;
+  top: 45px;
+  color: #b7d98f;
+  transform: rotate(-8deg);
+}
+
+.cover-lines {
+  position: absolute;
+  inset: -200px -100px -200px 20%;
+  border-radius: 50%;
+  border: 1px solid #d8efae15;
+  box-shadow:
+    0 0 0 30px #d8efae0c,
+    0 0 0 60px #d8efae0c,
+    0 0 0 90px #d8efae0c,
+    0 0 0 120px #d8efae0c,
+    0 0 0 150px #d8efae0c;
+}
+
+.profile-intro {
+  padding: 0 28px;
+  position: relative;
+}
+
+.profile-avatar {
+  width: 100px;
+  height: 100px;
+  background: #e3eacc;
+  color: #65813e;
+  border: 6px solid #f8f9f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 30px var(--heading);
+  border-radius: 50%;
+  margin-top: -49px;
+  position: relative;
+}
+
+.profile-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.visibility-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #8a967b;
+  text-transform: capitalize;
+}
+
+.profile-intro .eyebrow {
+  margin-top: 20px;
+  font-size: 12px;
+}
+
+.profile-intro h1 {
+  font-size: 34px;
+}
+
+.github-profile {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: #7b8970;
+  margin-top: 9px;
+}
+
+.github-profile:hover {
+  text-decoration: underline;
+}
+
+.profile-bio {
+  font-size: 13px;
+  color: #78856e;
+  line-height: 1.9;
+  max-width: 530px;
+  margin-top: 16px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.profile-location {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 13px;
+  color: #839175;
+  font-size: 13px;
+}
+
+.profile-sports {
+  margin-top: 18px;
+}
+
+.profile-sports > span {
+  font-size: 12px;
+}
+
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 25px 0;
+  margin-top: 28px;
+}
+
+.profile-stats > div {
+  padding: 0 25px;
+}
+
+.profile-stats > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.profile-stats span {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 1.3px;
+  color: #98a18a;
+}
+
+.profile-stats strong {
+  display: block;
+  font: 650 32px var(--heading);
+  margin-top: 10px;
+  letter-spacing: -1px;
+}
+
+@media (max-width: 1050px) {
+  .profile-actions .button {
+    font-size: 12px;
+  }
+
+  .profile-stats > div {
+    padding: 0 18px;
+  }
+
+  .profile-stats span {
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+}
+@media (max-width: 850px) {
+  .profile-cover > app-icon {
+    right: 45px;
+  }
+}
+@media (max-width: 700px) {
+  .profile-actions .visibility-pill {
+    font-size: 12px;
+  }
+
+  .profile-intro {
+    padding: 0 10px;
+  }
+
+  .profile-stats > div {
+    padding: 0 13px;
+  }
+
+  .profile-stats span {
+    letter-spacing: 0.5px;
+    font-size: 12px;
+  }
+
+  .profile-stats strong {
+    font-size: 27px;
+  }
+}
+@media (max-width: 520px) {
+  .profile-cover {
+    height: 155px;
+    margin-top: 2px;
+  }
+
+  .profile-cover > span {
+    font-size: 12px;
+    left: 22px;
+    top: 22px;
+    letter-spacing: 1px;
+  }
+
+  .profile-cover > app-icon {
+    font-size: 90px;
+    right: 30px;
+    top: 40px;
+  }
+
+  .profile-avatar {
+    width: 83px;
+    height: 83px;
+    font-size: 24px;
+    margin-top: -42px;
+  }
+
+  .profile-intro {
+    padding: 0 5px;
+  }
+
+  .profile-intro .eyebrow {
+    font-size: 12px;
+    margin-top: 25px;
+  }
+
+  .profile-intro h1 {
+    font-size: 30px;
+  }
+
+  .profile-actions {
+    gap: 8px;
+  }
+
+  .profile-actions > .button {
+    font-size: 12px;
+    padding: 8px 10px;
+    min-height: 34px;
+  }
+
+  .profile-actions > .visibility-pill {
+    font-size: 12px;
+  }
+
+  .profile-bio {
+    font-size: 13px;
+  }
+
+  .profile-stats {
+    padding: 20px 0;
+  }
+
+  .profile-stats > div {
+    padding: 0 9px;
+  }
+
+  .profile-stats span {
+    font-size: 12px;
+    letter-spacing: 0.5px;
+  }
+
+  .profile-stats strong {
+    font-size: 24px;
+  }
+}
+
+@media (max-width: 520px) {
+  .profile-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 18px;
+  }
+
+  .profile-stats > div + div:nth-child(odd) {
+    border-left: 0;
+  }
+}
+.profile-cover > span,
+.profile-stats span,
+.visibility-pill {
+  color: var(--muted);
+  font-size: max(12px, 0.85em);
+}

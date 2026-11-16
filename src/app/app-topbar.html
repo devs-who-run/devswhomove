@@ -1,0 +1,47 @@
+<header class="topbar">
+  <div class="breadcrumb">Your next commit? <span>A little movement.</span></div>
+  <div class="topbar-actions">
+    <div class="theme-control">
+      <label for="theme-preference" class="sr-only">Color theme</label>
+      <app-icon
+        [name]="
+          theme.preference() === 'system'
+            ? 'monitor'
+            : theme.preference() === 'dark'
+              ? 'moon'
+              : 'sun'
+        "
+      />
+      <select
+        id="theme-preference"
+        aria-label="Color theme"
+        [ngModel]="theme.preference()"
+        (ngModelChange)="theme.setPreference($event)"
+      >
+        <option value="system">System theme</option>
+        <option value="light">Light theme</option>
+        <option value="dark">Dark theme</option>
+      </select>
+    </div>
+    <span class="today">{{ '2026' }} <span class="tiny-divider">/</span> EST. IN MOTION</span>
+    @if (viewer()) {
+      <button
+        class="icon-button mobile-signout"
+        aria-label="Sign out"
+        (click)="signOut.emit()"
+        [disabled]="saving()"
+      >
+        <app-icon name="logout" />
+      </button>
+      <button class="button primary compact" (click)="logActivity.emit()">
+        <app-icon name="plus" /> Log activity
+      </button>
+    } @else {
+      <app-login
+        placement="header"
+        (githubLogin)="githubLogin.emit()"
+        (atprotoLogin)="atprotoLogin.emit()"
+      />
+    }
+  </div>
+</header>

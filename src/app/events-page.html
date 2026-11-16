@@ -1,0 +1,139 @@
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">GOOD COMPANY. GREAT REASON TO GO.</p>
+    <h1>Better <span>together.</span></h1>
+    <p>A morning run, a friendly match, a ride with no rush. Find your people.</p>
+  </div>
+  <button class="button primary" (click)="hostEvent.emit()">
+    <app-icon name="plus" /> Host an event
+  </button>
+</div>
+<div class="events-banner">
+  <app-icon name="people" />
+  <p>
+    <strong>No qualifying pace. No gatekeeping.</strong> Just developers making time to move. Every
+    starting point is welcome.
+  </p>
+</div>
+<app-sport-filter
+  class="event-filters"
+  ariaLabel="Filter events by sport"
+  allLabel="All sports"
+  [selected]="selectedSport()"
+  (selectedChange)="selectedSportChange.emit($event)"
+/>
+<div class="event-grid">
+  @for (event of events(); track event.id) {
+    <article class="event-card">
+      <div
+        class="event-art"
+        [class.tennis]="event.sport === 'Tennis'"
+        [class.cycling]="event.sport === 'Cycling'"
+      >
+        <span class="sport-label"><app-icon [name]="event.sport" />{{ event.sport }}</span
+        ><app-icon class="event-big-icon" [name]="event.sport" /><span class="event-art-caption"
+          >FIND YOUR PEOPLE. MAKE YOUR MOVE.</span
+        >
+      </div>
+      <div class="event-body">
+        <div class="event-date">
+          {{ event.startsAt | date: 'EEEE, MMM d' }} <span>·</span>
+          {{ event.startsAt | date: 'h:mm a' }}
+        </div>
+        <h2>{{ event.title }}</h2>
+        @if (event.clubSlug) {
+          <p class="event-conference">
+            Club: <a [routerLink]="['/clubs', event.clubSlug]">{{ event.clubName }}</a>
+          </p>
+        }
+        @if (event.conferenceName) {
+          <p class="event-conference">
+            Conference:
+            @if (conferenceLink(event.conferenceUrl); as link) {
+              <a [href]="link" target="_blank" rel="noopener noreferrer">{{
+                event.conferenceName
+              }}</a>
+            } @else {
+              <span>{{ event.conferenceName }}</span>
+            }
+          </p>
+        }
+        <p class="event-description">{{ event.description }}</p>
+        <p class="event-detail"><app-icon name="pin" />{{ event.location }}</p>
+        <p class="event-detail"><app-icon name="move" />{{ event.level }}</p>
+        <p class="event-detail">
+          <app-icon name="people" />{{ event.attendees }} / {{ event.capacity }} going
+          <span class="host-name">· Hosted by {{ event.hostName }}</span>
+        </p>
+        @if (event.hostId === viewer()?.id) {
+          <button
+            class="button outline full"
+            (click)="toggleAttendees.emit(event)"
+            [disabled]="loadingAttendees() === event.id"
+            [attr.aria-expanded]="attendeeEvent() === event.id"
+          >
+            {{
+              loadingAttendees() === event.id
+                ? 'Loading attendees…'
+                : attendeeEvent() === event.id
+                  ? 'Hide attendees'
+                  : 'View attendees'
+            }}
+          </button>
+          @if (attendeeEvent() === event.id && loadingAttendees() !== event.id) {
+            <ul class="attendee-list" aria-live="polite">
+              @for (attendee of eventAttendees(); track $index) {
+                <li class="attendee">
+                  @if (attendee.avatar) {
+                    <img [src]="attendee.avatar" alt="" referrerpolicy="no-referrer" />
+                  } @else {
+                    <app-icon name="user" />
+                  }
+                  <span>{{ attendee.name }}</span>
+                </li>
+              } @empty {
+                <li>No one has joined yet.</li>
+              }
+            </ul>
+          }
+          <div class="host-actions">
+            <button class="button primary" (click)="editEvent.emit(event)" [disabled]="saving()">
+              Edit event</button
+            ><button class="button outline" (click)="cancelEvent.emit(event)" [disabled]="saving()">
+              Cancel event
+            </button>
+          </div>
+        } @else {
+          <button
+            class="button full"
+            [class.primary]="!event.joined"
+            [class.outline]="event.joined"
+            [disabled]="saving() || (!event.joined && event.attendees >= event.capacity)"
+            (click)="joinEvent.emit(event)"
+          >
+            <app-icon [name]="event.joined ? 'check' : 'plus'" />{{
+              event.joined
+                ? 'You’re going · Leave event'
+                : event.attendees >= event.capacity
+                  ? 'This one’s full'
+                  : 'Count me in'
+            }}
+          </button>
+        }
+      </div>
+    </article>
+  } @empty {
+    <div class="empty-state full">
+      <app-icon name="calendar" />
+      <h3>Be the reason someone gets outside.</h3>
+      <p>No upcoming events for this sport yet. Start with a simple invitation.</p>
+      <button class="button primary" (click)="hostEvent.emit()">
+        Host the first one <app-icon name="plus" />
+      </button>
+    </div>
+  }
+</div>
+<p class="privacy-note">
+  <app-icon name="globe" /> Events are public. Use a general meeting area, not your home address.
+  Event times are shown in your local time zone.
+</p>

@@ -1,0 +1,110 @@
+<p class="form-help">
+  Events are public, including the host name. Use an approximate meeting area, not a private
+  address.
+</p>
+@if (viewer()?.provider === 'atproto') {
+  <div class="banner public-data-warning" role="note">
+    Event details, including conference associations, are saved as public PDS records. Use a public
+    meeting point; do not include private contact details or a home address. RSVP identities remain
+    in Cloudflare.
+  </div>
+  <label class="checkbox-label public-confirm">
+    <input type="checkbox" name="publicDisclosure" [(ngModel)]="publicDisclosure" required />
+    <span>I understand this event will be public.</span>
+  </label>
+}
+<label for="event-title">What are we doing?</label>
+<input
+  id="event-title"
+  name="title"
+  [(ngModel)]="value().title"
+  maxlength="100"
+  placeholder="The no-standup run club"
+  required
+/>
+<label for="conference-name">Conference name (optional)</label>
+<input
+  id="conference-name"
+  name="conferenceName"
+  [(ngModel)]="value().conferenceName"
+  maxlength="100"
+  placeholder="e.g. NG-Conf"
+/>
+<label for="conference-url">Conference URL (optional, HTTPS)</label>
+<input
+  id="conference-url"
+  name="conferenceUrl"
+  type="url"
+  [(ngModel)]="value().conferenceUrl"
+  maxlength="2048"
+  placeholder="https://example.com/conference"
+  aria-describedby="conference-help"
+/>
+<p id="conference-help" class="muted small-text">
+  Link any sport to a tech conference. Add a name before a URL; conference details are public.
+</p>
+@if (clubs().length) {
+  <label for="event-club">Club (optional)</label>
+  <select id="event-club" name="clubId" [(ngModel)]="value().clubId">
+    <option value="">No club</option>
+    @for (club of clubs(); track club.id) {
+      <option [value]="club.id">{{ club.name }}</option>
+    }
+  </select>
+}
+<div class="form-row">
+  <div>
+    <label for="event-sport">Sport</label>
+    <select id="event-sport" name="sport" [(ngModel)]="value().sport">
+      @for (sport of sports; track sport) {
+        <option [value]="sport">{{ sport }}</option>
+      }
+    </select>
+  </div>
+  <div>
+    <label for="event-date">Date and time (your local time)</label>
+    <input
+      id="event-date"
+      name="startsAt"
+      type="datetime-local"
+      [(ngModel)]="value().startsAt"
+      required
+    />
+  </div>
+</div>
+<label for="event-location">Meeting area</label>
+<input
+  id="event-location"
+  name="location"
+  [(ngModel)]="value().location"
+  maxlength="150"
+  placeholder="e.g. North entrance, city park"
+  required
+/>
+<div class="form-row">
+  <div>
+    <label for="level">Pace / ability level</label>
+    <input id="level" name="level" [(ngModel)]="value().level" maxlength="60" required />
+  </div>
+  <div>
+    <label for="capacity">Total spots (including you)</label>
+    <input
+      id="capacity"
+      name="capacity"
+      type="number"
+      min="2"
+      max="200"
+      [(ngModel)]="value().capacity"
+      required
+    />
+  </div>
+</div>
+<label for="event-description">The plan</label>
+<textarea
+  id="event-description"
+  name="description"
+  rows="4"
+  [(ngModel)]="value().description"
+  maxlength="1000"
+  placeholder="Duration, equipment, weather plans, and anything that helps someone feel welcome."
+></textarea>

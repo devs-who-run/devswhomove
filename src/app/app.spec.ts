@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './app';
 import { ActivityCalendar } from './activity-calendar';
 import { By } from '@angular/platform-browser';
+import { NgForm } from '@angular/forms';
 import { DEMO_ACTIVITIES, DEMO_EVENTS, DEMO_PROFILE } from './demo';
 import type { Bootstrap } from './models';
 import { provideRouter, Router } from '@angular/router';
@@ -99,6 +100,30 @@ describe('App', () => {
     expect(html.querySelector('.week-chart')?.getAttribute('aria-label')).toContain('Monday');
   });
 
+  it('routes sign-in actions from each app entry point to the existing auth handlers', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const html = fixture.nativeElement as HTMLElement;
+
+    html.querySelector<HTMLButtonElement>('app-login[placement="sidebar"] .github-button')!.click();
+    expect(fixture.componentInstance.error()).toContain('GitHub sign-in needs setup');
+    html.querySelector<HTMLButtonElement>('app-login[placement="header"] .outline')!.click();
+    expect(fixture.componentInstance.error()).toContain('AT Protocol sign-in needs setup');
+
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    html.querySelector<HTMLButtonElement>('app-login[placement="profile"] .primary')!.click();
+    expect(fixture.componentInstance.error()).toContain('GitHub sign-in needs setup');
+
+    await TestBed.inject(Router).navigateByUrl('/agents');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    html.querySelector<HTMLButtonElement>('app-login[placement="agents"] .primary')!.click();
+    expect(fixture.componentInstance.error()).toContain('GitHub sign-in needs setup');
+  });
+
   it('connects the feed sidebar shortcuts to navigation and event creation', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
@@ -116,6 +141,64 @@ describe('App', () => {
     html.querySelector<HTMLButtonElement>('.agent-promo button')!.click();
     await fixture.whenStable();
     expect(TestBed.inject(Router).url).toBe('/agents');
+  });
+
+  it('keeps extracted activity fields registered with the dialog form', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      Response.json({ ...bootstrap, viewer: { ...DEMO_PROFILE, provider: 'atproto' } }),
+    );
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const app = fixture.componentInstance;
+    app.editor.openModal('activity');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const form = fixture.debugElement.query(By.css('dialog form')).injector.get(NgForm);
+    expect(form.controls['title']).toBeDefined();
+    expect(form.controls['publicDisclosure']).toBeDefined();
+    expect(form.invalid).toBe(true);
+
+    const html = fixture.nativeElement as HTMLElement;
+    const title = html.querySelector<HTMLInputElement>('#activity-title')!;
+    title.value = 'An evening walk';
+    title.dispatchEvent(new Event('input'));
+    const disclosure = html.querySelector<HTMLInputElement>('[name="publicDisclosure"]')!;
+    disclosure.click();
+    fixture.detectChanges();
+    expect(app.editor.activityForm.title).toBe('An evening walk');
+    expect(app.editor.publicDisclosure()).toBe(true);
+    expect(form.controls['title'].valid).toBe(true);
+    expect(form.controls['publicDisclosure'].valid).toBe(true);
+    expect(html.querySelector('#activity-photo')).toBeNull();
+  });
+
+  it('keeps extracted event fields and disclosure registered with the dialog form', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      Response.json({ ...bootstrap, viewer: { ...DEMO_PROFILE, provider: 'atproto' } }),
+    );
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const app = fixture.componentInstance;
+    app.editor.openModal('event');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const form = fixture.debugElement.query(By.css('dialog form')).injector.get(NgForm);
+    expect(form.controls['title']).toBeDefined();
+    expect(form.controls['publicDisclosure']).toBeDefined();
+    expect(form.invalid).toBe(true);
+
+    const html = fixture.nativeElement as HTMLElement;
+    const title = html.querySelector<HTMLInputElement>('#event-title')!;
+    title.value = 'Morning run';
+    title.dispatchEvent(new Event('input'));
+    html.querySelector<HTMLInputElement>('[name="publicDisclosure"]')!.click();
+    fixture.detectChanges();
+    expect(app.editor.eventForm.title).toBe('Morning run');
+    expect(app.editor.publicDisclosure()).toBe(true);
+    expect(form.controls['title'].valid).toBe(true);
+    expect(form.controls['publicDisclosure'].valid).toBe(true);
   });
 
   it('filters activities by sport without changing the source data', async () => {
@@ -161,11 +244,11 @@ describe('App', () => {
             }),
         );
 
-      const oldRequest = app.toggleAttendees(event);
-      await app.toggleAttendees(event);
-      expect(app.attendeeEvent()).toBeNull();
-      expect(app.loadingAttendees()).toBeNull();
-      const newRequest = app.toggleAttendees(event);
+      const oldRequest = app.eventActions.toggleAttendees(event);
+      await app.eventActions.toggleAttendees(event);
+      expect(app.eventActions.attendeeEvent()).toBeNull();
+      expect(app.eventActions.loadingAttendees()).toBeNull();
+      const newRequest = app.eventActions.toggleAttendees(event);
       const attendees = [{ name: 'Current attendee', avatar: '' }];
       const settleOld = async () => {
         if (outcome === 'success')
@@ -176,17 +259,17 @@ describe('App', () => {
 
       if (order === 'before') {
         await settleOld();
-        expect(app.eventAttendees()).toEqual([]);
-        expect(app.attendeeEvent()).toBe(event.id);
-        expect(app.loadingAttendees()).toBe(event.id);
+        expect(app.eventActions.eventAttendees()).toEqual([]);
+        expect(app.eventActions.attendeeEvent()).toBe(event.id);
+        expect(app.eventActions.loadingAttendees()).toBe(event.id);
         expect(app.error()).toBe('');
       }
       resolveNew(Response.json({ attendees }));
       await newRequest;
       if (order === 'after') await settleOld();
-      expect(app.eventAttendees()).toEqual(attendees);
-      expect(app.attendeeEvent()).toBe(event.id);
-      expect(app.loadingAttendees()).toBeNull();
+      expect(app.eventActions.eventAttendees()).toEqual(attendees);
+      expect(app.eventActions.attendeeEvent()).toBe(event.id);
+      expect(app.eventActions.loadingAttendees()).toBeNull();
       expect(app.error()).toBe('');
     },
   );
@@ -234,11 +317,14 @@ describe('App', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Log public activities');
     expect(fixture.nativeElement.querySelector('[name="agentWrite"]')).not.toBeNull();
-    fixture.componentInstance.agentName = 'Activity importer';
+    const name = fixture.nativeElement.querySelector('[name="agentName"]') as HTMLInputElement;
+    name.value = 'Activity importer';
+    name.dispatchEvent(new Event('input'));
     vi.mocked(fetch)
       .mockResolvedValueOnce(Response.json({ token: 'new-agent-token' }))
       .mockResolvedValueOnce(Response.json({ tokens: [] }));
-    await fixture.componentInstance.createToken();
+    fixture.nativeElement.querySelector('app-agent-page form').dispatchEvent(new Event('submit'));
+    await fixture.whenStable();
     expect(fetch).toHaveBeenCalledWith(
       '/api/tokens',
       expect.objectContaining({
@@ -249,6 +335,173 @@ describe('App', () => {
         }),
       }),
     );
+  });
+
+  it('manages agent tokens and hides the one-time token when leaving the page', async () => {
+    const token = {
+      id: 'token-1',
+      name: 'Running agent',
+      scopes: ['activities:read'],
+      createdAt: '2026-01-01T00:00:00Z',
+      expiresAt: '2027-01-01T00:00:00Z',
+    };
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ ...bootstrap, viewer: DEMO_PROFILE }));
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ tokens: [token] }));
+    await TestBed.inject(Router).navigateByUrl('/agents');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const html = fixture.nativeElement as HTMLElement;
+    expect(html.querySelector('.token-item')?.textContent).toContain('Running agent');
+
+    const name = html.querySelector<HTMLInputElement>('[name="agentName"]')!;
+    name.value = 'New agent';
+    name.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(Response.json({ token: 'secret-once' }))
+      .mockResolvedValueOnce(Response.json({ tokens: [token] }));
+    html.querySelector('app-agent-page form')!.dispatchEvent(new Event('submit'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(html.querySelector<HTMLTextAreaElement>('#new-token')?.value).toBe('secret-once');
+    expect(name.value).toBe('');
+
+    const confirm = vi
+      .spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    const revoke = html.querySelector<HTMLButtonElement>('.token-item button')!;
+    revoke.click();
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(html.querySelector('#new-token')).not.toBeNull();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(Response.json({ tokens: [] }));
+    revoke.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/tokens/token-1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+    expect(html.querySelector('#new-token')).toBeNull();
+    expect(html.textContent).toContain('Agent access revoked.');
+
+    fixture.componentInstance.agent.newToken.set('another-secret');
+    await TestBed.inject(Router).navigateByUrl('/feed');
+    await fixture.whenStable();
+    expect(fixture.componentInstance.agent.newToken()).toBe('');
+  });
+
+  it('surfaces errors when loading agent tokens', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ ...bootstrap, viewer: DEMO_PROFILE }));
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      Response.json({ error: 'Could not load tokens' }, { status: 500 }),
+    );
+    await TestBed.inject(Router).navigateByUrl('/agents');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain(
+      'Could not load tokens',
+    );
+  });
+
+  it('clears agent tokens when signing out from the sidebar', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ ...bootstrap, viewer: DEMO_PROFILE }));
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    fixture.componentInstance.agent.tokens.set([
+      {
+        id: 'token-1',
+        name: 'Running agent',
+        scopes: ['activities:read'],
+        createdAt: '2026-01-01T00:00:00Z',
+        expiresAt: '2027-01-01T00:00:00Z',
+      },
+    ]);
+    fixture.componentInstance.agent.newToken.set('secret-once');
+    fixture.detectChanges();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(Response.json(bootstrap));
+    fixture.nativeElement
+      .querySelector('app-login[placement="sidebar"] [aria-label="Sign out"]')
+      .click();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.agent.tokens()).toEqual([]);
+    expect(fixture.componentInstance.agent.newToken()).toBe('');
+    expect(TestBed.inject(Router).url).toBe('/feed');
+  });
+
+  it('clears the viewer on logout even when reloading fails', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ ...bootstrap, viewer: DEMO_PROFILE }));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(Response.json({ error: 'Offline' }, { status: 500 }));
+    await app.auth.logout();
+    expect(app.viewer()).toBeNull();
+  });
+
+  it('ignores agent token loads superseded by a newer load or cleared session', async () => {
+    const token = (id: string) => ({
+      id,
+      name: id,
+      scopes: ['activities:read' as const],
+      createdAt: '2026-01-01T00:00:00Z',
+      expiresAt: '2027-01-01T00:00:00Z',
+    });
+    let resolveFirst!: (response: Response) => void;
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json(bootstrap));
+    const fixture = TestBed.createComponent(App);
+    const agent = fixture.componentInstance.agent;
+    await fixture.whenStable();
+    vi.mocked(fetch)
+      .mockReturnValueOnce(new Promise<Response>((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce(Response.json({ tokens: [token('new')] }));
+    const first = agent.load();
+    await agent.load();
+    resolveFirst(Response.json({ tokens: [token('stale')] }));
+    await first;
+    expect(agent.tokens().map((item) => item.id)).toEqual(['new']);
+
+    vi.mocked(fetch).mockReturnValueOnce(
+      new Promise<Response>((resolve) => (resolveFirst = resolve)),
+    );
+    const pending = agent.load();
+    agent.clear();
+    resolveFirst(Response.json({ tokens: [token('stale')] }));
+    await pending;
+    expect(agent.tokens()).toEqual([]);
+  });
+
+  it('lets AT Protocol viewers create write-only agent tokens', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        Response.json({ ...bootstrap, viewer: { ...DEMO_PROFILE, provider: 'atproto' } }),
+      )
+      .mockResolvedValue(Response.json({ tokens: [] }));
+    await TestBed.inject(Router).navigateByUrl('/agents');
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const html = fixture.nativeElement as HTMLElement;
+    const read = html.querySelector<HTMLInputElement>('input[name="agentRead"]')!;
+    expect(read.checked).toBe(true);
+    read.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const agent = fixture.componentInstance.agent;
+    expect([agent.read, agent.write, agent.events]).toEqual([false, true, false]);
+    const submit = html.querySelector<HTMLButtonElement>('app-agent-page button[type="submit"]')!;
+    expect(submit.disabled).toBe(false);
   });
 
   it('loads the signed-in identity on a direct /profile route', async () => {
@@ -338,12 +591,12 @@ describe('App', () => {
     const app = fixture.componentInstance;
     const calendar = fixture.debugElement.query(By.directive(ActivityCalendar))
       .componentInstance as ActivityCalendar;
-    expect(app.profileStats().sessions).toBe(102);
+    expect(app.profileSummary.stats().sessions).toBe(102);
     expect(calendar.years()).toEqual(expect.arrayContaining([2025, 2024]));
     expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(102);
-    app.selectAllProfileActivities();
-    expect(app.selectedActivityIds()).toHaveLength(100);
-    app.clearActivitySelection();
+    app.activityActions.selectAllProfileActivities();
+    expect(app.activityActions.selectedActivityIds()).toHaveLength(100);
+    app.activityActions.clearActivitySelection();
 
     const graphSelects = fixture.nativeElement.querySelectorAll(
       '.heatmap-filters select',
@@ -392,7 +645,7 @@ describe('App', () => {
     expect(fixture.nativeElement.querySelectorAll('.profile-activity')).toHaveLength(0);
     expect(calendar.heatmap().sessions).toBe(0);
     expect(calendar.heatmap().days).toHaveLength(366);
-    expect(app.profileStats().sessions).toBe(102);
+    expect(app.profileSummary.stats().sessions).toBe(102);
     await TestBed.inject(Router).navigateByUrl('/feed');
     await TestBed.inject(Router).navigateByUrl('/profile');
     await fixture.whenStable();
@@ -502,9 +755,9 @@ describe('App', () => {
     expect(buttons.some((button) => button.textContent?.includes('Copy profile link'))).toBe(false);
     buttons.find((button) => button.textContent?.includes('Make profile public'))!.click();
     fixture.detectChanges();
-    expect(fixture.componentInstance.profileForm.visibility).toBe('public');
+    expect(fixture.componentInstance.editor.profileForm.visibility).toBe('public');
     expect(viewer.visibility).toBe('private');
-    await fixture.componentInstance.save();
+    await fixture.componentInstance.editor.save();
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/me',
       expect.objectContaining({
@@ -571,8 +824,8 @@ describe('App', () => {
   it('requires sign-in rather than pretending to save guest activities', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
-    fixture.componentInstance.openModal('activity');
-    expect(fixture.componentInstance.modal()).toBeNull();
+    fixture.componentInstance.editor.openModal('activity');
+    expect(fixture.componentInstance.editor.modal()).toBeNull();
     expect(fixture.componentInstance.notice()).toContain('Sign in with GitHub');
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -582,10 +835,10 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     const app = fixture.componentInstance;
-    app.atprotoConfigured.set(true);
-    app.loginAtproto();
+    app.auth.atprotoConfigured.set(true);
+    app.auth.loginAtproto();
     fixture.detectChanges();
-    expect(app.modal()).toBe('atproto-login');
+    expect(app.editor.modal()).toBe('atproto-login');
     expect(fixture.nativeElement.querySelector('#atproto-handle')).toMatchObject({
       required: true,
       maxLength: 253,
@@ -593,6 +846,45 @@ describe('App', () => {
     });
     expect(fixture.nativeElement.textContent).toContain('review and approve access');
     expect(fixture.nativeElement.textContent).toContain('Continue to Bluesky');
+  });
+
+  it('connects dialog inputs, actions, and cancellation to the app', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ ...bootstrap, viewer: DEMO_PROFILE }));
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const app = fixture.componentInstance;
+    app.editor.openModal('profile');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const html = fixture.nativeElement as HTMLElement;
+    const name = html.querySelector<HTMLInputElement>('#profile-name')!;
+    name.value = 'Updated name';
+    name.dispatchEvent(new Event('input'));
+    const sport = [
+      ...html.querySelectorAll<HTMLButtonElement>('[aria-label="Choose your sports"] button'),
+    ].find((button) => button.textContent?.trim() === 'Tennis')!;
+    const hadTennis = app.editor.profileForm.sports.includes('Tennis');
+    sport.click();
+    fixture.detectChanges();
+    expect(app.editor.profileForm.name).toBe('Updated name');
+    expect(app.editor.profileForm.sports.includes('Tennis')).toBe(!hadTennis);
+
+    html.querySelector<HTMLButtonElement>('[aria-label="Close dialog"]')!.click();
+    expect(app.editor.modal()).toBeNull();
+    expect(HTMLDialogElement.prototype.close).toHaveBeenCalled();
+
+    app.auth.atprotoConfigured.set(true);
+    app.auth.loginAtproto();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const handle = html.querySelector<HTMLInputElement>('#atproto-handle')!;
+    handle.value = '  ';
+    handle.dispatchEvent(new Event('input'));
+    html.querySelector<HTMLFormElement>('dialog form')!.dispatchEvent(new Event('submit'));
+    expect(app.editor.atprotoHandle).toBe('  ');
+    expect(app.error()).toContain('Enter a valid AT Protocol handle');
   });
 
   it('does not replace a failed API with successful-looking demo data', async () => {
@@ -615,7 +907,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     expect(fixture.componentInstance.preview()).toBe(false);
-    expect(fixture.componentInstance.myActivities()).toHaveLength(1);
+    expect(fixture.componentInstance.feed.myActivities()).toHaveLength(1);
   });
 
   it('selects profile activities and confirms a bulk public visibility change', async () => {
@@ -662,7 +954,7 @@ describe('App', () => {
       method: 'PATCH',
       body: JSON.stringify({ ids: [activities[0].id], visibility: 'public' }),
     });
-    expect(fixture.componentInstance.bulkVisibilityMode()).toBe(false);
+    expect(fixture.componentInstance.activityActions.bulkVisibilityMode()).toBe(false);
     expect(fixture.componentInstance.notice()).toBe('1 activity is now public.');
   });
 
@@ -703,7 +995,7 @@ describe('App', () => {
   it('shows actionable setup feedback when OAuth is not configured', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
-    fixture.componentInstance.login();
+    fixture.componentInstance.auth.login();
     expect(fixture.componentInstance.error()).toContain('OAuth client ID and secret');
   });
 
@@ -742,16 +1034,16 @@ describe('App', () => {
     const app = fixture.componentInstance;
     await fixture.whenStable();
     const photo = new Blob(['jpeg'], { type: 'image/jpeg' });
-    app.preparePhoto = vi.fn().mockResolvedValue(photo);
-    app.modal.set('activity');
-    app.activityForm.title = 'Lunch run';
+    app.editor.preparePhoto = vi.fn().mockResolvedValue(photo);
+    app.editor.modal.set('activity');
+    app.editor.activityForm.title = 'Lunch run';
     const input = document.createElement('input');
     Object.defineProperty(input, 'files', {
       value: [new File(['raw'], 'run.heic', { type: 'image/heic' })],
     });
-    await app.choosePhoto({ target: input } as unknown as Event);
-    expect(app.photoPreview()).toBe('blob:preview');
-    await app.save();
+    await app.editor.choosePhoto({ target: input } as unknown as Event);
+    expect(app.editor.photoPreview()).toBe('blob:preview');
+    await app.editor.save();
     const upload = fetchMock.mock.calls.find(([path]) => path === '/api/activities/new/photo');
     expect(upload?.[1]).toMatchObject({
       method: 'PUT',
@@ -759,10 +1051,33 @@ describe('App', () => {
       headers: { 'Content-Type': 'image/jpeg' },
     });
     expect(app.notice()).toBe('Activity logged. Every little move counts.');
-    expect(app.photo()).toBeNull();
+    expect(app.editor.photo()).toBeNull();
     fixture.detectChanges();
     const image = fixture.nativeElement.querySelector('.activity-photo') as HTMLImageElement;
     expect(image.getAttribute('src')).toBe(photoUrl);
+  });
+
+  it('ignores photo preparation that finishes after the dialog closes', async () => {
+    HTMLDialogElement.prototype.close = vi.fn();
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ ...bootstrap, viewer: DEMO_PROFILE }));
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+    let resolvePhoto!: (photo: Blob) => void;
+    app.editor.preparePhoto = vi.fn(() => new Promise<Blob>((resolve) => (resolvePhoto = resolve)));
+    app.editor.modal.set('activity');
+    const input = document.createElement('input');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['raw'], 'run.jpg', { type: 'image/jpeg' })],
+    });
+    const choosing = app.editor.choosePhoto({ target: input } as unknown as Event);
+    expect(app.editor.photoBusy()).toBe(true);
+    app.editor.closeModal();
+    expect(app.editor.photoBusy()).toBe(false);
+    resolvePhoto(new Blob(['jpeg'], { type: 'image/jpeg' }));
+    await choosing;
+    expect(app.editor.photo()).toBeNull();
+    expect(app.editor.photoPreview()).toBe('');
   });
 
   it('keeps the activity and explains when only the photo upload fails', async () => {
@@ -782,9 +1097,9 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance;
     await fixture.whenStable();
-    app.modal.set('activity');
-    app.photo.set(new Blob(['x'], { type: 'image/jpeg' }));
-    await app.save();
+    app.editor.modal.set('activity');
+    app.editor.photo.set(new Blob(['x'], { type: 'image/jpeg' }));
+    await app.editor.save();
     expect(app.notice()).toContain('photo didn’t upload: Upload a valid JPEG');
     expect(app.error()).toBe('');
   });
@@ -825,8 +1140,8 @@ describe('App', () => {
     ) as HTMLButtonElement;
     edit.click();
     fixture.detectChanges();
-    expect(app.editingEvent()).toBe('evt-1');
-    expect(app.eventForm).toMatchObject({
+    expect(app.editor.editingEvent()).toBe('evt-1');
+    expect(app.editor.eventForm).toMatchObject({
       title: 'Morning tennis',
       capacity: 4,
       location: 'City courts',
@@ -836,8 +1151,8 @@ describe('App', () => {
     expect(fixture.nativeElement.querySelector('#modal-title')?.textContent).toContain(
       'Fine-tune your event.',
     );
-    app.eventForm.capacity = 8;
-    await app.save();
+    app.editor.eventForm.capacity = 8;
+    await app.editor.save();
     const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
     expect(patch?.[0]).toBe('/api/events/evt-1');
     expect(JSON.parse(patch?.[1]?.body as string)).toMatchObject({
@@ -847,6 +1162,41 @@ describe('App', () => {
       conferenceUrl: 'https://ng-conf.example',
     });
     expect(app.notice()).toContain('Event updated');
+  });
+
+  it('connects the events page filters and actions to the app', async () => {
+    const hosted = { ...DEMO_EVENTS[0], hostId: DEMO_PROFILE.id };
+    const joining = DEMO_EVENTS[1];
+    vi.mocked(fetch).mockResolvedValueOnce(
+      Response.json({ ...bootstrap, viewer: DEMO_PROFILE, events: [hosted, joining] }),
+    );
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/events');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const app = fixture.componentInstance;
+    const attendees = vi.spyOn(app.eventActions, 'toggleAttendees').mockResolvedValue();
+    const cancel = vi.spyOn(app.eventActions, 'cancel').mockResolvedValue();
+    const join = vi.spyOn(app.eventActions, 'join').mockResolvedValue();
+    const host = vi.spyOn(app.editor, 'openModal').mockImplementation(() => {});
+    const html = fixture.nativeElement as HTMLElement;
+    const buttons = [...html.querySelectorAll<HTMLButtonElement>('app-events-page button')];
+
+    buttons.find((button) => button.textContent?.trim() === 'Host an event')!.click();
+    buttons.find((button) => button.textContent?.trim() === 'View attendees')!.click();
+    buttons.find((button) => button.textContent?.trim() === 'Cancel event')!.click();
+    buttons.find((button) => button.textContent?.trim() === 'Count me in')!.click();
+    expect(host).toHaveBeenCalledWith('event');
+    expect(attendees).toHaveBeenCalledWith(hosted);
+    expect(cancel).toHaveBeenCalledWith(hosted);
+    expect(join).toHaveBeenCalledWith(joining);
+
+    buttons.find((button) => button.textContent?.trim() === 'Tennis')!.click();
+    fixture.detectChanges();
+    expect(app.selectedSport()).toBe('Tennis');
+    expect(html.querySelectorAll('app-events-page .event-card')).toHaveLength(1);
+    expect(html.querySelector('app-events-page .event-card')?.textContent).toContain(joining.title);
   });
 
   it.each(['github', 'atproto'] as const)(
@@ -863,9 +1213,9 @@ describe('App', () => {
       const fixture = TestBed.createComponent(App);
       const app = fixture.componentInstance;
       await fixture.whenStable();
-      app.openModal('event');
-      expect(app.eventForm).toMatchObject({ conferenceName: '', conferenceUrl: '' });
-      Object.assign(app.eventForm, {
+      app.editor.openModal('event');
+      expect(app.editor.eventForm).toMatchObject({ conferenceName: '', conferenceUrl: '' });
+      Object.assign(app.editor.eventForm, {
         title: 'Morning 5K',
         location: 'Park',
         conferenceName: ' NG-Conf ',
@@ -875,12 +1225,12 @@ describe('App', () => {
       expect(fixture.nativeElement.querySelector('#conference-name')).toBeTruthy();
       expect(fixture.nativeElement.querySelector('#conference-url')).toBeTruthy();
       if (provider === 'atproto') {
-        await app.save();
+        await app.editor.save();
         expect(app.error()).toContain('publicly visible');
         expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
-        app.publicDisclosure.set(true);
+        app.editor.publicDisclosure.set(true);
       }
-      await app.save();
+      await app.editor.save();
       const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
       expect(JSON.parse(post?.[1]?.body as string)).toMatchObject({
         conferenceName: 'NG-Conf',
@@ -916,10 +1266,10 @@ describe('App', () => {
         'NG-Conf',
       );
       expect(fixture.nativeElement.querySelector('.event-conference a')).toBeNull();
-      app.modal.set('event');
-      Object.assign(app.eventForm, { conferenceName: 'NG-Conf', conferenceUrl });
+      app.editor.modal.set('event');
+      Object.assign(app.editor.eventForm, { conferenceName: 'NG-Conf', conferenceUrl });
       const callsBefore = fetchMock.mock.calls.length;
-      await app.save();
+      await app.editor.save();
       expect(app.error()).toContain('safe HTTPS URL');
       expect(fetchMock.mock.calls).toHaveLength(callsBefore);
     },
@@ -949,10 +1299,10 @@ describe('App', () => {
     expect(cards[1].querySelector('.event-conference')?.textContent).toContain('BikeConf');
     expect(cards[1].querySelector('.event-conference a')).toBeNull();
     expect(cards[2].querySelector('.event-conference')).toBeNull();
-    app.editEvent(DEMO_EVENTS[2]);
-    expect(app.eventForm).toMatchObject({ conferenceName: '', conferenceUrl: '' });
-    app.eventForm.conferenceUrl = 'https://ng-conf.example';
-    await app.save();
+    app.editor.editEvent(DEMO_EVENTS[2]);
+    expect(app.editor.eventForm).toMatchObject({ conferenceName: '', conferenceUrl: '' });
+    app.editor.eventForm.conferenceUrl = 'https://ng-conf.example';
+    await app.editor.save();
     expect(app.error()).toContain('Add a conference name');
   });
 
@@ -1042,7 +1392,7 @@ describe('App', () => {
       button(root, 'Following').click();
       await fixture.whenStable();
       fixture.detectChanges();
-      expect(fixture.componentInstance.filteredActivities()).toEqual([]);
+      expect(fixture.componentInstance.feed.filteredActivities()).toEqual([]);
       expect(root.textContent).toContain('Follow people from their profile');
     });
 
@@ -1096,9 +1446,9 @@ describe('App', () => {
       await fixture.whenStable();
       const join = fetchMock.mock.calls.find(([path]) => path.endsWith('/membership'));
       expect(JSON.parse(join?.[1]?.body as string)).toEqual({ join: true });
-      app.openModal('club');
-      app.clubForm = { name: 'NG riders', description: '', sport: '' };
-      await app.save();
+      app.editor.openModal('club');
+      app.editor.clubForm = { name: 'NG riders', description: '', sport: '' };
+      await app.editor.save();
       await fixture.whenStable();
       const create = fetchMock.mock.calls.find(
         ([path, init]) => path === '/api/clubs' && init?.method === 'POST',
@@ -1109,7 +1459,7 @@ describe('App', () => {
         sport: null,
       });
       expect(TestBed.inject(Router).url).toBe('/clubs/ng-riders');
-      expect(app.clubDetail()?.club.name).toBe('NG riders');
+      expect(app.clubActions.detail()?.club.name).toBe('NG riders');
     });
 
     it('shares a club invite link from the club page', async () => {
@@ -1132,9 +1482,38 @@ describe('App', () => {
 
       const share = vi.fn().mockResolvedValue(undefined);
       vi.stubGlobal('navigator', { share, clipboard: { writeText } });
-      await app.shareClub(club);
+      await app.clubActions.share(club);
       expect(share).toHaveBeenCalledWith(expect.objectContaining({ url }));
       expect(writeText).toHaveBeenCalledTimes(1);
+    });
+
+    it('connects club detail event actions to the app', async () => {
+      const joinedClub = { ...club, joined: true };
+      const event = DEMO_EVENTS[0];
+      mockApi(viewer, {
+        [`GET /api/clubs/${club.slug}`]: () => ({
+          club: joinedClub,
+          members: [],
+          activities: [],
+          events: [event],
+        }),
+      });
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      await TestBed.inject(Router).navigateByUrl(`/clubs/${club.slug}`);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const app = fixture.componentInstance;
+      const host = vi.spyOn(app.editor, 'openModal').mockImplementation(() => {});
+      const join = vi.spyOn(app.eventActions, 'join').mockResolvedValue();
+      const leave = vi.spyOn(app.clubActions, 'toggleMembership').mockResolvedValue();
+      const root = fixture.nativeElement as HTMLElement;
+      button(root, 'Host a club event').click();
+      button(root, 'Count me in').click();
+      button(root, 'Leave club').click();
+      expect(host).toHaveBeenCalledWith('event');
+      expect(join).toHaveBeenCalledWith(event);
+      expect(leave).toHaveBeenCalledWith(joinedClub);
     });
   });
 });

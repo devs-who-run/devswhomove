@@ -1,0 +1,206 @@
+<dialog #dialog aria-labelledby="modal-title" (cancel)="$event.preventDefault(); closeModal.emit()">
+  <div class="modal-heading">
+    <div>
+      <p class="eyebrow">EVERY LITTLE MOVE COUNTS.</p>
+      <h2 id="modal-title">
+        {{
+          modal() === 'atproto-login'
+            ? 'Connect with AT Protocol.'
+            : modal() === 'activity'
+              ? 'A little progress, logged.'
+              : modal() === 'event'
+                ? editingEvent()
+                  ? 'Fine-tune your event.'
+                  : 'Good company starts here.'
+                : modal() === 'club'
+                  ? 'Start a club.'
+                  : 'Make this space yours.'
+        }}
+      </h2>
+    </div>
+    <button
+      type="button"
+      class="icon-button"
+      aria-label="Close dialog"
+      (click)="closeModal.emit()"
+      [disabled]="saving()"
+    >
+      <app-icon name="close" />
+    </button>
+  </div>
+  @if (error() && modal()) {
+    <div class="banner error" role="alert">{{ error() }}</div>
+  }
+  <form
+    ngNativeValidate
+    (ngSubmit)="modal() === 'atproto-login' ? beginAtprotoLogin.emit() : save.emit()"
+  >
+    @if (modal() === 'atproto-login') {
+      <p class="small-text">
+        Sign in with the handle or DID for your Bluesky account. We’ll send you to your account’s
+        hosting provider to review and approve access.
+      </p>
+      <label for="atproto-handle">Bluesky handle or DID</label>
+      <input
+        id="atproto-handle"
+        name="atprotoHandle"
+        type="text"
+        [(ngModel)]="atprotoHandle"
+        autocomplete="username"
+        autocapitalize="none"
+        spellcheck="false"
+        maxlength="253"
+        placeholder="you.bsky.social"
+        required
+        autofocus
+      />
+      <div class="banner public-data-warning" role="note">
+        This app can write your profile, activities, and hosted events to your public AT Protocol
+        repository. Those records can be copied by others. Review the requested access on the next
+        screen before approving.
+      </div>
+    } @else if (modal() === 'activity') {
+      <app-activity-form
+        [value]="activityForm()"
+        [viewer]="viewer()"
+        [profileHidden]="profileHidden()"
+        [photoPreview]="photoPreview()"
+        [photoBusy]="photoBusy()"
+        [saving]="saving()"
+        [(publicDisclosure)]="publicDisclosure"
+        (choosePhoto)="choosePhoto.emit($event)"
+        (removePhoto)="removePhoto.emit()"
+      />
+    }
+    @if (modal() === 'event') {
+      <app-event-form
+        [value]="eventForm()"
+        [viewer]="viewer()"
+        [clubs]="eventClubOptions()"
+        [(publicDisclosure)]="publicDisclosure"
+      />
+    }
+    @if (modal() === 'club') {
+      <p class="form-help">
+        Clubs are public and open: anyone with a public profile can join. Members can link their
+        events to the club.
+      </p>
+      <label for="club-name">Club name</label>
+      <input
+        id="club-name"
+        name="clubName"
+        [(ngModel)]="clubForm().name"
+        maxlength="60"
+        placeholder="Angular devs who run"
+        required
+      />
+      <label for="club-sport">Main sport</label>
+      <select id="club-sport" name="clubSport" [(ngModel)]="clubForm().sport">
+        <option value="">All sports</option>
+        @for (sport of sports; track sport) {
+          <option [value]="sport">{{ sport }}</option>
+        }
+      </select>
+      <label for="club-description">What’s it about?</label>
+      <textarea
+        id="club-description"
+        name="clubDescription"
+        rows="3"
+        [(ngModel)]="clubForm().description"
+        maxlength="300"
+        placeholder="Weekly easy runs, all paces welcome."
+      ></textarea>
+    }
+    @if (modal() === 'profile') {
+      @if (viewer()?.provider === 'atproto') {
+        <div class="banner public-data-warning" role="note">
+          Your name, bio, and selected sports are public PDS records. Avoid personal contact details
+          or sensitive information. AT Protocol profiles cannot be private in this app.
+        </div>
+        <label class="checkbox-label public-confirm">
+          <input type="checkbox" name="publicDisclosure" [(ngModel)]="publicDisclosure" required />
+          <span>I understand my profile will be public.</span>
+        </label>
+      }
+      <label for="profile-name">Your name</label>
+      <input
+        id="profile-name"
+        name="name"
+        [(ngModel)]="profileForm().name"
+        maxlength="80"
+        required
+      />
+      <label for="profile-bio">A little about you</label>
+      <textarea
+        id="profile-bio"
+        name="bio"
+        rows="3"
+        [(ngModel)]="profileForm().bio"
+        maxlength="300"
+      ></textarea>
+      @if (viewer()?.provider !== 'atproto') {
+        <label for="profile-location">City or general area (optional)</label>
+        <input
+          id="profile-location"
+          name="location"
+          [(ngModel)]="profileForm().location"
+          maxlength="80"
+        />
+      }
+      <fieldset>
+        <legend>Your ways to move</legend>
+        <div class="sport-filters" role="group" aria-label="Choose your sports">
+          @for (sport of sports; track sport) {
+            <button
+              type="button"
+              [class.selected]="profileForm().sports.includes(sport)"
+              [attr.aria-pressed]="profileForm().sports.includes(sport)"
+              (click)="toggleSport.emit(sport)"
+            >
+              <app-icon [name]="sport" />{{ sport }}
+            </button>
+          }
+        </div>
+      </fieldset>
+      @if (viewer()?.provider !== 'atproto') {
+        <label for="profile-visibility">Profile visibility</label>
+        <select id="profile-visibility" name="visibility" [(ngModel)]="profileForm().visibility">
+          <option value="private">Private · Only I can view my profile</option>
+          <option value="public">Public · Anyone can view my profile</option>
+        </select>
+        <p class="form-help">
+          <app-icon name="lock" />Profiles are private by default. Make yours public to share public
+          activities with the community. Private activities stay private, even with a public
+          profile. Hosted events remain public.
+        </p>
+      }
+    }
+    <div class="modal-footer">
+      <button
+        type="button"
+        class="button outline"
+        (click)="closeModal.emit()"
+        [disabled]="saving()"
+      >
+        Not now
+      </button>
+      <button class="button primary" type="submit" [disabled]="saving() || photoBusy()">
+        {{
+          modal() === 'atproto-login'
+            ? 'Continue to Bluesky'
+            : saving()
+              ? 'Saving…'
+              : modal() === 'activity'
+                ? 'Save my session'
+                : modal() === 'event'
+                  ? editingEvent()
+                    ? 'Save changes'
+                    : 'Create event'
+                  : modal() === 'club'
+                    ? 'Create club'
+                    : 'Save profile'
+        }}<app-icon name="arrow" />
+      </button>
+    </div>
+  </form>
+</dialog>

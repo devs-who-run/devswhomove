@@ -1,0 +1,35 @@
+<aside class="sidebar">
+  <a class="brand" routerLink="/feed" aria-label="Devs Who Move home">
+    <span class="brand-mark"><app-icon name="move" /></span>
+    <span>devs<span class="brand-light">who</span>move<span class="brand-dot">.</span></span>
+  </a>
+  <div class="workspace-label">A LITTLE LESS SEDENTARY.</div>
+  <nav aria-label="Main navigation">
+    @for (item of nav(); track item.page) {
+      <a
+        [routerLink]="'/' + item.page"
+        [class.active]="page() === item.page"
+        [attr.aria-label]="item.label"
+        [attr.aria-current]="page() === item.page ? 'page' : null"
+      >
+        <app-icon [name]="item.icon" /><span>{{ item.label }}</span>
+      </a>
+    }
+  </nav>
+  <div class="sidebar-manifesto">
+    <span class="little-star">✳</span>
+    <h3>Good things happen<br />away from the desk.</h3>
+    <p>Find your pace.<br />Find your people.</p>
+    <button class="text-button" (click)="navigate.emit('events')">
+      Let’s get outside <app-icon name="arrow" />
+    </button>
+  </div>
+  <app-login
+    placement="sidebar"
+    [viewer]="viewer()"
+    [saving]="saving()"
+    (githubLogin)="githubLogin.emit()"
+    (atprotoLogin)="atprotoLogin.emit()"
+    (signOut)="signOut.emit()"
+  />
+</aside>

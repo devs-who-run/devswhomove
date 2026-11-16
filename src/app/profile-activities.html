@@ -1,0 +1,130 @@
+<div class="section-top profile-recent">
+  <h2>Recent movement</h2>
+  <div class="profile-bulk-actions">
+    @if (viewer() && viewer()?.provider !== 'atproto' && !remote() && totalActivities().length) {
+      @if (actions().bulkVisibilityMode()) {
+        <button class="text-button" (click)="actions().selectAllProfileActivities()">
+          Select up to 100 matching activities
+        </button>
+        @if (actions().selectedCount()) {
+          <span>{{ actions().selectedCount() }} selected</span>
+          <button
+            class="text-button"
+            (click)="actions().setSelectedVisibility('private')"
+            [disabled]="saving()"
+          >
+            Make private
+          </button>
+          <button
+            class="text-button"
+            (click)="actions().setSelectedVisibility('public')"
+            [disabled]="saving()"
+          >
+            Make public
+          </button>
+          <button class="text-button" (click)="actions().clearActivitySelection()">Clear</button>
+        }
+        <button class="text-button" (click)="actions().toggleBulkVisibilityMode()">Done</button>
+      } @else {
+        <button class="text-button" (click)="actions().toggleBulkVisibilityMode()">
+          Select activities
+        </button>
+      }
+    }
+    @if (viewer() && !remote()) {
+      <button class="text-button" (click)="logActivity.emit()">
+        Log activity <app-icon name="plus" />
+      </button>
+    }
+  </div>
+</div>
+@for (activity of activities(); track activity.id) {
+  <article
+    class="profile-activity"
+    [class.bulk-selected]="actions().selectedActivityIds().includes(activity.id)"
+  >
+    @if (actions().bulkVisibilityMode() && activity.userId === viewer()?.id) {
+      <label class="profile-activity-select">
+        <input
+          type="checkbox"
+          [checked]="actions().selectedActivityIds().includes(activity.id)"
+          [attr.aria-label]="'Select ' + activity.title"
+          [disabled]="
+            saving() ||
+            (!actions().selectedActivityIds().includes(activity.id) &&
+              actions().selectedCount() >= 100)
+          "
+          (change)="actions().toggleActivitySelection(activity.id)"
+        />
+      </label>
+    }
+    <span class="activity-sport-icon"><app-icon [name]="activity.sport" /></span>
+    <div class="profile-activity-content">
+      <small>
+        {{ activity.sport }} · {{ activity.occurredAt | date: 'MMM d, y' }}
+        @if (activity.source === 'agent') {
+          · Logged by agent
+        }
+      </small>
+      <h3>{{ activity.title }}</h3>
+      <p>{{ activity.notes }}</p>
+      @if (activity.kudos || activity.comments) {
+        <small>
+          {{ activity.kudos ?? 0 }} kudos · {{ activity.comments ?? 0 }}
+          {{ activity.comments === 1 ? 'comment' : 'comments' }}
+        </small>
+      }
+      @if (activity.photo) {
+        <img
+          class="profile-activity-photo"
+          [src]="activity.photo"
+          [alt]="'Photo from ' + activity.title"
+          loading="lazy"
+        />
+      }
+    </div>
+    <div class="profile-activity-metric">
+      @if (activity.distance !== null) {
+        <strong>{{ activity.distance }} <small>km</small></strong>
+        <span>{{ activity.duration }} min</span>
+      } @else {
+        <strong>{{ activity.duration }} <small>min</small></strong>
+      }
+    </div>
+    @if (activity.userId === viewer()?.id) {
+      <div class="profile-activity-actions">
+        @if (viewer()?.provider !== 'atproto') {
+          <button
+            class="text-button"
+            (click)="actions().toggleVisibility(activity)"
+            [disabled]="saving()"
+          >
+            <app-icon [name]="activity.visibility === 'private' ? 'lock' : 'globe'" />{{
+              activity.visibility
+            }}
+          </button>
+        }
+        <button
+          class="text-button danger"
+          (click)="actions().deleteActivity(activity)"
+          [disabled]="saving()"
+        >
+          Delete
+        </button>
+      </div>
+    }
+  </article>
+} @empty {
+  <div class="empty-state">
+    <app-icon name="move" />
+    <h3>No matching activities.</h3>
+    <p>Try another month or activity filter, or log a new activity.</p>
+  </div>
+}
+<p class="privacy-note">
+  Progress summaries include all visible indexed sessions. Rest days belong here, too.
+  @if (profile().provider === 'atproto') {
+    AT Protocol history is limited to the records indexed from the PDS, currently up to 1,000 per
+    sync.
+  }
+</p>

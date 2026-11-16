@@ -1,0 +1,154 @@
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">LESS SCROLLING. MORE STRIDING.</p>
+    <h1>Your people. <span>Your pace.</span></h1>
+    <p>A place for developers who move. Every sport. Every starting point.</p>
+  </div>
+  <button class="button outline heading-button" (click)="logActivity.emit()">
+    <app-icon name="plus" /> Log a little progress
+  </button>
+</div>
+<div class="dashboard-grid">
+  <section class="feed-column" aria-label="Community feed">
+    <div class="hero">
+      <div class="hero-art" aria-hidden="true">
+        <svg viewBox="0 0 600 340" preserveAspectRatio="xMidYMid slice">
+          <defs>
+            <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+              <path d="M32 0H0V32" fill="none" stroke="#fff" stroke-opacity=".05" />
+            </pattern>
+          </defs>
+          <rect width="600" height="340" fill="url(#grid)" />
+          <g fill="none" stroke="#bce0c7" stroke-opacity=".13" stroke-width="1">
+            <path
+              d="M300-40c-80 80 110 75 40 170S440 230 370 380M330-40c-80 80 110 75 40 170S470 230 400 380M360-40c-80 80 110 75 40 170S500 230 430 380M390-40c-80 80 110 75 40 170S530 230 460 380M420-40c-80 80 110 75 40 170S560 230 490 380M450-40c-80 80 110 75 40 170S590 230 520 380M480-40c-80 80 110 75 40 170S620 230 550 380"
+            />
+            <path
+              d="M260-40c-80 80 110 75 40 170S400 230 330 380M230-40c-80 80 110 75 40 170S370 230 300 380"
+            />
+          </g>
+          <path
+            d="m385 272-21-46 33-38-9-49 61-28 5-42 55-22 33 31-23 42 13 46-48 38-28-10-42 44-29 34Z"
+            fill="#b9e46d"
+            fill-opacity=".08"
+            stroke="#d4f59a"
+            stroke-width="3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <circle cx="385" cy="272" r="13" fill="#d4f59a" fill-opacity=".15" />
+          <circle cx="385" cy="272" r="5" fill="#d4f59a" />
+          <circle cx="454" cy="69" r="5" fill="#173f32" stroke="#d4f59a" stroke-width="2" />
+        </svg>
+        <div class="route-label">
+          <span class="status-dot"></span> OUT OF OFFICE. INTO YOUR STRIDE.
+        </div>
+      </div>
+      <div class="hero-copy">
+        <span class="hero-label"
+          ><span class="status-dot"></span> SHIP CODE. COLLECT KILOMETRES.</span
+        >
+        <h2>There’s a whole world<br />outside your editor<span>.</span></h2>
+        <p>
+          Chase a little fresh air, not another deadline.<br />Your next good session starts with
+          good company.
+        </p>
+        <button class="button lime" (click)="navigate.emit('events')">
+          Find your next move <app-icon name="arrow" />
+        </button>
+      </div>
+    </div>
+    <div class="section-top feed-tabs">
+      <div class="tabs" role="group" aria-label="Feed filter">
+        <button
+          [class.selected]="feedMode() === 'community'"
+          [attr.aria-pressed]="feedMode() === 'community'"
+          (click)="feedModeChange.emit('community')"
+        >
+          Community
+        </button>
+        @if (!preview()) {
+          <button
+            [class.selected]="feedMode() === 'following'"
+            [attr.aria-pressed]="feedMode() === 'following'"
+            (click)="feedModeChange.emit('following')"
+          >
+            Following
+          </button>
+        }
+        <button
+          [class.selected]="feedMode() === 'mine'"
+          [attr.aria-pressed]="feedMode() === 'mine'"
+          (click)="feedModeChange.emit('mine')"
+        >
+          Your activity
+        </button>
+      </div>
+      <span class="muted small-text">A little progress, shared.</span>
+    </div>
+    <app-sport-filter
+      ariaLabel="Filter activities by sport"
+      allLabel="All movement"
+      [selected]="selectedSport()"
+      (selectedChange)="selectedSportChange.emit($event)"
+    />
+    @if (profileHidden()) {
+      <div class="privacy-callout" style="margin: 0 0 18px" role="note">
+        <app-icon name="lock" />
+        <div>
+          <strong>Your profile is private.</strong>
+          <p>
+            Profiles are private by default. Make your profile public to share your public
+            activities with the community.
+          </p>
+        </div>
+        <button class="text-button" (click)="makeProfilePublic.emit()">
+          Make profile public <app-icon name="arrow" />
+        </button>
+      </div>
+    }
+    @for (activity of activities(); track activity.id) {
+      <app-activity-card
+        [activity]="activity"
+        [viewerId]="viewer()?.id ?? null"
+        [profileHidden]="profileHidden()"
+        [canChangeVisibility]="!!viewer() && viewer()?.provider !== 'atproto'"
+        [saving]="saving()"
+        [social]="!preview()"
+        [participation]="participation()"
+        (visibilityChange)="visibilityChange.emit($event)"
+      />
+    } @empty {
+      @if (feedMode() === 'following') {
+        <div class="empty-state" [attr.aria-busy]="followingLoading()">
+          <app-icon name="people" />
+          <h3>{{ followingLoading() ? 'Loading your people…' : 'Find your people.' }}</h3>
+          @if (!followingLoading()) {
+            <p>Follow people from their profile to see their public activities here.</p>
+            <button class="button outline" (click)="feedModeChange.emit('community')">
+              Browse the community <app-icon name="arrow" />
+            </button>
+          }
+        </div>
+      } @else {
+        <div class="empty-state">
+          <app-icon name="move" />
+          <h3>A fresh starting line.</h3>
+          <p>No activities here yet. Your first little move belongs here.</p>
+          <button class="button outline" (click)="logActivity.emit()">
+            Log an activity <app-icon name="plus" />
+          </button>
+        </div>
+      }
+    }
+    <p class="feed-end">YOU DON’T HAVE TO GO FAST. JUST GO.</p>
+  </section>
+
+  <app-feed-sidebar
+    [activities]="myActivities()"
+    [events]="events()"
+    [preview]="preview()"
+    (navigate)="navigate.emit($event)"
+    (hostEvent)="hostEvent.emit()"
+  />
+</div>
