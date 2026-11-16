@@ -2,6 +2,19 @@
   position: relative;
 }
 
+.theme-control::after {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  content: '';
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
 .theme-control app-icon {
   position: absolute;
   top: 50%;
@@ -14,12 +27,13 @@
 }
 
 .theme-control select {
-  width: auto;
-  min-height: 36px;
+  width: 150px;
+  min-height: 44px;
   margin: 0;
-  padding: 7px 25px 7px 33px;
+  padding: 7px 15px 7px 33px;
   font-size: 13px;
   cursor: pointer;
+  appearance: none;
 }
 
 .mobile-signout {
@@ -140,7 +154,8 @@ select {
   }
 
   .theme-control select {
-    max-width: 140px;
+    width: 150px;
+    max-width: 150px;
     font-size: 13px;
     padding-left: 32px;
   }
@@ -169,6 +184,37 @@ select {
     font-size: 16px;
     padding: 9px;
     min-width: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  .topbar {
+    height: auto;
+    min-height: 64px;
+    padding: 8px 12px;
+  }
+
+  .topbar-actions {
+    flex-wrap: wrap;
+  }
+
+  .theme-control app-icon {
+    display: none;
+  }
+
+  .topbar-actions {
+    gap: 4px;
+  }
+
+  .topbar .button {
+    gap: 4px;
+    padding: 8px 4px;
+  }
+
+  .theme-control select {
+    width: 132px;
+    max-width: 132px;
+    padding-left: 12px;
   }
 }
 .icon-button {
