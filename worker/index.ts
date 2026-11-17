@@ -1052,7 +1052,6 @@ async function githubAuth(request: Request, env: Env, url: URL): Promise<Respons
     authorize.search = new URLSearchParams({
       client_id: env.GITHUB_CLIENT_ID,
       redirect_uri: callback,
-      scope: 'read:user',
       state,
     }).toString();
     return new Response(null, {
