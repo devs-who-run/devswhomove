@@ -123,11 +123,11 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
     return { response, url, state, cookie: `dwm_oauth_state=${state}` };
   }
 
-  it('redirects to GitHub with basic identity permission and a secure state cookie', async () => {
+  it('redirects to GitHub without requesting profile permissions and sets a secure state cookie', async () => {
     const { response, url, state } = await begin();
     expect(response.status).toBe(302);
     expect(url.origin).toBe('https://github.com');
-    expect(url.searchParams.get('scope')).toBe('read:user');
+    expect(url.searchParams.has('scope')).toBe(false);
     expect(url.searchParams.get('redirect_uri')).toBe(`${origin}/auth/github/callback`);
     expect(state).toMatch(/^[a-f0-9]{64}$/);
     expect(response.headers.get('Set-Cookie')).toContain(

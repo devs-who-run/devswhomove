@@ -28,7 +28,7 @@ Create a **GitHub OAuth App** (not a GitHub App) with:
 
 Copy `.dev.vars.example` to `.dev.vars`, and fill in the client ID and secret. Restart Wrangler. Never commit `.dev.vars`.
 
-The Worker requests `read:user`, not repository or email permissions. GitHub access tokens are used only during sign-in and not stored. Browser sessions use hashed opaque tokens and HTTP-only, SameSite cookies (Secure on HTTPS), expire in 30 days, and are invalidated on logout. OAuth state is random, cookie-bound and expires in 10 minutes.
+The Worker does not specify OAuth scopes. For new authorizations, GitHub grants access to public information only. GitHub may reuse previously granted scopes when none are specified; to remove an existing `read:user` grant, revoke the app under GitHub **Settings > Applications > Authorized OAuth Apps** before signing in again. GitHub access tokens are used only during sign-in and not stored. Browser sessions use hashed opaque tokens and HTTP-only, SameSite cookies (Secure on HTTPS), expire in 30 days, and are invalidated on logout. OAuth state is random, cookie-bound and expires in 10 minutes.
 
 For GitHub accounts, new profiles and website-created activities are **private by default**. Activities created using agent API tokens or MCP are **public**. Edit your profile to choose sports, bio, approximate location and public/private visibility. Publishing an individual activity does not override a private profile. Hosting an event is explicitly public even with a private profile. AT Protocol accounts are public-only; see the privacy notes below.
 
