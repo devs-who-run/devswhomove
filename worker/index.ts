@@ -27,6 +27,7 @@ import { handleMcp } from './mcp';
 import { cardSvg, cardVersion, shareMeta } from './share-card';
 import { renderPng } from './share-render';
 import { getWeeklyRecap, getGithubInsights } from './insights';
+import { enforceRateLimit } from './rate-limit';
 import { date, HttpError, number, sport, text, visibility } from './validation';
 import {
   addComment,
@@ -1222,6 +1223,7 @@ async function atprotoAuth(request: Request, env: Env, url: URL): Promise<Respon
 async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const method = request.method;
+  if (url.pathname.startsWith('/auth/')) await enforceRateLimit(request, env.DB);
   if (url.pathname.startsWith('/auth/github') && method === 'GET')
     return githubAuth(request, env, url);
   if (url.pathname === '/oauth/client-metadata.json' && method === 'GET') {
@@ -1236,17 +1238,21 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
   if (url.pathname.startsWith('/auth/atproto') && method === 'GET')
     return atprotoAuth(request, env, url);
-  if (url.pathname === '/mcp')
+  if (url.pathname === '/mcp') {
+    await enforceRateLimit(request, env.DB);
     return handleMcp(
       request,
       env.APP_URL,
       () => identity(request, env),
       (apiRequest) => handle(apiRequest, env),
     );
+  }
   const sharedActivity = /^\/activities\/([^/]+)\/?$/.exec(url.pathname);
   if (sharedActivity && (method === 'GET' || method === 'HEAD'))
     return activityPage(request, env, sharedActivity[1]);
   if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+
+  await enforceRateLimit(request, env.DB);
 
   if (!['GET', 'HEAD'].includes(method) && !request.headers.has('Authorization')) {
     if (request.headers.get('Origin') !== new URL(env.APP_URL).origin) {
@@ -1254,6 +1260,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
   }
   const auth = await identity(request, env);
+  await enforceRateLimit(request, env.DB, { accountId: auth?.user.id, includeIp: false });
   if (url.pathname === '/api/insights/weekly' && method === 'GET') {
     const who = requireIdentity(auth, 'activities:read');
     return json(await getWeeklyRecap(env.DB, who));
@@ -2116,6 +2123,8 @@ export default {
     } catch (error) {
       if (error instanceof HttpError) {
         const response = json({ error: error.message }, error.status);
+        for (const [name, value] of Object.entries(error.headers))
+          response.headers.set(name, value);
         if (new URL(request.url).pathname === '/mcp' && error.status === 401) {
           response.headers.set(
             'WWW-Authenticate',
