@@ -517,11 +517,11 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
     e.club_id AS clubId, c.name AS clubName, c.slug AS clubSlug,
     (SELECT COUNT(*) FROM event_attendees WHERE event_id = e.id) +
     (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = e.id) AS attendees,
-    (SELECT COUNT(*) FROM event_waitlist WHERE event_id = e.id) AS waitlistCount,
+    (SELECT COUNT(*) FROM event_waitlist WHERE event_id = e.id AND status = 'waiting') AS waitlistCount,
     EXISTS(SELECT 1 FROM event_attendees WHERE event_id = e.id AND user_id = ?) OR
     EXISTS(SELECT 1 FROM atproto_external_event_attendees
       WHERE event_id = e.id AND attendee_id = ?) AS joined,
-    EXISTS(SELECT 1 FROM event_waitlist WHERE event_id = e.id AND attendee_id = ?) AS waitlisted
+    EXISTS(SELECT 1 FROM event_waitlist WHERE event_id = e.id AND attendee_id = ? AND status = 'waiting') AS waitlisted
     FROM events e JOIN users u ON u.id = e.host_id LEFT JOIN clubs c ON c.id = e.club_id
     WHERE e.cancelled = 0 AND e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}
     ORDER BY e.starts_at LIMIT 100`,
@@ -540,10 +540,10 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
         e.conference_name AS conferenceName, e.conference_url AS conferenceUrl,
         e.club_id AS clubId, c.name AS clubName, c.slug AS clubSlug,
         (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = e.uri) AS attendees,
-        (SELECT COUNT(*) FROM event_waitlist WHERE event_id = e.uri) AS waitlistCount,
+        (SELECT COUNT(*) FROM event_waitlist WHERE event_id = e.uri AND status = 'waiting') AS waitlistCount,
         EXISTS(SELECT 1 FROM atproto_event_attendees
           WHERE event_uri = e.uri AND attendee_id = ?) AS joined,
-        EXISTS(SELECT 1 FROM event_waitlist WHERE event_id = e.uri AND attendee_id = ?) AS waitlisted
+        EXISTS(SELECT 1 FROM event_waitlist WHERE event_id = e.uri AND attendee_id = ? AND status = 'waiting') AS waitlisted
       FROM atproto_events e JOIN atproto_accounts u ON u.did = e.did
       LEFT JOIN clubs c ON c.id = e.club_id
       WHERE e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}
@@ -565,6 +565,68 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
     }))
     .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
     .slice(0, 100);
+}
+
+/** Fill free event seats from the durable waitlist, keeping each promotion atomic. */
+async function promoteEventWaitlist(
+  db: D1Database,
+  eventId: string,
+  source: 'hosted' | 'atproto',
+): Promise<void> {
+  for (let slot = 0; slot < 200; slot++) {
+    const transitionId = crypto.randomUUID();
+    const eventTable = source === 'atproto' ? 'atproto_events' : 'events';
+    const eventColumn = source === 'atproto' ? 'uri' : 'id';
+    const attendeeCount =
+      source === 'atproto'
+        ? '(SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = e.uri)'
+        : '(SELECT COUNT(*) FROM event_attendees WHERE event_id = e.id) + (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = e.id)';
+    const promoted = await db.batch([
+      db
+        .prepare(
+          `UPDATE event_waitlist SET status = 'promoted', transition_id = ?,
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = (SELECT id FROM event_waitlist WHERE event_id = ? AND status = 'waiting'
+          ORDER BY joined_at, id LIMIT 1) AND
+          EXISTS (SELECT 1 FROM ${eventTable} AS e WHERE e.${eventColumn} = ? AND
+            ${source === 'hosted' ? 'e.cancelled = 0 AND' : ''}
+            e.starts_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AND ${attendeeCount} < e.capacity
+            ${
+              source === 'atproto'
+                ? "AND NOT EXISTS (SELECT 1 FROM atproto_event_capacity_locks AS l WHERE l.event_uri = e.uri AND l.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+                : ''
+            })`,
+        )
+        .bind(transitionId, eventId, eventId),
+      ...(source === 'atproto'
+        ? [
+            db
+              .prepare(
+                `INSERT OR IGNORE INTO atproto_event_attendees (event_uri, attendee_id)
+              SELECT event_id, attendee_id FROM event_waitlist
+              WHERE transition_id = ? AND status = 'promoted'`,
+              )
+              .bind(transitionId),
+          ]
+        : [
+            db
+              .prepare(
+                `INSERT OR IGNORE INTO event_attendees (event_id, user_id)
+              SELECT event_id, substr(attendee_id, 8) FROM event_waitlist
+              WHERE transition_id = ? AND status = 'promoted' AND attendee_id LIKE 'github:%'`,
+              )
+              .bind(transitionId),
+            db
+              .prepare(
+                `INSERT OR IGNORE INTO atproto_external_event_attendees (event_id, attendee_id)
+              SELECT event_id, attendee_id FROM event_waitlist
+              WHERE transition_id = ? AND status = 'promoted' AND attendee_id LIKE 'atproto:%'`,
+              )
+              .bind(transitionId),
+          ]),
+    ]);
+    if (!promoted[0]?.meta.changes) return;
+  }
 }
 
 /** Build the public activity lexicon record for a validated application activity. */
@@ -1005,6 +1067,22 @@ async function syncAtprotoData(env: Env, auth: Identity): Promise<void> {
   )
     .bind(repo.handle, name, bio, JSON.stringify(sports), new Date().toISOString(), auth.user.id)
     .run();
+  const promotionCandidates = await env.DB.prepare(
+    `SELECT e.uri FROM atproto_events e
+    WHERE e.did = ? AND e.starts_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      AND EXISTS (SELECT 1 FROM event_waitlist w WHERE w.event_id = e.uri AND w.status = 'waiting')
+      AND NOT EXISTS (SELECT 1 FROM atproto_event_capacity_locks l WHERE l.event_uri = e.uri AND l.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ORDER BY e.starts_at, e.uri LIMIT 20`,
+  )
+    .bind(auth.user.id)
+    .all<{ uri: string }>();
+  for (const item of promotionCandidates.results) {
+    try {
+      await promoteEventWaitlist(env.DB, item.uri, 'atproto');
+    } catch (error) {
+      console.error('AT Protocol waitlist promotion failed; cached event data is retained.', error);
+    }
+  }
 }
 
 function conferenceFields(data: Record<string, unknown>): readonly [string | null, string | null] {
@@ -1670,12 +1748,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
         throw new HttpError(403, 'Only the AT Protocol event host can edit this event.');
       const key = recordKey(eventId, identity.user.id, EVENT_COLLECTION);
       const event = await env.DB.prepare(
-        `SELECT record_json AS record, starts_at AS startsAt,
+        `SELECT record_json AS record, starts_at AS startsAt, capacity,
           (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = atproto_events.uri) AS attendees
         FROM atproto_events WHERE uri = ? AND did = ?`,
       )
         .bind(eventId, identity.user.id)
-        .first<{ record: string; startsAt: string; attendees: number }>();
+        .first<{ record: string; startsAt: string; capacity: number; attendees: number }>();
       if (!event || event.startsAt <= new Date().toISOString())
         throw new HttpError(404, 'Event is no longer available.');
       if (event.attendees > fields[6])
@@ -1683,17 +1761,34 @@ async function handle(request: Request, env: Env): Promise<Response> {
           409,
           `${event.attendees} people are already going. Capacity can’t be lower than that.`,
         );
+      let capacityLockId: string | undefined;
+      if (event.capacity !== fields[6]) {
+        await env.DB.prepare(
+          `DELETE FROM atproto_event_capacity_locks
+          WHERE event_uri = ? AND expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+        )
+          .bind(eventId)
+          .run();
+        capacityLockId = crypto.randomUUID();
+        const lock = await env.DB.prepare(
+          `INSERT OR IGNORE INTO atproto_event_capacity_locks (event_uri, lock_id, expires_at)
+          SELECT uri, ?, ? FROM atproto_events WHERE uri = ? AND did = ? AND
+            (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = uri) <= ?`,
+        )
+          .bind(
+            capacityLockId,
+            new Date(Date.now() + 5 * 60_000).toISOString(),
+            eventId,
+            identity.user.id,
+            fields[6],
+          )
+          .run();
+        if (!lock.meta.changes)
+          throw new HttpError(409, 'Event attendance changed. Please review the attendee count.');
+      }
       const nextRecord = eventRecord(fields);
-      const indexed = await env.DB.prepare(
-        `UPDATE atproto_events SET record_json = ?, title = ?, sport = ?, starts_at = ?,
-          location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ?
-        WHERE uri = ? AND did = ? AND
-          (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = ?) <= ?`,
-      )
-        .bind(JSON.stringify(nextRecord), ...fields, eventId, identity.user.id, eventId, fields[6])
-        .run();
-      if (!indexed.meta.changes)
-        throw new HttpError(409, 'Event capacity changed. Please review the attendee count.');
+      const previousRecord = JSON.parse(event.record) as Record<string, unknown>;
+      let remoteChanged = false;
       try {
         await identity.atprotoAgent!.com.atproto.repo.putRecord({
           repo: identity.user.id,
@@ -1701,33 +1796,77 @@ async function handle(request: Request, env: Env): Promise<Response> {
           rkey: key,
           record: nextRecord,
         });
-      } catch (error) {
-        const previous = JSON.parse(event.record) as Record<string, unknown>;
-        await env.DB.prepare(
+        remoteChanged = true;
+        const update = env.DB.prepare(
           `UPDATE atproto_events SET record_json = ?, title = ?, sport = ?, starts_at = ?,
-            location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ? WHERE uri = ? AND did = ?`,
-        )
-          .bind(
-            event.record,
-            previous['title'],
-            previous['sport'],
-            previous['startsAt'],
-            previous['location'],
-            previous['description'],
-            previous['level'],
-            previous['capacity'],
-            previous['conferenceName'] ?? null,
-            previous['conferenceUrl'] ?? null,
-            eventId,
-            identity.user.id,
+            location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ?
+          WHERE uri = ? AND did = ? AND
+            (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = ?) <= ?${capacityLockId ? ' AND EXISTS (SELECT 1 FROM atproto_event_capacity_locks WHERE event_uri = ? AND lock_id = ?)' : ''}`,
+        ).bind(
+          JSON.stringify(nextRecord),
+          ...fields,
+          eventId,
+          identity.user.id,
+          eventId,
+          fields[6],
+          ...(capacityLockId ? [eventId, capacityLockId] : []),
+        );
+        const updated = capacityLockId
+          ? await env.DB.batch([
+              update,
+              env.DB.prepare(
+                'DELETE FROM atproto_event_capacity_locks WHERE event_uri = ? AND lock_id = ? AND changes() = 1',
+              ).bind(eventId, capacityLockId),
+            ])
+          : [await update.run()];
+        if (!updated[0]?.meta.changes)
+          throw new HttpError(409, 'Event capacity changed. Please review the attendee count.');
+      } catch (error) {
+        if (remoteChanged) {
+          try {
+            await identity.atprotoAgent!.com.atproto.repo.putRecord({
+              repo: identity.user.id,
+              collection: EVENT_COLLECTION,
+              rkey: key,
+              record: previousRecord,
+            });
+          } catch (restoreError) {
+            console.error(
+              'Failed to restore the AT Protocol event after a rejected edit.',
+              restoreError,
+            );
+          }
+        }
+        if (capacityLockId)
+          await env.DB.prepare(
+            'DELETE FROM atproto_event_capacity_locks WHERE event_uri = ? AND lock_id = ?',
           )
-          .run();
+            .bind(eventId, capacityLockId)
+            .run();
+        if (capacityLockId) {
+          try {
+            await promoteEventWaitlist(env.DB, eventId, 'atproto');
+          } catch (promotionError) {
+            console.error(
+              'Waitlist promotion after failed event edit did not complete.',
+              promotionError,
+            );
+          }
+        }
         throw error;
       }
       if (updateClub)
         await env.DB.prepare('UPDATE atproto_events SET club_id = ? WHERE uri = ? AND did = ?')
           .bind(clubId, eventId, identity.user.id)
           .run();
+      try {
+        await promoteEventWaitlist(env.DB, eventId, 'atproto');
+      } catch (promotionError) {
+        console.error(
+          'AT Protocol event was saved, but waitlist promotion will retry on sync.',
+          promotionError,
+        );
+      }
       return json({ ok: true });
     }
     const id = eventId;
@@ -1758,6 +1897,14 @@ async function handle(request: Request, env: Env): Promise<Response> {
         409,
         `${event.attendees} people are already going. Capacity can’t be lower than that.`,
       );
+    try {
+      await promoteEventWaitlist(env.DB, id, 'hosted');
+    } catch (promotionError) {
+      console.error(
+        'Hosted event was saved, but waitlist promotion will retry on sync.',
+        promotionError,
+      );
+    }
     return json({ ok: true });
   }
   if (eventMatch && method === 'POST') {
@@ -1778,68 +1925,87 @@ async function handle(request: Request, env: Env): Promise<Response> {
         if (data['join']) {
           if (event.did === identity.user.id)
             throw new HttpError(400, 'As host, cancel the event instead of joining.');
-          await env.DB.prepare(
-            `INSERT OR IGNORE INTO atproto_event_attendees (event_uri, attendee_id)
-            SELECT uri, ? FROM atproto_events WHERE uri = ? AND starts_at > ? AND
-              (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = ?) < capacity`,
-          )
-            .bind(attendeeId, eventId, new Date().toISOString(), eventId)
-            .run();
-          const joined = await env.DB.prepare(
-            'SELECT 1 AS joined FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?',
-          )
-            .bind(eventId, attendeeId)
-            .first();
-          if (!joined) {
-            await env.DB.prepare(
-              `INSERT OR IGNORE INTO event_waitlist (event_id, attendee_id)
-              SELECT uri, ? FROM atproto_events WHERE uri = ? AND starts_at > ? AND
-                (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = ?) >= capacity`,
-            )
-              .bind(attendeeId, eventId, new Date().toISOString(), eventId)
-              .run();
-            const queued = await env.DB.prepare(
-              'SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
-            )
-              .bind(eventId, attendeeId)
-              .first();
-            if (!queued) throw new HttpError(409, 'This event is no longer available.');
-          }
+          await promoteEventWaitlist(env.DB, eventId, 'atproto');
+          const now = new Date().toISOString();
+          const transitionId = crypto.randomUUID();
+          const results = await env.DB.batch([
+            env.DB.prepare(
+              `INSERT OR IGNORE INTO atproto_event_attendees (event_uri, attendee_id)
+              SELECT e.uri, ? FROM atproto_events AS e WHERE e.uri = ? AND e.starts_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AND
+                (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = e.uri) < e.capacity AND
+                NOT EXISTS (SELECT 1 FROM atproto_event_capacity_locks AS l WHERE l.event_uri = e.uri AND l.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) AND
+                (NOT EXISTS (SELECT 1 FROM event_waitlist AS q WHERE q.event_id = e.uri AND q.status = 'waiting') OR
+                  ? = (SELECT q.attendee_id FROM event_waitlist AS q WHERE q.event_id = e.uri AND q.status = 'waiting'
+                    ORDER BY joined_at, id LIMIT 1))`,
+            ).bind(attendeeId, eventId, attendeeId),
+            env.DB.prepare(
+              `UPDATE event_waitlist SET status = 'promoted', transition_id = ?, updated_at = ?
+              WHERE event_id = ? AND attendee_id = ? AND status = 'waiting' AND
+                EXISTS (SELECT 1 FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?)`,
+            ).bind(transitionId, now, eventId, attendeeId, eventId, attendeeId),
+            env.DB.prepare(
+              `INSERT INTO event_waitlist (event_id, attendee_id, status, joined_at, updated_at)
+              SELECT e.uri, ?, 'waiting', ?, ? FROM atproto_events AS e
+              WHERE e.uri = ? AND e.starts_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AND
+                ((SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = e.uri) >= e.capacity OR
+                  EXISTS (SELECT 1 FROM event_waitlist AS q WHERE q.event_id = e.uri AND q.status = 'waiting') OR
+                  EXISTS (SELECT 1 FROM atproto_event_capacity_locks AS l WHERE l.event_uri = e.uri AND l.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))) AND
+                NOT EXISTS (SELECT 1 FROM atproto_event_attendees WHERE event_uri = e.uri AND attendee_id = ?) AND
+                NOT EXISTS (SELECT 1 FROM event_waitlist AS q WHERE q.event_id = e.uri AND q.attendee_id = ? AND q.status = 'waiting')`,
+            ).bind(attendeeId, now, now, eventId, attendeeId, attendeeId),
+            env.DB.prepare(
+              `SELECT EXISTS(SELECT 1 FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?) AS joined,
+                EXISTS(SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ? AND status = 'waiting') AS waitlisted`,
+            ).bind(eventId, attendeeId, eventId, attendeeId),
+          ]);
+          const membership = results.at(-1)?.results?.[0] as
+            { joined: number; waitlisted: number } | undefined;
+          return json({
+            joined: Boolean(membership?.joined),
+            waitlisted: Boolean(membership?.waitlisted),
+          });
         } else {
           if (event.did === identity.user.id)
             throw new HttpError(400, 'As host, cancel the event instead of leaving.');
-          const waitlisted = await env.DB.prepare(
-            'SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
-          )
-            .bind(eventId, attendeeId)
-            .first();
-          if (waitlisted) {
-            await env.DB.prepare(
-              'DELETE FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
-            )
-              .bind(eventId, attendeeId)
-              .run();
-          } else {
-            await env.DB.prepare(
-              'DELETE FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?',
-            )
-              .bind(eventId, attendeeId)
-              .run();
-            const next = await env.DB.prepare(
-              'SELECT attendee_id FROM event_waitlist WHERE event_id = ? ORDER BY joined_at LIMIT 1',
-            )
-              .bind(eventId)
-              .first<{ attendee_id: string }>();
-            if (next)
-              await env.DB.batch([
-                env.DB.prepare(
-                  'DELETE FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
-                ).bind(eventId, next.attendee_id),
-                env.DB.prepare(
-                  'INSERT OR IGNORE INTO atproto_event_attendees (event_uri, attendee_id) VALUES (?, ?)',
-                ).bind(eventId, next.attendee_id),
-              ]);
-          }
+          const now = new Date().toISOString();
+          const transitionId = crypto.randomUUID();
+          const results = await env.DB.batch([
+            env.DB.prepare(
+              `UPDATE event_waitlist SET status = 'left', updated_at = ?
+              WHERE event_id = ? AND attendee_id = ? AND status = 'waiting' AND
+                NOT EXISTS (SELECT 1 FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?)`,
+            ).bind(now, eventId, attendeeId, eventId, attendeeId),
+            env.DB.prepare(
+              `DELETE FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ? AND changes() = 0`,
+            ).bind(eventId, attendeeId),
+            env.DB.prepare(
+              `UPDATE event_waitlist SET status = 'promoted', transition_id = ?, updated_at = ?
+              WHERE id = (SELECT id FROM event_waitlist WHERE event_id = ? AND status = 'waiting'
+                ORDER BY joined_at, id LIMIT 1) AND changes() = 1 AND
+                EXISTS (SELECT 1 FROM atproto_events WHERE uri = ? AND starts_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AND
+                  (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = ?) < capacity)`,
+            ).bind(transitionId, now, eventId, eventId, eventId),
+            env.DB.prepare(
+              `INSERT OR IGNORE INTO atproto_event_attendees (event_uri, attendee_id)
+              SELECT event_id, attendee_id FROM event_waitlist
+              WHERE transition_id = ? AND status = 'promoted' AND attendee_id LIKE 'atproto:%'`,
+            ).bind(transitionId),
+            env.DB.prepare(
+              `INSERT OR IGNORE INTO atproto_event_attendees (event_uri, attendee_id)
+              SELECT event_id, attendee_id FROM event_waitlist
+              WHERE transition_id = ? AND status = 'promoted' AND attendee_id LIKE 'github:%'`,
+            ).bind(transitionId),
+            env.DB.prepare(
+              `SELECT EXISTS(SELECT 1 FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?) AS joined,
+                EXISTS(SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ? AND status = 'waiting') AS waitlisted`,
+            ).bind(eventId, attendeeId, eventId, attendeeId),
+          ]);
+          const membership = results.at(-1)?.results?.[0] as
+            { joined: number; waitlisted: number } | undefined;
+          return json({
+            joined: Boolean(membership?.joined),
+            waitlisted: Boolean(membership?.waitlisted),
+          });
         }
       } else {
         if (identity.provider !== 'atproto' || event.did !== identity.user.id)
@@ -1868,104 +2034,97 @@ async function handle(request: Request, env: Env): Promise<Response> {
       const data = await body(request);
       if (typeof data['join'] !== 'boolean')
         throw new HttpError(400, 'Specify whether to join or leave.');
+      const attendeeId = `${identity.provider}:${identity.user.id}`;
+      const attendanceTable =
+        identity.provider === 'atproto' ? 'atproto_external_event_attendees' : 'event_attendees';
+      const attendanceColumn = identity.provider === 'atproto' ? 'attendee_id' : 'user_id';
+      const attendanceValue = identity.provider === 'atproto' ? attendeeId : identity.user.id;
       if (data['join']) {
-        if (identity.provider === 'atproto') {
-          await env.DB.prepare(
-            `INSERT OR IGNORE INTO atproto_external_event_attendees (event_id, attendee_id)
-            SELECT id, ? FROM events WHERE id = ? AND cancelled = 0 AND
-              (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) +
-              (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = ?) < capacity`,
-          )
-            .bind(`atproto:${identity.user.id}`, id, id, id)
-            .run();
-        } else {
-          await env.DB.prepare(
-            `INSERT OR IGNORE INTO event_attendees (event_id, user_id)
-            SELECT id, ? FROM events WHERE id = ? AND cancelled = 0 AND
-              (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) +
-              (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = ?) < capacity`,
-          )
-            .bind(identity.user.id, id, id, id)
-            .run();
-        }
-        const joined =
-          identity.provider === 'atproto'
-            ? await env.DB.prepare(
-                'SELECT 1 AS joined FROM atproto_external_event_attendees WHERE event_id = ? AND attendee_id = ?',
-              )
-                .bind(id, `atproto:${identity.user.id}`)
-                .first()
-            : await env.DB.prepare(
-                'SELECT 1 AS joined FROM event_attendees WHERE event_id = ? AND user_id = ?',
-              )
-                .bind(id, identity.user.id)
-                .first();
-        if (!joined) {
-          const attendeeId = `${identity.provider}:${identity.user.id}`;
-          await env.DB.prepare(
-            `INSERT OR IGNORE INTO event_waitlist (event_id, attendee_id)
-            SELECT id, ? FROM events WHERE id = ? AND cancelled = 0 AND
-              (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) +
-              (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = ?) >= capacity`,
-          )
-            .bind(attendeeId, id, id, id)
-            .run();
-          const queued = await env.DB.prepare(
-            'SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
-          )
-            .bind(id, attendeeId)
-            .first();
-          if (!queued) throw new HttpError(409, 'This event is no longer available.');
-        }
+        await promoteEventWaitlist(env.DB, id, 'hosted');
+        const now = new Date().toISOString();
+        const transitionId = crypto.randomUUID();
+        const results = await env.DB.batch([
+          env.DB.prepare(
+            `INSERT OR IGNORE INTO ${attendanceTable} (event_id, ${attendanceColumn})
+            SELECT e.id, ? FROM events AS e WHERE e.id = ? AND e.cancelled = 0 AND e.starts_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AND
+              (SELECT COUNT(*) FROM event_attendees WHERE event_id = e.id) +
+              (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = e.id) < e.capacity AND
+              (NOT EXISTS (SELECT 1 FROM event_waitlist AS q WHERE q.event_id = e.id AND q.status = 'waiting') OR
+                ? = (SELECT q.attendee_id FROM event_waitlist AS q WHERE q.event_id = e.id AND q.status = 'waiting'
+                  ORDER BY joined_at, id LIMIT 1))`,
+          ).bind(attendanceValue, id, attendeeId),
+          env.DB.prepare(
+            `UPDATE event_waitlist SET status = 'promoted', transition_id = ?, updated_at = ?
+            WHERE event_id = ? AND attendee_id = ? AND status = 'waiting' AND
+              EXISTS (SELECT 1 FROM ${attendanceTable} WHERE event_id = ? AND ${attendanceColumn} = ?)`,
+          ).bind(transitionId, now, id, attendeeId, id, attendanceValue),
+          env.DB.prepare(
+            `INSERT INTO event_waitlist (event_id, attendee_id, status, joined_at, updated_at)
+            SELECT e.id, ?, 'waiting', ?, ? FROM events AS e
+            WHERE e.id = ? AND e.cancelled = 0 AND e.starts_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AND
+              ((SELECT COUNT(*) FROM event_attendees WHERE event_id = e.id) +
+                (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = e.id) >= e.capacity OR
+                EXISTS (SELECT 1 FROM event_waitlist AS q WHERE q.event_id = e.id AND q.status = 'waiting')) AND
+              NOT EXISTS (SELECT 1 FROM event_attendees WHERE event_id = e.id AND user_id = ?) AND
+              NOT EXISTS (SELECT 1 FROM atproto_external_event_attendees WHERE event_id = e.id AND attendee_id = ?) AND
+              NOT EXISTS (SELECT 1 FROM event_waitlist AS q WHERE q.event_id = e.id AND q.attendee_id = ? AND q.status = 'waiting')`,
+          ).bind(attendeeId, now, now, id, identity.user.id, attendeeId, attendeeId),
+          env.DB.prepare(
+            `SELECT EXISTS(SELECT 1 FROM event_attendees WHERE event_id = ? AND user_id = ?) OR
+              EXISTS(SELECT 1 FROM atproto_external_event_attendees WHERE event_id = ? AND attendee_id = ?) AS joined,
+              EXISTS(SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ? AND status = 'waiting') AS waitlisted`,
+          ).bind(id, identity.user.id, id, attendeeId, id, attendeeId),
+        ]);
+        const membership = results.at(-1)?.results?.[0] as
+          { joined: number; waitlisted: number } | undefined;
+        return json({
+          joined: Boolean(membership?.joined),
+          waitlisted: Boolean(membership?.waitlisted),
+        });
       } else {
         if (event.host_id === identity.user.id)
           throw new HttpError(400, 'As host, cancel the event instead of leaving.');
-        const attendeeKey = `${identity.provider}:${identity.user.id}`;
-        const waitlisted = await env.DB.prepare(
-          'SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
-        )
-          .bind(id, attendeeKey)
-          .first();
-        if (waitlisted) {
-          await env.DB.prepare('DELETE FROM event_waitlist WHERE event_id = ? AND attendee_id = ?')
-            .bind(id, attendeeKey)
-            .run();
-        } else if (identity.provider === 'atproto') {
-          await env.DB.prepare(
-            'DELETE FROM atproto_external_event_attendees WHERE event_id = ? AND attendee_id = ?',
-          )
-            .bind(id, `atproto:${identity.user.id}`)
-            .run();
-        } else {
-          await env.DB.prepare('DELETE FROM event_attendees WHERE event_id = ? AND user_id = ?')
-            .bind(id, identity.user.id)
-            .run();
-        }
-        if (!waitlisted) {
-          const next = await env.DB.prepare(
-            'SELECT attendee_id FROM event_waitlist WHERE event_id = ? ORDER BY joined_at LIMIT 1',
-          )
-            .bind(id)
-            .first<{ attendee_id: string }>();
-          if (next) {
-            const table = next.attendee_id.startsWith('atproto:')
-              ? 'atproto_external_event_attendees'
-              : 'event_attendees';
-            const column = table === 'event_attendees' ? 'user_id' : 'attendee_id';
-            const nextId =
-              table === 'event_attendees'
-                ? next.attendee_id.slice(next.attendee_id.indexOf(':') + 1)
-                : next.attendee_id;
-            await env.DB.batch([
-              env.DB.prepare(
-                'DELETE FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
-              ).bind(id, next.attendee_id),
-              env.DB.prepare(
-                `INSERT OR IGNORE INTO ${table} (event_id, ${column}) VALUES (?, ?)`,
-              ).bind(id, nextId),
-            ]);
-          }
-        }
+        const now = new Date().toISOString();
+        const transitionId = crypto.randomUUID();
+        const results = await env.DB.batch([
+          env.DB.prepare(
+            `UPDATE event_waitlist SET status = 'left', updated_at = ?
+            WHERE event_id = ? AND attendee_id = ? AND status = 'waiting' AND
+              NOT EXISTS (SELECT 1 FROM ${attendanceTable} WHERE event_id = ? AND ${attendanceColumn} = ?)`,
+          ).bind(now, id, attendeeId, id, attendanceValue),
+          env.DB.prepare(
+            `DELETE FROM ${attendanceTable} WHERE event_id = ? AND ${attendanceColumn} = ? AND changes() = 0`,
+          ).bind(id, attendanceValue),
+          env.DB.prepare(
+            `UPDATE event_waitlist SET status = 'promoted', transition_id = ?, updated_at = ?
+            WHERE id = (SELECT id FROM event_waitlist WHERE event_id = ? AND status = 'waiting'
+              ORDER BY joined_at, id LIMIT 1) AND changes() = 1 AND
+              EXISTS (SELECT 1 FROM events WHERE id = ? AND cancelled = 0 AND starts_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AND
+                (SELECT COUNT(*) FROM event_attendees WHERE event_id = id) +
+                (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = id) < capacity)`,
+          ).bind(transitionId, now, id, id),
+          env.DB.prepare(
+            `INSERT OR IGNORE INTO event_attendees (event_id, user_id)
+            SELECT event_id, substr(attendee_id, 8) FROM event_waitlist
+            WHERE transition_id = ? AND status = 'promoted' AND attendee_id LIKE 'github:%'`,
+          ).bind(transitionId),
+          env.DB.prepare(
+            `INSERT OR IGNORE INTO atproto_external_event_attendees (event_id, attendee_id)
+            SELECT event_id, attendee_id FROM event_waitlist
+            WHERE transition_id = ? AND status = 'promoted' AND attendee_id LIKE 'atproto:%'`,
+          ).bind(transitionId),
+          env.DB.prepare(
+            `SELECT EXISTS(SELECT 1 FROM event_attendees WHERE event_id = ? AND user_id = ?) OR
+              EXISTS(SELECT 1 FROM atproto_external_event_attendees WHERE event_id = ? AND attendee_id = ?) AS joined,
+              EXISTS(SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ? AND status = 'waiting') AS waitlisted`,
+          ).bind(id, identity.user.id, id, attendeeId, id, attendeeId),
+        ]);
+        const membership = results.at(-1)?.results?.[0] as
+          { joined: number; waitlisted: number } | undefined;
+        return json({
+          joined: Boolean(membership?.joined),
+          waitlisted: Boolean(membership?.waitlisted),
+        });
       }
     } else {
       if (event.host_id !== identity.user.id)
