@@ -1153,6 +1153,45 @@ describe('Worker with real D1 storage', () => {
     expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
   });
 
+  it('keeps rate-limit buckets monotonic when an older window is submitted', async () => {
+    const bucket = hash('event:account:alice');
+    const futureWindow = Math.floor(Date.now() / 3_600_000) * 3_600 + 7_200;
+    await db
+      .prepare('INSERT INTO rate_limits (bucket, window_start, request_count) VALUES (?, ?, ?)')
+      .bind(bucket, futureWindow, 5)
+      .run();
+
+    expect((await request('/api/events', 'POST', {}, alice)).status).toBe(400);
+    expect(
+      await db
+        .prepare('SELECT window_start, request_count FROM rate_limits WHERE bucket = ?')
+        .bind(bucket)
+        .first(),
+    ).toEqual({ window_start: futureWindow, request_count: 5 });
+  });
+
+  it('uses the event policy when an event ID contains the word visibility', async () => {
+    const response = await request(
+      '/api/events/visibility-example/join',
+      'POST',
+      { join: true },
+      alice,
+    );
+    expect(response.status).toBe(404);
+    expect(
+      await db
+        .prepare('SELECT request_count FROM rate_limits WHERE bucket = ?')
+        .bind(hash('event:account:alice'))
+        .first(),
+    ).toEqual({ request_count: 1 });
+    expect(
+      await db
+        .prepare('SELECT request_count FROM rate_limits WHERE bucket = ?')
+        .bind(hash('activity:account:alice'))
+        .first(),
+    ).toBeNull();
+  });
+
   it('lets only the host see event attendee names', async () => {
     expect((await request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob)).status).toBe(
       200,

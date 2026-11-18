@@ -3,7 +3,7 @@ import { handleMcp } from './mcp';
 import type { AgentScope } from '../src/app/models';
 import { HttpError } from './validation';
 
-function request(method: string, params: Record<string, unknown> = {}) {
+function request(method: string, params: Record<string, unknown> = {}, clientIp?: string) {
   const version = '2026-07-28';
   return new Request('https://app.example/mcp', {
     method: 'POST',
@@ -13,6 +13,7 @@ function request(method: string, params: Record<string, unknown> = {}) {
       Accept: 'application/json, text/event-stream',
       'MCP-Protocol-Version': version,
       'Mcp-Method': method,
+      ...(clientIp === undefined ? {} : { 'CF-Connecting-IP': clientIp }),
       ...(typeof params['name'] === 'string' ? { 'Mcp-Name': params['name'] } : {}),
     },
     body: JSON.stringify({
@@ -72,7 +73,7 @@ describe('MCP weekly recap', () => {
     };
     const dispatch = vi.fn().mockResolvedValue(Response.json(payload));
     const response = await handleMcp(
-      request('tools/call', { name: 'get_weekly_recap', arguments: {} }),
+      request('tools/call', { name: 'get_weekly_recap', arguments: {} }, '203.0.113.7'),
       'https://app.example',
       auth(['activities:read']),
       dispatch,
@@ -85,7 +86,20 @@ describe('MCP weekly recap', () => {
     expect(forwarded.url).toBe('https://app.example/api/insights/weekly');
     expect(forwarded.method).toBe('GET');
     expect(forwarded.headers.get('Authorization')).toBe('Bearer scoped-token');
+    expect(forwarded.headers.get('CF-Connecting-IP')).toBe('203.0.113.7');
     expect(forwarded.body).toBeNull();
+  });
+
+  it('keeps requests without a client IP header unchanged', async () => {
+    const dispatch = vi.fn().mockResolvedValue(Response.json({ activities: [] }));
+    await handleMcp(
+      request('tools/call', { name: 'list_activities' }),
+      'https://app.example',
+      auth(['activities:read']),
+      dispatch,
+    );
+    const forwarded: Request = dispatch.mock.calls[0][0];
+    expect(forwarded.headers.get('CF-Connecting-IP')).toBeNull();
   });
 
   it('rejects scope escalation and unexpected arguments before API dispatch', async () => {
@@ -116,6 +130,23 @@ describe('MCP weekly recap', () => {
     expect((await response.json()).result).toMatchObject({
       isError: true,
       structuredContent: { error: 'Unavailable indexed data' },
+    });
+  });
+
+  it('rethrows rate-limit errors so the MCP boundary can preserve Retry-After', async () => {
+    const dispatch = vi
+      .fn()
+      .mockRejectedValue(new HttpError(429, 'Too many requests.', { 'Retry-After': '17' }));
+    await expect(
+      handleMcp(
+        request('tools/call', { name: 'get_weekly_recap' }),
+        'https://app.example',
+        auth(['activities:read']),
+        dispatch,
+      ),
+    ).rejects.toMatchObject({
+      status: 429,
+      headers: { 'Retry-After': '17' },
     });
   });
 });

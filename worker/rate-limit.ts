@@ -48,8 +48,8 @@ function policyFor(request: Request): RatePolicy | undefined {
     return POLICIES['social'];
   if (
     /^\/api\/activities(?:\/[^/]+)?$/.test(pathname) ||
-    pathname === '/api/me' ||
-    pathname.includes('visibility')
+    pathname === '/api/activities/bulk-visibility' ||
+    pathname === '/api/me'
   )
     return POLICIES['activity'];
   if (/^\/api\/events(?:\/|$)/.test(pathname)) return POLICIES['event'];
@@ -66,25 +66,27 @@ async function consume(
   bucket: string,
   limit: number,
   windowSeconds: number,
-  nowSeconds: number,
 ): Promise<void> {
-  const windowStart = Math.floor(nowSeconds / windowSeconds) * windowSeconds;
   const bucketHash = await hash(bucket);
   const row = await db
     .prepare(
       `INSERT INTO rate_limits (bucket, window_start, request_count)
-      VALUES (?, ?, 1)
+      VALUES (?, CAST(strftime('%s', 'now') AS INTEGER) / ? * ?, 1)
       ON CONFLICT(bucket) DO UPDATE SET
-        request_count = CASE WHEN rate_limits.window_start = excluded.window_start
-          THEN rate_limits.request_count + 1 ELSE 1 END,
-        window_start = excluded.window_start
-      RETURNING request_count AS requestCount`,
+        request_count = CASE
+          WHEN excluded.window_start > rate_limits.window_start THEN 1
+          WHEN excluded.window_start = rate_limits.window_start THEN rate_limits.request_count + 1
+          ELSE rate_limits.request_count
+        END,
+        window_start = MAX(rate_limits.window_start, excluded.window_start)
+      RETURNING request_count AS requestCount, window_start AS windowStart,
+        CAST(strftime('%s', 'now') AS INTEGER) AS nowSeconds`,
     )
-    .bind(bucketHash, windowStart)
-    .first<{ requestCount: number }>();
+    .bind(bucketHash, windowSeconds, windowSeconds)
+    .first<{ requestCount: number; windowStart: number; nowSeconds: number }>();
 
   if (!row || row.requestCount <= limit) return;
-  const retryAfter = Math.max(1, windowStart + windowSeconds - nowSeconds);
+  const retryAfter = Math.max(1, row.windowStart + windowSeconds - row.nowSeconds);
   throw new HttpError(429, 'Too many requests. Please wait before trying again.', {
     'Retry-After': String(retryAfter),
   });
@@ -95,26 +97,18 @@ export async function enforceRateLimit(
   request: Request,
   db: D1Database,
   options: { accountId?: string; includeIp?: boolean } = {},
-  nowSeconds = Math.floor(Date.now() / 1000),
 ): Promise<void> {
   const policy = policyFor(request);
   if (!policy) return;
 
   const clientIp = request.headers.get('CF-Connecting-IP');
   if (clientIp && options.includeIp !== false)
-    await consume(
-      db,
-      `${policy.name}:ip:${clientIp}`,
-      policy.ipLimit,
-      policy.windowSeconds,
-      nowSeconds,
-    );
+    await consume(db, `${policy.name}:ip:${clientIp}`, policy.ipLimit, policy.windowSeconds);
   if (options.accountId && policy.accountLimit)
     await consume(
       db,
       `${policy.name}:account:${options.accountId}`,
       policy.accountLimit,
       policy.windowSeconds,
-      nowSeconds,
     );
 }

@@ -176,6 +176,8 @@ function apiRequest(
   const headers = new Headers({
     Authorization: original.headers.get('Authorization') || '',
   });
+  const clientIp = original.headers.get('CF-Connecting-IP');
+  if (clientIp !== null) headers.set('CF-Connecting-IP', clientIp);
   if (data) headers.set('Content-Type', 'application/json');
   if (idempotencyKey !== undefined) headers.set('Idempotency-Key', idempotencyKey);
   return new Request(new URL(path, original.url), {
@@ -197,6 +199,7 @@ async function callApi(dispatchApi: ApiDispatcher, request: Request) {
     };
   } catch (error) {
     if (!(error instanceof HttpError)) throw error;
+    if (error.status === 429) throw error;
     return { ok: false, data: { error: error.message }, message: error.message };
   }
 }
