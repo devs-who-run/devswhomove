@@ -27,7 +27,7 @@ import { handleMcp } from './mcp';
 import { cardSvg, cardVersion, shareMeta } from './share-card';
 import { renderPng } from './share-render';
 import { getWeeklyRecap, getGithubInsights } from './insights';
-import { enforceRateLimit } from './rate-limit';
+import { deleteAccountRateLimits, enforceRateLimit } from './rate-limit';
 import { date, HttpError, number, sport, text, visibility } from './validation';
 import {
   addComment,
@@ -742,6 +742,7 @@ async function listAtprotoRecords(
   agent: Agent,
   did: string,
   collection: string,
+  maxRecords = 1000,
 ): Promise<{ records: { uri: string; value: unknown }[]; complete: boolean }> {
   const records: { uri: string; value: unknown }[] = [];
   let cursor: string | undefined;
@@ -754,7 +755,8 @@ async function listAtprotoRecords(
     });
     records.push(...response.data.records.map(({ uri, value }) => ({ uri, value })));
     cursor = response.data.cursor;
-    if (records.length >= 1000) return { records: records.slice(0, 1000), complete: !cursor };
+    if (records.length >= maxRecords)
+      return { records: records.slice(0, maxRecords), complete: !cursor };
   } while (cursor);
   return { records, complete: true };
 }
@@ -877,18 +879,245 @@ async function removeStaleAtprotoRecords(
 }
 
 /** Remove queued photos from R2; failures stay queued and are retried on the next activity delete. */
-async function purgeDeletedPhotos(env: Env): Promise<void> {
+async function purgeDeletedPhotos(env: Env, all = false): Promise<void> {
   try {
-    const queued = await env.DB.prepare(
-      'SELECT key FROM photo_deletions ORDER BY queued_at LIMIT 20',
-    ).all<{ key: string }>();
-    for (const { key } of queued.results) {
-      await env.PHOTOS.delete(key);
-      await env.DB.prepare('DELETE FROM photo_deletions WHERE key = ?').bind(key).run();
-    }
+    do {
+      const queued = await env.DB.prepare(
+        'SELECT key FROM photo_deletions ORDER BY queued_at LIMIT 20',
+      ).all<{ key: string }>();
+      for (const { key } of queued.results) {
+        await env.PHOTOS.delete(key);
+        await env.DB.prepare('DELETE FROM photo_deletions WHERE key = ?').bind(key).run();
+      }
+      if (!all || queued.results.length === 0) return;
+    } while (true);
   } catch (error) {
     console.error('Photo cleanup failed; it will be retried.', error);
   }
+}
+
+/** Convert an object-sized byte array to base64 without overflowing the call stack. */
+function base64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  return btoa(binary);
+}
+
+/** Build a complete export of the browser account's application data and attached photos. */
+async function exportAccount(env: Env, identity: Identity): Promise<Response> {
+  const { user } = identity;
+  const actorId = user.id;
+  const [
+    activities,
+    events,
+    hostedEventRsvps,
+    atprotoEventRsvps,
+    externalEventRsvps,
+    clubs,
+    memberships,
+    follows,
+    comments,
+    kudos,
+    tokens,
+  ] = await Promise.all([
+    identity.provider === 'github'
+      ? env.DB.prepare('SELECT * FROM activities WHERE user_id = ? ORDER BY occurred_at DESC')
+          .bind(actorId)
+          .all<Record<string, unknown>>()
+      : env.DB.prepare('SELECT * FROM atproto_activities WHERE did = ? ORDER BY indexed_at DESC')
+          .bind(actorId)
+          .all<Record<string, unknown>>(),
+    identity.provider === 'github'
+      ? env.DB.prepare('SELECT * FROM events WHERE host_id = ? ORDER BY starts_at DESC')
+          .bind(actorId)
+          .all<Record<string, unknown>>()
+      : env.DB.prepare('SELECT * FROM atproto_events WHERE did = ? ORDER BY starts_at DESC')
+          .bind(actorId)
+          .all<Record<string, unknown>>(),
+    identity.provider === 'github'
+      ? env.DB.prepare('SELECT * FROM event_attendees WHERE user_id = ?')
+          .bind(actorId)
+          .all<Record<string, unknown>>()
+      : Promise.resolve({ results: [] as Record<string, unknown>[] }),
+    env.DB.prepare('SELECT * FROM atproto_event_attendees WHERE attendee_id = ?')
+      .bind(`${identity.provider}:${actorId}`)
+      .all<Record<string, unknown>>(),
+    env.DB.prepare('SELECT * FROM atproto_external_event_attendees WHERE attendee_id = ?')
+      .bind(`${identity.provider}:${actorId}`)
+      .all<Record<string, unknown>>(),
+    env.DB.prepare('SELECT * FROM clubs WHERE owner_id = ? ORDER BY created_at')
+      .bind(actorId)
+      .all<Record<string, unknown>>(),
+    env.DB.prepare('SELECT * FROM club_members WHERE actor_id = ? ORDER BY joined_at')
+      .bind(actorId)
+      .all<Record<string, unknown>>(),
+    env.DB.prepare('SELECT * FROM follows WHERE follower_id = ? OR followee_id = ?')
+      .bind(actorId, actorId)
+      .all<Record<string, unknown>>(),
+    env.DB.prepare(
+      'SELECT * FROM activity_comments WHERE actor_id = ? OR activity_id IN (SELECT id FROM activities WHERE user_id = ?) OR activity_id IN (SELECT uri FROM atproto_activities WHERE did = ?)',
+    )
+      .bind(actorId, actorId, actorId)
+      .all<Record<string, unknown>>(),
+    env.DB.prepare(
+      'SELECT * FROM activity_kudos WHERE actor_id = ? OR activity_id IN (SELECT id FROM activities WHERE user_id = ?) OR activity_id IN (SELECT uri FROM atproto_activities WHERE did = ?)',
+    )
+      .bind(actorId, actorId, actorId)
+      .all<Record<string, unknown>>(),
+    identity.provider === 'github'
+      ? env.DB.prepare(
+          'SELECT id, name, scopes, created_at, expires_at FROM agent_tokens WHERE user_id = ?',
+        )
+          .bind(actorId)
+          .all<Record<string, unknown>>()
+      : env.DB.prepare(
+          'SELECT id, name, scopes, created_at, expires_at FROM atproto_agent_tokens WHERE did = ?',
+        )
+          .bind(actorId)
+          .all<Record<string, unknown>>(),
+  ]);
+  const photos = [];
+  if (identity.provider === 'github') {
+    const photoRows = activities.results.filter((row) => typeof row['photo_key'] === 'string');
+    for (const row of photoRows) {
+      const key = row['photo_key'] as string;
+      const object = await env.PHOTOS.get(key);
+      if (!object)
+        throw new HttpError(503, 'A stored photo could not be read; retry the export shortly.');
+      photos.push({
+        activityId: row['id'],
+        contentType: row['photo_type'],
+        dataBase64: base64(new Uint8Array(await object.arrayBuffer())),
+      });
+    }
+  }
+  const atprotoRecords: Record<string, { uri: string; value: unknown }[]> = {};
+  if (identity.provider === 'atproto') {
+    if (!identity.atprotoAgent) throw new HttpError(503, 'AT Protocol session is unavailable.');
+    for (const collection of [
+      PROFILE_COLLECTION,
+      ACTIVITY_COLLECTION,
+      EVENT_COLLECTION,
+      'app.bsky.actor.profile',
+    ]) {
+      const listed = await listAtprotoRecords(identity.atprotoAgent, actorId, collection, 10_000);
+      if (!listed.complete)
+        throw new HttpError(413, 'This account has too many AT Protocol records for one export.');
+      atprotoRecords[collection] = listed.records;
+    }
+  }
+  const data = {
+    exportedAt: new Date().toISOString(),
+    account: user,
+    provider: identity.provider,
+    activities: activities.results,
+    hostedEvents: events.results,
+    eventRsvps: hostedEventRsvps.results,
+    atprotoEventRsvps: atprotoEventRsvps.results,
+    externalEventRsvps: externalEventRsvps.results,
+    ownedClubs: clubs.results,
+    clubMemberships: memberships.results,
+    follows: follows.results,
+    comments: comments.results,
+    kudos: kudos.results,
+    agentTokens: tokens.results,
+    photos,
+    atprotoRecords,
+  };
+  return new Response(JSON.stringify(data, null, 2), {
+    headers: {
+      'Cache-Control': 'no-store',
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="devs-who-move-account-export.json"',
+    },
+  });
+}
+
+/** Delete app-owned PDS records, then erase this account and its related application data. */
+async function deleteAccount(env: Env, identity: Identity, request: Request): Promise<Response> {
+  const data = await body(request);
+  if (data['confirmation'] !== 'DELETE')
+    throw new HttpError(400, 'Type DELETE to confirm account deletion.');
+  const { user } = identity;
+  const actorId = user.id;
+  if (identity.provider === 'atproto') {
+    const agent = identity.atprotoAgent;
+    if (!agent) throw new HttpError(503, 'AT Protocol session is unavailable.');
+    const records: { collection: string; rkey: string }[] = [];
+    for (const collection of [PROFILE_COLLECTION, ACTIVITY_COLLECTION, EVENT_COLLECTION]) {
+      const listed = await listAtprotoRecords(agent, actorId, collection, 10_000);
+      if (!listed.complete)
+        throw new HttpError(
+          409,
+          'This account has too many public records to delete in one request.',
+        );
+      records.push(
+        ...listed.records.map(({ uri }) => ({
+          collection,
+          rkey: recordKey(uri, actorId, collection),
+        })),
+      );
+    }
+    for (let offset = 0; offset < records.length; offset += 100) {
+      await agent.com.atproto.repo.applyWrites({
+        repo: actorId,
+        writes: records.slice(offset, offset + 100).map(({ collection, rkey }) => ({
+          $type: 'com.atproto.repo.applyWrites#delete' as const,
+          collection,
+          rkey,
+        })),
+      });
+    }
+    try {
+      await (await oauthClient(env)).revoke(actorId);
+    } catch {
+      /* Local credentials are removed below. */
+    }
+  }
+  const photoQueue =
+    identity.provider === 'github'
+      ? env.DB.prepare(
+          `INSERT OR IGNORE INTO photo_deletions (key, queued_at)
+      SELECT photo_key, ? FROM activities WHERE user_id = ? AND photo_key IS NOT NULL`,
+        ).bind(new Date().toISOString(), actorId)
+      : null;
+  const cleanup = [
+    ...(photoQueue ? [photoQueue] : []),
+    env.DB.prepare(
+      `DELETE FROM activity_comments WHERE actor_id = ? OR activity_id IN (SELECT id FROM activities WHERE user_id = ?) OR activity_id IN (SELECT uri FROM atproto_activities WHERE did = ?)`,
+    ).bind(actorId, actorId, actorId),
+    env.DB.prepare(
+      `DELETE FROM activity_kudos WHERE actor_id = ? OR activity_id IN (SELECT id FROM activities WHERE user_id = ?) OR activity_id IN (SELECT uri FROM atproto_activities WHERE did = ?)`,
+    ).bind(actorId, actorId, actorId),
+    env.DB.prepare('DELETE FROM follows WHERE follower_id = ? OR followee_id = ?').bind(
+      actorId,
+      actorId,
+    ),
+    env.DB.prepare('DELETE FROM club_members WHERE actor_id = ?').bind(actorId),
+    env.DB.prepare('DELETE FROM atproto_event_attendees WHERE attendee_id IN (?, ?)').bind(
+      actorId,
+      `${identity.provider}:${actorId}`,
+    ),
+    env.DB.prepare('DELETE FROM atproto_external_event_attendees WHERE attendee_id IN (?, ?)').bind(
+      actorId,
+      `${identity.provider}:${actorId}`,
+    ),
+    env.DB.prepare('DELETE FROM clubs WHERE owner_id = ?').bind(actorId),
+    identity.provider === 'github'
+      ? env.DB.prepare('DELETE FROM users WHERE id = ?').bind(actorId)
+      : env.DB.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(actorId),
+    ...(identity.provider === 'atproto'
+      ? [env.DB.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind(actorId)]
+      : []),
+  ];
+  await env.DB.batch(cleanup);
+  await deleteAccountRateLimits(env.DB, actorId);
+  if (photoQueue) await purgeDeletedPhotos(env, true);
+  return new Response(null, {
+    status: 204,
+    headers: { 'Set-Cookie': setCookie(env, 'dwm_session', '', 0) },
+  });
 }
 
 /** Refresh the bounded D1 projection from the user's PDS when its sync interval has elapsed. */
@@ -1311,6 +1540,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
       status: 204,
       headers: { 'Set-Cookie': setCookie(env, 'dwm_session', '', 0) },
     });
+  }
+  if (url.pathname === '/api/account/export' && method === 'GET') {
+    return exportAccount(env, requireIdentity(auth, undefined, true));
+  }
+  if (url.pathname === '/api/account' && method === 'DELETE') {
+    return deleteAccount(env, requireIdentity(auth, undefined, true), request);
   }
   if (url.pathname === '/api/me' && method === 'PATCH') {
     const identity = requireIdentity(auth, undefined, true);

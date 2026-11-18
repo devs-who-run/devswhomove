@@ -1,0 +1,82 @@
+.account-settings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+  padding: 1.25rem;
+  border: 1px solid var(--line, #deded8);
+  border-radius: 1rem;
+  background: var(--surface, #fff);
+}
+
+.account-settings h2,
+dialog h2 {
+  margin: 0 0 0.35rem;
+}
+
+.account-settings p {
+  margin: 0;
+  color: var(--muted, #666);
+}
+
+.account-actions,
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.danger {
+  border-color: #b42318;
+  background: #b42318;
+  color: white;
+}
+
+dialog {
+  width: min(34rem, calc(100vw - 2rem));
+  padding: 1.5rem;
+  border: 1px solid var(--line, #deded8);
+  border-radius: 1rem;
+  color: var(--ink, #20231f);
+}
+
+dialog::backdrop {
+  background: rgb(20 24 20 / 55%);
+}
+
+dialog p {
+  line-height: 1.55;
+}
+
+dialog label,
+dialog input {
+  display: block;
+  width: 100%;
+}
+
+dialog input {
+  box-sizing: border-box;
+  margin-top: 0.4rem;
+  padding: 0.7rem;
+  border: 1px solid var(--line, #deded8);
+  border-radius: 0.5rem;
+  font: inherit;
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
+
+.error {
+  color: #b42318;
+}
+
+@media (max-width: 700px) {
+  .account-settings {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

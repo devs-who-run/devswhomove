@@ -1548,6 +1548,168 @@ describe('Worker with real D1 storage', () => {
     expect((await request('/api/activities', 'GET', undefined, alice)).status).toBe(401);
   });
 
+  it('exports account data including photos without exposing token hashes', async () => {
+    const accountId = 'export-me';
+    const session = 'export-session';
+    await db
+      .prepare(
+        'INSERT INTO users (id, github_id, username, name, visibility) VALUES (?, ?, ?, ?, ?)',
+      )
+      .bind(accountId, 9901, 'export-me', 'Export Me', 'public')
+      .run();
+    await db
+      .prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+      .bind(hash(session), accountId, '2099-01-01T00:00:00.000Z')
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO activities (id, user_id, title, sport, occurred_at, duration, notes, visibility, source, payload_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        'export-activity',
+        accountId,
+        'Export run',
+        'Running',
+        '2026-01-01T08:00:00.000Z',
+        30,
+        'My notes',
+        'public',
+        'web',
+        'payload',
+      )
+      .run();
+    const photoKey = 'activities/export-activity/photo.jpg';
+    await (await runtime.getR2Bucket('PHOTOS')).put(photoKey, photo);
+    await db
+      .prepare('UPDATE activities SET photo_key = ?, photo_type = ? WHERE id = ?')
+      .bind(photoKey, 'image/jpeg', 'export-activity')
+      .run();
+    await db
+      .prepare(
+        'INSERT INTO agent_tokens (id, user_id, token_hash, name, scopes, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .bind(
+        'export-token',
+        accountId,
+        'secret-token-hash',
+        'Watch',
+        '[]',
+        '2026-01-01',
+        '2099-01-01',
+      )
+      .run();
+
+    const response = await request('/api/account/export', 'GET', undefined, session);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Disposition')).toContain('attachment');
+    const exported = await response.json<{
+      activities: { id: string; notes: string }[];
+      agentTokens: Record<string, unknown>[];
+      photos: { activityId: string; contentType: string; dataBase64: string }[];
+    }>();
+    expect(exported.activities).toContainEqual(
+      expect.objectContaining({ id: 'export-activity', notes: 'My notes' }),
+    );
+    expect(exported.agentTokens).toEqual([
+      expect.objectContaining({ id: 'export-token', name: 'Watch' }),
+    ]);
+    expect(JSON.stringify(exported)).not.toContain('secret-token-hash');
+    expect(exported.photos).toEqual([
+      {
+        activityId: 'export-activity',
+        contentType: 'image/jpeg',
+        dataBase64: Buffer.from(photo).toString('base64'),
+      },
+    ]);
+  });
+
+  it('requires typed confirmation and removes account data and photos on deletion', async () => {
+    const accountId = 'delete-me';
+    const session = 'delete-session';
+    await db
+      .prepare(
+        'INSERT INTO users (id, github_id, username, name, visibility) VALUES (?, ?, ?, ?, ?)',
+      )
+      .bind(accountId, 9902, 'delete-me', 'Delete Me', 'public')
+      .run();
+    await db
+      .prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+      .bind(hash(session), accountId, '2099-01-01T00:00:00.000Z')
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO activities (id, user_id, title, sport, occurred_at, duration, source, payload_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        'delete-activity',
+        accountId,
+        'Delete run',
+        'Running',
+        '2026-01-01T08:00:00.000Z',
+        30,
+        'web',
+        'payload',
+      )
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO events (id, host_id, title, sport, starts_at, location, level, capacity)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        'delete-event',
+        accountId,
+        'Delete event',
+        'Running',
+        '2099-01-01T08:00:00.000Z',
+        'Park',
+        'All',
+        10,
+      )
+      .run();
+    await db
+      .prepare('INSERT INTO follows (follower_id, followee_id, created_at) VALUES (?, ?, ?)')
+      .bind(accountId, 'alice', '2026-01-01')
+      .run();
+    const photoKey = 'activities/delete-activity/photo.jpg';
+    await (await runtime.getR2Bucket('PHOTOS')).put(photoKey, photo);
+    await db
+      .prepare('UPDATE activities SET photo_key = ?, photo_type = ? WHERE id = ?')
+      .bind(photoKey, 'image/jpeg', 'delete-activity')
+      .run();
+
+    const rejected = await request('/api/account', 'DELETE', { confirmation: 'delete' }, session);
+    expect(rejected.status).toBe(400);
+    expect(await db.prepare('SELECT id FROM users WHERE id = ?').bind(accountId).first()).toEqual({
+      id: accountId,
+    });
+
+    const response = await request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session);
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
+    for (const table of ['users', 'activities', 'events', 'sessions', 'follows']) {
+      const row = await db
+        .prepare(
+          table === 'follows'
+            ? 'SELECT COUNT(*) AS count FROM follows WHERE follower_id = ? OR followee_id = ?'
+            : table === 'activities'
+              ? 'SELECT COUNT(*) AS count FROM activities WHERE user_id = ?'
+              : table === 'events'
+                ? 'SELECT COUNT(*) AS count FROM events WHERE host_id = ?'
+                : table === 'sessions'
+                  ? 'SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?'
+                  : 'SELECT COUNT(*) AS count FROM users WHERE id = ?',
+        )
+        .bind(...(table === 'follows' ? [accountId, accountId] : [accountId]))
+        .first<{ count: number }>();
+      expect(row?.count).toBe(0);
+    }
+    expect(await (await runtime.getR2Bucket('PHOTOS')).get(photoKey)).toBeNull();
+    expect((await request('/api/bootstrap')).status).toBe(200);
+  });
+
   it('serves all public AT Protocol activities and resolves duplicate handles deterministically', async () => {
     const accounts = [
       ['did:plc:older', 'duplicate.example', 'Older', '2026-01-01T00:00:00.000Z'],
