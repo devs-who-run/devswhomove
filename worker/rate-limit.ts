@@ -61,17 +61,19 @@ async function hash(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-/** Remove the account's opaque quota buckets when the account itself is deleted. */
-export async function deleteAccountRateLimits(db: D1Database, accountId: string): Promise<void> {
+/** Prepare removal of the account's opaque quota buckets for an atomic account cleanup batch. */
+export async function deleteAccountRateLimits(
+  db: D1Database,
+  accountId: string,
+): Promise<D1PreparedStatement> {
   const buckets = await Promise.all(
     Object.values(POLICIES)
       .filter((policy) => policy.accountLimit)
       .map((policy) => hash(`${policy.name}:account:${accountId}`)),
   );
-  await db
+  return db
     .prepare(`DELETE FROM rate_limits WHERE bucket IN (${buckets.map(() => '?').join(',')})`)
-    .bind(...buckets)
-    .run();
+    .bind(...buckets);
 }
 
 async function consume(

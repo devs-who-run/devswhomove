@@ -756,7 +756,10 @@ async function listAtprotoRecords(
     records.push(...response.data.records.map(({ uri, value }) => ({ uri, value })));
     cursor = response.data.cursor;
     if (records.length >= maxRecords)
-      return { records: records.slice(0, maxRecords), complete: !cursor };
+      return {
+        records: records.slice(0, maxRecords),
+        complete: !cursor && records.length <= maxRecords,
+      };
   } while (cursor);
   return { records, complete: true };
 }
@@ -896,16 +899,177 @@ async function purgeDeletedPhotos(env: Env, all = false): Promise<void> {
   }
 }
 
-/** Convert an object-sized byte array to base64 without overflowing the call stack. */
-function base64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 0x8000)
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  return btoa(binary);
+const EXPORT_PART_BYTES = 5 * 1024 * 1024;
+const TEMP_EXPORT_PREFIX = 'tmp-account-exports/';
+const TEMP_EXPORT_TTL_MS = 24 * 60 * 60_000;
+
+/** Write JSON text to an R2 multipart upload with bounded memory use. */
+class AccountExportWriter {
+  private buffer = new Uint8Array(EXPORT_PART_BYTES);
+  private used = 0;
+  private readonly parts: R2UploadedPart[] = [];
+
+  constructor(private readonly upload: R2MultipartUpload) {}
+
+  async write(text: string): Promise<void> {
+    const bytes = new TextEncoder().encode(text);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const length = Math.min(this.buffer.length - this.used, bytes.length - offset);
+      this.buffer.set(bytes.subarray(offset, offset + length), this.used);
+      offset += length;
+      this.used += length;
+      if (this.used === this.buffer.length) await this.uploadPart(this.buffer);
+    }
+  }
+
+  async complete(): Promise<R2Object> {
+    if (this.used) await this.uploadPart(this.buffer.subarray(0, this.used));
+    return this.upload.complete(this.parts);
+  }
+
+  async abort(): Promise<void> {
+    await this.upload.abort();
+  }
+
+  private async uploadPart(bytes: Uint8Array): Promise<void> {
+    const part = await this.upload.uploadPart(this.parts.length + 1, bytes);
+    this.parts.push(part);
+    this.buffer = new Uint8Array(EXPORT_PART_BYTES);
+    this.used = 0;
+  }
+}
+
+/** Yield pretty-printed JSON a scalar at a time rather than serializing an entire export. */
+function* prettyJson(value: unknown, depth = 0): Generator<string> {
+  const indentation = '  '.repeat(depth);
+  if (Array.isArray(value)) {
+    if (!value.length) {
+      yield '[]';
+      return;
+    }
+    yield '[\n';
+    for (let index = 0; index < value.length; index++) {
+      yield `${'  '.repeat(depth + 1)}`;
+      yield* prettyJson(value[index], depth + 1);
+      yield index === value.length - 1 ? '\n' : ',\n';
+    }
+    yield `${indentation}]`;
+    return;
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value).filter(([, entry]) => entry !== undefined);
+    if (!entries.length) {
+      yield '{}';
+      return;
+    }
+    yield '{\n';
+    let index = 0;
+    for (const [key, entry] of entries) {
+      yield `${'  '.repeat(depth + 1)}${JSON.stringify(key)}: `;
+      yield* prettyJson(entry, depth + 1);
+      yield ++index === entries.length ? '\n' : ',\n';
+    }
+    yield `${indentation}}`;
+    return;
+  }
+  yield JSON.stringify(value) ?? 'null';
+}
+
+/** Encode a photo stream while retaining at most two trailing bytes between chunks. */
+async function writeBase64(
+  writer: AccountExportWriter,
+  stream: ReadableStream<Uint8Array>,
+): Promise<void> {
+  const reader = stream.getReader();
+  let remainder = new Uint8Array();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const bytes = new Uint8Array(remainder.length + value.length);
+      bytes.set(remainder);
+      bytes.set(value, remainder.length);
+      const completeLength = bytes.length - (bytes.length % 3);
+      for (let offset = 0; offset < completeLength; offset += 0x6000) {
+        const end = Math.min(completeLength, offset + 0x6000);
+        await writer.write(btoa(String.fromCharCode(...bytes.subarray(offset, end))));
+      }
+      remainder = bytes.slice(completeLength);
+    }
+    if (remainder.length) await writer.write(btoa(String.fromCharCode(...remainder)));
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/** Stream the completed temporary export to the response and delete it when delivery ends. */
+function serveTemporaryExport(
+  object: R2ObjectBody,
+  key: string,
+  env: Env,
+  ctx: ExecutionContext,
+): Response {
+  const reader = object.body.getReader();
+  let cleanupStarted = false;
+  const cleanup = () => {
+    if (cleanupStarted) return;
+    cleanupStarted = true;
+    ctx.waitUntil(
+      env.PHOTOS.delete(key).catch((error) => {
+        console.error('Temporary account export cleanup failed.', error);
+      }),
+    );
+  };
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.close();
+          cleanup();
+        } else {
+          controller.enqueue(value);
+        }
+      } catch (error) {
+        controller.error(error);
+        cleanup();
+      }
+    },
+    async cancel(reason) {
+      await reader.cancel(reason);
+      cleanup();
+    },
+  });
+  return new Response(body, {
+    headers: {
+      'Cache-Control': 'no-store',
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="devs-who-move-account-export.json"',
+      'Content-Length': String(object.size),
+    },
+  });
+}
+
+/** Remove completed temporary exports abandoned by disconnected clients. */
+async function purgeExpiredAccountExports(env: Env): Promise<void> {
+  const cutoff = Date.now() - TEMP_EXPORT_TTL_MS;
+  let cursor: string | undefined;
+  do {
+    const page = await env.PHOTOS.list({ prefix: TEMP_EXPORT_PREFIX, limit: 1000, cursor });
+    const expired = page.objects.filter((object) => object.uploaded.getTime() < cutoff);
+    for (let offset = 0; offset < expired.length; offset += 1000)
+      await env.PHOTOS.delete(expired.slice(offset, offset + 1000).map(({ key }) => key));
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
 }
 
 /** Build a complete export of the browser account's application data and attached photos. */
-async function exportAccount(env: Env, identity: Identity): Promise<Response> {
+async function exportAccount(
+  env: Env,
+  identity: Identity,
+  ctx: ExecutionContext,
+): Promise<Response> {
   const { user } = identity;
   const actorId = user.id;
   const [
@@ -977,21 +1141,10 @@ async function exportAccount(env: Env, identity: Identity): Promise<Response> {
           .bind(actorId)
           .all<Record<string, unknown>>(),
   ]);
-  const photos = [];
-  if (identity.provider === 'github') {
-    const photoRows = activities.results.filter((row) => typeof row['photo_key'] === 'string');
-    for (const row of photoRows) {
-      const key = row['photo_key'] as string;
-      const object = await env.PHOTOS.get(key);
-      if (!object)
-        throw new HttpError(503, 'A stored photo could not be read; retry the export shortly.');
-      photos.push({
-        activityId: row['id'],
-        contentType: row['photo_type'],
-        dataBase64: base64(new Uint8Array(await object.arrayBuffer())),
-      });
-    }
-  }
+  const photoRows =
+    identity.provider === 'github'
+      ? activities.results.filter((row) => typeof row['photo_key'] === 'string')
+      : [];
   const atprotoRecords: Record<string, { uri: string; value: unknown }[]> = {};
   if (identity.provider === 'atproto') {
     if (!identity.atprotoAgent) throw new HttpError(503, 'AT Protocol session is unavailable.');
@@ -1022,16 +1175,137 @@ async function exportAccount(env: Env, identity: Identity): Promise<Response> {
     comments: comments.results,
     kudos: kudos.results,
     agentTokens: tokens.results,
-    photos,
     atprotoRecords,
   };
-  return new Response(JSON.stringify(data, null, 2), {
-    headers: {
-      'Cache-Control': 'no-store',
-      'Content-Type': 'application/json; charset=utf-8',
-      'Content-Disposition': 'attachment; filename="devs-who-move-account-export.json"',
-    },
+  const key = `${TEMP_EXPORT_PREFIX}${crypto.randomUUID()}.json`;
+  const upload = await env.PHOTOS.createMultipartUpload(key, {
+    httpMetadata: { contentType: 'application/json; charset=utf-8', cacheControl: 'no-store' },
+    customMetadata: { purpose: 'account-export' },
   });
+  const writer = new AccountExportWriter(upload);
+  let complete = false;
+  try {
+    const fields: [string, unknown][] = [
+      ['exportedAt', data.exportedAt],
+      ['account', data.account],
+      ['provider', data.provider],
+      ['activities', data.activities],
+      ['hostedEvents', data.hostedEvents],
+      ['eventRsvps', data.eventRsvps],
+      ['atprotoEventRsvps', data.atprotoEventRsvps],
+      ['externalEventRsvps', data.externalEventRsvps],
+      ['ownedClubs', data.ownedClubs],
+      ['clubMemberships', data.clubMemberships],
+      ['follows', data.follows],
+      ['comments', data.comments],
+      ['kudos', data.kudos],
+      ['agentTokens', data.agentTokens],
+      ['photos', photoRows],
+      ['atprotoRecords', data.atprotoRecords],
+    ];
+    await writer.write('{\n');
+    for (let index = 0; index < fields.length; index++) {
+      const [name, value] = fields[index];
+      await writer.write(`  ${JSON.stringify(name)}: `);
+      if (name === 'photos') {
+        await writer.write(photoRows.length ? '[\n' : '[]');
+        for (let photoIndex = 0; photoIndex < photoRows.length; photoIndex++) {
+          const row = photoRows[photoIndex];
+          const object = await env.PHOTOS.get(row['photo_key'] as string);
+          if (!object)
+            throw new HttpError(503, 'A stored photo could not be read; retry the export shortly.');
+          await writer.write(
+            `    {\n      "activityId": ${JSON.stringify(row['id'])},\n      "contentType": ${JSON.stringify(row['photo_type'])},\n      "dataBase64": "`,
+          );
+          await writeBase64(writer, object.body);
+          await writer.write(photoIndex === photoRows.length - 1 ? '"\n    }\n  ]' : '"\n    },\n');
+        }
+      } else {
+        for (const chunk of prettyJson(value, 1)) await writer.write(chunk);
+      }
+      await writer.write(index === fields.length - 1 ? '\n' : ',\n');
+    }
+    await writer.write('}');
+    await writer.complete();
+    complete = true;
+    const object = await env.PHOTOS.get(key);
+    if (!object) throw new HttpError(500, 'Could not read the completed account export.');
+    return serveTemporaryExport(object, key, env, ctx);
+  } catch (error) {
+    if (complete) await env.PHOTOS.delete(key);
+    else await writer.abort().catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Atomically reserve an account mutation unless deletion has already started. */
+async function beginAccountMutation(
+  db: D1Database,
+  identity: Identity,
+): Promise<() => Promise<void>> {
+  const table = identity.provider === 'github' ? 'users' : 'atproto_accounts';
+  const column = identity.provider === 'github' ? 'id' : 'did';
+  const actorId = `${identity.provider}:${identity.user.id}`;
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO account_mutation_locks (actor_id, deleting, active_writes)
+      SELECT ?, 0, 0 WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
+    )
+    .bind(actorId, identity.user.id)
+    .run();
+  const reserved = await db
+    .prepare(
+      `UPDATE account_mutation_locks SET active_writes = active_writes + 1
+      WHERE actor_id = ? AND deleting = 0
+      AND EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
+    )
+    .bind(actorId, identity.user.id)
+    .run();
+  if (!reserved.meta.changes) throw new HttpError(409, 'Account deletion is in progress.');
+  let released = false;
+  return async () => {
+    if (released) return;
+    released = true;
+    await db
+      .prepare(
+        'UPDATE account_mutation_locks SET active_writes = active_writes - 1 WHERE actor_id = ? AND active_writes > 0',
+      )
+      .bind(actorId)
+      .run();
+  };
+}
+
+/** Close the account to new writes before waiting for writes already in flight. */
+async function startAccountDeletion(db: D1Database, identity: Identity): Promise<string> {
+  const table = identity.provider === 'github' ? 'users' : 'atproto_accounts';
+  const column = identity.provider === 'github' ? 'id' : 'did';
+  const actorId = `${identity.provider}:${identity.user.id}`;
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO account_mutation_locks (actor_id, deleting, active_writes)
+      SELECT ?, 0, 0 WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
+    )
+    .bind(actorId, identity.user.id)
+    .run();
+  const result = await db
+    .prepare(
+      `UPDATE account_mutation_locks SET deleting = 1
+      WHERE actor_id = ? AND EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
+    )
+    .bind(actorId, identity.user.id)
+    .run();
+  if (!result.meta.changes) throw new HttpError(404, 'Account no longer exists.');
+  for (let attempt = 0; attempt < 120; attempt++) {
+    const row = await db
+      .prepare(
+        'SELECT active_writes AS activeWrites FROM account_mutation_locks WHERE actor_id = ?',
+      )
+      .bind(actorId)
+      .first<{ activeWrites: number }>();
+    if (!row || row.activeWrites === 0) return actorId;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new HttpError(503, 'Account writes are still finishing. Retry deletion shortly.');
 }
 
 /** Delete app-owned PDS records, then erase this account and its related application data. */
@@ -1041,6 +1315,7 @@ async function deleteAccount(env: Env, identity: Identity, request: Request): Pr
     throw new HttpError(400, 'Type DELETE to confirm account deletion.');
   const { user } = identity;
   const actorId = user.id;
+  const mutationLockId = await startAccountDeletion(env.DB, identity);
   if (identity.provider === 'atproto') {
     const agent = identity.atprotoAgent;
     if (!agent) throw new HttpError(503, 'AT Protocol session is unavailable.');
@@ -1069,12 +1344,8 @@ async function deleteAccount(env: Env, identity: Identity, request: Request): Pr
         })),
       });
     }
-    try {
-      await (await oauthClient(env)).revoke(actorId);
-    } catch {
-      /* Local credentials are removed below. */
-    }
   }
+  const rateLimitCleanup = await deleteAccountRateLimits(env.DB, actorId);
   const photoQueue =
     identity.provider === 'github'
       ? env.DB.prepare(
@@ -1104,15 +1375,31 @@ async function deleteAccount(env: Env, identity: Identity, request: Request): Pr
       `${identity.provider}:${actorId}`,
     ),
     env.DB.prepare('DELETE FROM clubs WHERE owner_id = ?').bind(actorId),
-    identity.provider === 'github'
-      ? env.DB.prepare('DELETE FROM users WHERE id = ?').bind(actorId)
-      : env.DB.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(actorId),
+    ...(identity.provider === 'github'
+      ? [env.DB.prepare('DELETE FROM users WHERE id = ?').bind(actorId)]
+      : []),
     ...(identity.provider === 'atproto'
       ? [env.DB.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind(actorId)]
       : []),
+    rateLimitCleanup,
+    env.DB.prepare('DELETE FROM account_mutation_locks WHERE actor_id = ?').bind(mutationLockId),
   ];
   await env.DB.batch(cleanup);
-  await deleteAccountRateLimits(env.DB, actorId);
+  if (identity.provider === 'atproto') {
+    try {
+      await (await oauthClient(env)).revoke(actorId);
+    } catch (error) {
+      console.error('AT Protocol OAuth revocation failed after account deletion.', error);
+    }
+    try {
+      await env.DB.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(actorId).run();
+    } catch (error) {
+      console.error(
+        'Local AT Protocol OAuth session cleanup failed after account deletion.',
+        error,
+      );
+    }
+  }
   if (photoQueue) await purgeDeletedPhotos(env, true);
   return new Response(null, {
     status: 204,
@@ -1448,7 +1735,7 @@ async function atprotoAuth(request: Request, env: Env, url: URL): Promise<Respon
 }
 
 /** Route Worker requests to authentication, API, MCP, or static asset handlers. */
-async function handle(request: Request, env: Env): Promise<Response> {
+async function handle(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const method = request.method;
   if (url.pathname.startsWith('/auth/')) await enforceRateLimit(request, env.DB);
@@ -1472,7 +1759,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       request,
       env.APP_URL,
       () => identity(request, env),
-      (apiRequest) => handle(apiRequest, env),
+      (apiRequest) => handle(apiRequest, env, ctx),
     );
   }
   const sharedActivity = /^\/activities\/([^/]+)\/?$/.exec(url.pathname);
@@ -1489,360 +1776,370 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
   const auth = await identity(request, env);
   await enforceRateLimit(request, env.DB, { accountId: auth?.user.id, includeIp: false });
-  if (url.pathname === '/api/insights/weekly' && method === 'GET') {
-    const who = requireIdentity(auth, 'activities:read');
-    return json(await getWeeklyRecap(env.DB, who));
-  }
-  if (url.pathname === '/api/insights/github' && method === 'GET') {
-    const who = requireIdentity(auth, undefined, true);
-    return json(await getGithubInsights(env.DB, who));
-  }
-  if (url.pathname === '/api/bootstrap' && method === 'GET') {
-    if (auth?.agent)
-      throw new HttpError(403, 'Use the scoped /api/activities and /api/events endpoints.');
-    if (auth?.provider === 'atproto') {
-      try {
-        await syncAtprotoData(env, auth);
-      } catch {
-        console.warn('AT Protocol sync failed; serving the cached community projection.');
-      }
+  const isAccountDeletion = url.pathname === '/api/account' && method === 'DELETE';
+  const isAccountExport = url.pathname === '/api/account/export' && method === 'GET';
+  const releaseMutation =
+    auth && !isAccountDeletion && (isAccountExport || !['GET', 'HEAD', 'OPTIONS'].includes(method))
+      ? await beginAccountMutation(env.DB, auth)
+      : undefined;
+  try {
+    if (url.pathname === '/api/insights/weekly' && method === 'GET') {
+      const who = requireIdentity(auth, 'activities:read');
+      return json(await getWeeklyRecap(env.DB, who));
     }
-    const [feed, upcoming, clubs] = await Promise.all([
-      activities(env, auth?.user.id).then((items) => withSocial(env.DB, items, auth?.user.id)),
-      events(env, auth?.user.id),
-      listClubs(env.DB, auth?.user.id),
-    ]);
-    return json({
-      viewer: auth?.user || null,
-      activities: feed,
-      events: upcoming,
-      clubs,
-      githubConfigured: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
-      atprotoConfigured: Boolean(env.ATPROTO_OAUTH_PRIVATE_KEY && env.ATPROTO_SESSION_KEY),
-    });
-  }
-  if (url.pathname === '/api/logout' && method === 'POST') {
-    const identity = requireIdentity(auth, undefined, true);
-    const session = cookie(request, 'dwm_session');
-    if (session && identity.provider === 'atproto') {
-      const client = await oauthClient(env);
-      await client.revoke(identity.user.id);
-      await env.DB.batch([
-        env.DB.prepare('DELETE FROM atproto_sessions WHERE did = ?').bind(identity.user.id),
-        env.DB.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(identity.user.id),
+    if (url.pathname === '/api/insights/github' && method === 'GET') {
+      const who = requireIdentity(auth, undefined, true);
+      return json(await getGithubInsights(env.DB, who));
+    }
+    if (url.pathname === '/api/bootstrap' && method === 'GET') {
+      if (auth?.agent)
+        throw new HttpError(403, 'Use the scoped /api/activities and /api/events endpoints.');
+      if (auth?.provider === 'atproto') {
+        try {
+          await syncAtprotoData(env, auth);
+        } catch {
+          console.warn('AT Protocol sync failed; serving the cached community projection.');
+        }
+      }
+      const [feed, upcoming, clubs] = await Promise.all([
+        activities(env, auth?.user.id).then((items) => withSocial(env.DB, items, auth?.user.id)),
+        events(env, auth?.user.id),
+        listClubs(env.DB, auth?.user.id),
       ]);
-    } else if (session) {
-      await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?')
-        .bind(await hash(session))
-        .run();
-    }
-    return new Response(null, {
-      status: 204,
-      headers: { 'Set-Cookie': setCookie(env, 'dwm_session', '', 0) },
-    });
-  }
-  if (url.pathname === '/api/account/export' && method === 'GET') {
-    return exportAccount(env, requireIdentity(auth, undefined, true));
-  }
-  if (url.pathname === '/api/account' && method === 'DELETE') {
-    return deleteAccount(env, requireIdentity(auth, undefined, true), request);
-  }
-  if (url.pathname === '/api/me' && method === 'PATCH') {
-    const identity = requireIdentity(auth, undefined, true);
-    const data = await body(request);
-    const sports = data['sports'];
-    if (!Array.isArray(sports) || sports.length > 7)
-      throw new HttpError(400, 'Choose up to seven sports.');
-    const selected = [...new Set(sports.map(sport))];
-    const name = text(data['name'], 'Name', 80);
-    const bio = text(data['bio'], 'Bio', 300, false);
-    if (identity.provider === 'atproto') {
-      if (visibility(data['visibility']) !== 'public')
-        throw new HttpError(400, 'AT Protocol profiles are public and cannot be made private.');
-      const agent = identity.atprotoAgent;
-      if (!agent) throw new HttpError(500, 'AT Protocol session is unavailable.');
-      const profileChanges = atprotoProfileChanges(
-        name,
-        bio,
-        identity.user.name,
-        identity.user.bio,
-      );
-      if (profileChanges)
-        await agent.upsertProfile((existing) => ({ ...existing, ...profileChanges }));
-      const profileRecord = {
-        $type: PROFILE_COLLECTION,
-        sports: selected,
-      };
-      await agent.com.atproto.repo.putRecord({
-        repo: identity.user.id,
-        collection: PROFILE_COLLECTION,
-        rkey: 'self',
-        record: profileRecord,
+      return json({
+        viewer: auth?.user || null,
+        activities: feed,
+        events: upcoming,
+        clubs,
+        githubConfigured: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
+        atprotoConfigured: Boolean(env.ATPROTO_OAUTH_PRIVATE_KEY && env.ATPROTO_SESSION_KEY),
       });
-      await env.DB.prepare(
-        'UPDATE atproto_accounts SET name = ?, bio = ?, sports = ?, updated_at = ? WHERE did = ?',
-      )
-        .bind(name, bio, JSON.stringify(selected), new Date().toISOString(), identity.user.id)
-        .run();
-      return json({ ok: true });
     }
-    await env.DB.prepare(
-      'UPDATE users SET name = ?, bio = ?, location = ?, sports = ?, visibility = ? WHERE id = ?',
-    )
-      .bind(
-        name,
-        bio,
-        text(data['location'], 'Location', 80, false),
-        JSON.stringify(selected),
-        visibility(data['visibility']),
-        identity.user.id,
-      )
-      .run();
-    return json({ ok: true });
-  }
-  if (url.pathname === '/api/activities' && method === 'GET') {
-    const identity = requireIdentity(auth, 'activities:read');
-    if (identity.provider === 'atproto') {
-      await syncAtprotoData(env, identity);
-      return json({ activities: await atprotoActivitiesByDid(env, identity.user.id, true) });
-    }
-    const result = await env.DB.prepare(
-      `${ACTIVITY_SELECT} WHERE a.user_id = ? ORDER BY a.occurred_at DESC LIMIT 100`,
-    )
-      .bind(identity.user.id)
-      .all<Activity>();
-    return json({ activities: result.results });
-  }
-  if (url.pathname === '/api/activities' && method === 'POST') {
-    const actor = requireIdentity(auth, 'activities:write');
-    const data = await body(request);
-    const { id, status } = await saveActivity(
-      env,
-      actor,
-      data,
-      request.headers.get('Idempotency-Key'),
-    );
-    return json({ id }, status);
-  }
-  if (url.pathname === '/api/activities/bulk' && method === 'POST') {
-    const actor = requireIdentity(auth, 'activities:write');
-    const data = await body(request, 1_048_576);
-    const items = data['activities'];
-    if (!Array.isArray(items) || items.length < 1 || items.length > 100)
-      throw new HttpError(400, 'Provide between 1 and 100 activities.');
-    if (request.headers.has('Idempotency-Key'))
-      throw new HttpError(400, 'Use an idempotencyKey on each activity, not a batch header.');
-    const results = [];
-    for (const [index, item] of items.entries()) {
-      try {
-        if (!item || typeof item !== 'object' || Array.isArray(item))
-          throw new HttpError(400, 'Expected an activity object.');
-        const { id, status } = await saveActivity(env, actor, item, item['idempotencyKey']);
-        results.push({ index, status, id });
-      } catch (error) {
-        if (!(error instanceof HttpError) || error.status >= 500) throw error;
-        results.push({ index, status: error.status, error: error.message });
+    if (url.pathname === '/api/logout' && method === 'POST') {
+      const identity = requireIdentity(auth, undefined, true);
+      const session = cookie(request, 'dwm_session');
+      if (session && identity.provider === 'atproto') {
+        const client = await oauthClient(env);
+        await client.revoke(identity.user.id);
+        await env.DB.batch([
+          env.DB.prepare('DELETE FROM atproto_sessions WHERE did = ?').bind(identity.user.id),
+          env.DB.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(identity.user.id),
+        ]);
+      } else if (session) {
+        await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?')
+          .bind(await hash(session))
+          .run();
       }
+      return new Response(null, {
+        status: 204,
+        headers: { 'Set-Cookie': setCookie(env, 'dwm_session', '', 0) },
+      });
     }
-    return json({ results });
-  }
-  const cardMatch = /^\/api\/activities\/([^/]+)\/card\.png$/.exec(url.pathname);
-  if (cardMatch && (method === 'GET' || method === 'HEAD'))
-    return activityCard(env, decodedPathPart(cardMatch[1]));
-  const photoMatch = /^\/api\/activities\/([^/]+)\/photo$/.exec(url.pathname);
-  if (photoMatch && method === 'GET') {
-    if (auth) requireIdentity(auth, 'activities:read');
-    const activityId = decodedPathPart(photoMatch[1]);
-    const row = await env.DB.prepare(
-      `SELECT a.photo_key AS key, a.photo_type AS type FROM activities a JOIN users u ON u.id = a.user_id
-      WHERE a.id = ? AND a.photo_key IS NOT NULL
-      AND (a.user_id = ? OR (a.visibility = 'public' AND u.visibility = 'public'))`,
-    )
-      .bind(activityId, auth?.user.id || '')
-      .first<{ key: string; type: string }>();
-    const object = row && (await env.PHOTOS.get(row.key));
-    if (!row || !object) throw new HttpError(404, 'Photo not found.');
-    return new Response(object.body, {
-      headers: {
-        'Content-Type': row.type,
-        'Content-Length': String(object.size),
-        'Cache-Control': 'private, max-age=300',
-        'Content-Security-Policy': "default-src 'none'; sandbox",
-        'Content-Disposition': 'inline',
-      },
-    });
-  }
-  if (photoMatch && (method === 'PUT' || method === 'DELETE')) {
-    const actor = requireIdentity(auth, 'activities:write');
-    if (actor.provider === 'atproto')
-      throw new HttpError(400, 'Activity photos are not supported for AT Protocol accounts yet.');
-    const activityId = decodedPathPart(photoMatch[1]);
-    const current = await env.DB.prepare(
-      'SELECT photo_key AS key FROM activities WHERE id = ? AND user_id = ?',
-    )
-      .bind(activityId, actor.user.id)
-      .first<{ key: string | null }>();
-    if (!current) throw new HttpError(404, 'Activity not found.');
-    let key: string | null = null;
-    let type: string | null = null;
-    if (method === 'PUT') {
-      const image = sanitizeImage(await readLimited(request, MAX_PHOTO_BYTES));
-      key = `activities/${activityId}/${crypto.randomUUID()}`;
-      type = image.type;
-      await env.PHOTOS.put(key, image.bytes, { httpMetadata: { contentType: image.type } });
+    if (url.pathname === '/api/account/export' && method === 'GET') {
+      return exportAccount(env, requireIdentity(auth, undefined, true), ctx);
     }
-    const result = await env.DB.prepare(
-      'UPDATE activities SET photo_key = ?, photo_type = ? WHERE id = ? AND user_id = ?',
-    )
-      .bind(key, type, activityId, actor.user.id)
-      .run();
-    if (!result.meta.changes) {
-      if (key) await env.PHOTOS.delete(key);
-      throw new HttpError(404, 'Activity not found.');
+    if (url.pathname === '/api/account' && method === 'DELETE') {
+      return deleteAccount(env, requireIdentity(auth, undefined, true), request);
     }
-    if (current.key) await env.PHOTOS.delete(current.key);
-    return json({
-      photo: key ? `/api/activities/${activityId}/photo?v=${key.slice(-12)}` : null,
-    });
-  }
-  if (url.pathname === '/api/activities/bulk-visibility' && method === 'PATCH') {
-    const { user } = requireIdentity(auth, undefined, true);
-    const data = await body(request);
-    const rawIds = data['ids'];
-    if (!Array.isArray(rawIds) || rawIds.length < 1 || rawIds.length > 100)
-      throw new HttpError(400, 'Select between 1 and 100 activities.');
-    const ids = [...new Set(rawIds.map((id) => text(id, 'Activity ID', 128)))];
-    const nextVisibility = visibility(data['visibility']);
-    const placeholders = ids.map(() => '?').join(', ');
-    const result = await env.DB.prepare(
-      `UPDATE activities SET visibility = ? WHERE user_id = ? AND id IN (${placeholders})
-      AND (SELECT COUNT(*) FROM activities WHERE user_id = ? AND id IN (${placeholders})) = ?`,
-    )
-      .bind(nextVisibility, user.id, ...ids, user.id, ...ids, ids.length)
-      .run();
-    if (result.meta.changes !== ids.length) throw new HttpError(404, 'Activity not found.');
-    return json({ ok: true, updated: ids.length });
-  }
-  const activityMatch = /^\/api\/activities\/([^/]+)$/.exec(url.pathname);
-  if (activityMatch && method === 'GET') {
-    if (auth) requireIdentity(auth, 'activities:read');
-    const activity = await visibleActivity(
-      env,
-      decodedPathPart(activityMatch[1]),
-      auth?.user.id || '',
-    );
-    if (!activity) throw new HttpError(404, 'Activity is private or does not exist.');
-    const [withCounts] = await withSocial(env.DB, [activity], auth?.user.id);
-    return json({ activity: withCounts });
-  }
-  if (activityMatch && (method === 'PATCH' || method === 'DELETE')) {
-    const identity = requireIdentity(auth, undefined, true);
-    const activityId = decodedPathPart(activityMatch[1]);
-    if (identity.provider === 'atproto') {
-      if (method === 'DELETE') {
-        const key = recordKey(activityId, identity.user.id, ACTIVITY_COLLECTION);
+    if (url.pathname === '/api/me' && method === 'PATCH') {
+      const identity = requireIdentity(auth, undefined, true);
+      const data = await body(request);
+      const sports = data['sports'];
+      if (!Array.isArray(sports) || sports.length > 7)
+        throw new HttpError(400, 'Choose up to seven sports.');
+      const selected = [...new Set(sports.map(sport))];
+      const name = text(data['name'], 'Name', 80);
+      const bio = text(data['bio'], 'Bio', 300, false);
+      if (identity.provider === 'atproto') {
+        if (visibility(data['visibility']) !== 'public')
+          throw new HttpError(400, 'AT Protocol profiles are public and cannot be made private.');
         const agent = identity.atprotoAgent;
         if (!agent) throw new HttpError(500, 'AT Protocol session is unavailable.');
-        await agent.com.atproto.repo.deleteRecord({
+        const profileChanges = atprotoProfileChanges(
+          name,
+          bio,
+          identity.user.name,
+          identity.user.bio,
+        );
+        if (profileChanges)
+          await agent.upsertProfile((existing) => ({ ...existing, ...profileChanges }));
+        const profileRecord = {
+          $type: PROFILE_COLLECTION,
+          sports: selected,
+        };
+        await agent.com.atproto.repo.putRecord({
           repo: identity.user.id,
-          collection: ACTIVITY_COLLECTION,
-          rkey: key,
+          collection: PROFILE_COLLECTION,
+          rkey: 'self',
+          record: profileRecord,
         });
-        await env.DB.batch([
-          env.DB.prepare('DELETE FROM atproto_activities WHERE uri = ? AND did = ?').bind(
-            activityId,
-            identity.user.id,
-          ),
-          ...deleteActivitySocial(env.DB, activityId),
-        ]);
+        await env.DB.prepare(
+          'UPDATE atproto_accounts SET name = ?, bio = ?, sports = ?, updated_at = ? WHERE did = ?',
+        )
+          .bind(name, bio, JSON.stringify(selected), new Date().toISOString(), identity.user.id)
+          .run();
+        return json({ ok: true });
+      }
+      await env.DB.prepare(
+        'UPDATE users SET name = ?, bio = ?, location = ?, sports = ?, visibility = ? WHERE id = ?',
+      )
+        .bind(
+          name,
+          bio,
+          text(data['location'], 'Location', 80, false),
+          JSON.stringify(selected),
+          visibility(data['visibility']),
+          identity.user.id,
+        )
+        .run();
+      return json({ ok: true });
+    }
+    if (url.pathname === '/api/activities' && method === 'GET') {
+      const identity = requireIdentity(auth, 'activities:read');
+      if (identity.provider === 'atproto') {
+        await syncAtprotoData(env, identity);
+        return json({ activities: await atprotoActivitiesByDid(env, identity.user.id, true) });
+      }
+      const result = await env.DB.prepare(
+        `${ACTIVITY_SELECT} WHERE a.user_id = ? ORDER BY a.occurred_at DESC LIMIT 100`,
+      )
+        .bind(identity.user.id)
+        .all<Activity>();
+      return json({ activities: result.results });
+    }
+    if (url.pathname === '/api/activities' && method === 'POST') {
+      const actor = requireIdentity(auth, 'activities:write');
+      const data = await body(request);
+      const { id, status } = await saveActivity(
+        env,
+        actor,
+        data,
+        request.headers.get('Idempotency-Key'),
+      );
+      return json({ id }, status);
+    }
+    if (url.pathname === '/api/activities/bulk' && method === 'POST') {
+      const actor = requireIdentity(auth, 'activities:write');
+      const data = await body(request, 1_048_576);
+      const items = data['activities'];
+      if (!Array.isArray(items) || items.length < 1 || items.length > 100)
+        throw new HttpError(400, 'Provide between 1 and 100 activities.');
+      if (request.headers.has('Idempotency-Key'))
+        throw new HttpError(400, 'Use an idempotencyKey on each activity, not a batch header.');
+      const results = [];
+      for (const [index, item] of items.entries()) {
+        try {
+          if (!item || typeof item !== 'object' || Array.isArray(item))
+            throw new HttpError(400, 'Expected an activity object.');
+          const { id, status } = await saveActivity(env, actor, item, item['idempotencyKey']);
+          results.push({ index, status, id });
+        } catch (error) {
+          if (!(error instanceof HttpError) || error.status >= 500) throw error;
+          results.push({ index, status: error.status, error: error.message });
+        }
+      }
+      return json({ results });
+    }
+    const cardMatch = /^\/api\/activities\/([^/]+)\/card\.png$/.exec(url.pathname);
+    if (cardMatch && (method === 'GET' || method === 'HEAD'))
+      return activityCard(env, decodedPathPart(cardMatch[1]));
+    const photoMatch = /^\/api\/activities\/([^/]+)\/photo$/.exec(url.pathname);
+    if (photoMatch && method === 'GET') {
+      if (auth) requireIdentity(auth, 'activities:read');
+      const activityId = decodedPathPart(photoMatch[1]);
+      const row = await env.DB.prepare(
+        `SELECT a.photo_key AS key, a.photo_type AS type FROM activities a JOIN users u ON u.id = a.user_id
+      WHERE a.id = ? AND a.photo_key IS NOT NULL
+      AND (a.user_id = ? OR (a.visibility = 'public' AND u.visibility = 'public'))`,
+      )
+        .bind(activityId, auth?.user.id || '')
+        .first<{ key: string; type: string }>();
+      const object = row && (await env.PHOTOS.get(row.key));
+      if (!row || !object) throw new HttpError(404, 'Photo not found.');
+      return new Response(object.body, {
+        headers: {
+          'Content-Type': row.type,
+          'Content-Length': String(object.size),
+          'Cache-Control': 'private, max-age=300',
+          'Content-Security-Policy': "default-src 'none'; sandbox",
+          'Content-Disposition': 'inline',
+        },
+      });
+    }
+    if (photoMatch && (method === 'PUT' || method === 'DELETE')) {
+      const actor = requireIdentity(auth, 'activities:write');
+      if (actor.provider === 'atproto')
+        throw new HttpError(400, 'Activity photos are not supported for AT Protocol accounts yet.');
+      const activityId = decodedPathPart(photoMatch[1]);
+      const current = await env.DB.prepare(
+        'SELECT photo_key AS key FROM activities WHERE id = ? AND user_id = ?',
+      )
+        .bind(activityId, actor.user.id)
+        .first<{ key: string | null }>();
+      if (!current) throw new HttpError(404, 'Activity not found.');
+      let key: string | null = null;
+      let type: string | null = null;
+      if (method === 'PUT') {
+        const image = sanitizeImage(await readLimited(request, MAX_PHOTO_BYTES));
+        key = `activities/${activityId}/${crypto.randomUUID()}`;
+        type = image.type;
+        await env.PHOTOS.put(key, image.bytes, { httpMetadata: { contentType: image.type } });
+      }
+      const result = await env.DB.prepare(
+        'UPDATE activities SET photo_key = ?, photo_type = ? WHERE id = ? AND user_id = ?',
+      )
+        .bind(key, type, activityId, actor.user.id)
+        .run();
+      if (!result.meta.changes) {
+        if (key) await env.PHOTOS.delete(key);
+        throw new HttpError(404, 'Activity not found.');
+      }
+      if (current.key) await env.PHOTOS.delete(current.key);
+      return json({
+        photo: key ? `/api/activities/${activityId}/photo?v=${key.slice(-12)}` : null,
+      });
+    }
+    if (url.pathname === '/api/activities/bulk-visibility' && method === 'PATCH') {
+      const { user } = requireIdentity(auth, undefined, true);
+      const data = await body(request);
+      const rawIds = data['ids'];
+      if (!Array.isArray(rawIds) || rawIds.length < 1 || rawIds.length > 100)
+        throw new HttpError(400, 'Select between 1 and 100 activities.');
+      const ids = [...new Set(rawIds.map((id) => text(id, 'Activity ID', 128)))];
+      const nextVisibility = visibility(data['visibility']);
+      const placeholders = ids.map(() => '?').join(', ');
+      const result = await env.DB.prepare(
+        `UPDATE activities SET visibility = ? WHERE user_id = ? AND id IN (${placeholders})
+      AND (SELECT COUNT(*) FROM activities WHERE user_id = ? AND id IN (${placeholders})) = ?`,
+      )
+        .bind(nextVisibility, user.id, ...ids, user.id, ...ids, ids.length)
+        .run();
+      if (result.meta.changes !== ids.length) throw new HttpError(404, 'Activity not found.');
+      return json({ ok: true, updated: ids.length });
+    }
+    const activityMatch = /^\/api\/activities\/([^/]+)$/.exec(url.pathname);
+    if (activityMatch && method === 'GET') {
+      if (auth) requireIdentity(auth, 'activities:read');
+      const activity = await visibleActivity(
+        env,
+        decodedPathPart(activityMatch[1]),
+        auth?.user.id || '',
+      );
+      if (!activity) throw new HttpError(404, 'Activity is private or does not exist.');
+      const [withCounts] = await withSocial(env.DB, [activity], auth?.user.id);
+      return json({ activity: withCounts });
+    }
+    if (activityMatch && (method === 'PATCH' || method === 'DELETE')) {
+      const identity = requireIdentity(auth, undefined, true);
+      const activityId = decodedPathPart(activityMatch[1]);
+      if (identity.provider === 'atproto') {
+        if (method === 'DELETE') {
+          const key = recordKey(activityId, identity.user.id, ACTIVITY_COLLECTION);
+          const agent = identity.atprotoAgent;
+          if (!agent) throw new HttpError(500, 'AT Protocol session is unavailable.');
+          await agent.com.atproto.repo.deleteRecord({
+            repo: identity.user.id,
+            collection: ACTIVITY_COLLECTION,
+            rkey: key,
+          });
+          await env.DB.batch([
+            env.DB.prepare('DELETE FROM atproto_activities WHERE uri = ? AND did = ?').bind(
+              activityId,
+              identity.user.id,
+            ),
+            ...deleteActivitySocial(env.DB, activityId),
+          ]);
+        } else {
+          const data = await body(request);
+          if (visibility(data['visibility']) !== 'public')
+            throw new HttpError(
+              400,
+              'AT Protocol activities are public and cannot be made private.',
+            );
+          const exists = await env.DB.prepare(
+            'SELECT 1 AS found FROM atproto_activities WHERE uri = ? AND did = ?',
+          )
+            .bind(activityId, identity.user.id)
+            .first();
+          if (!exists) throw new HttpError(404, 'Activity not found.');
+        }
+        return json({ ok: true });
+      }
+      if (method === 'DELETE') {
+        try {
+          const owned = await env.DB.prepare(
+            'SELECT 1 AS found FROM activities WHERE id = ? AND user_id = ?',
+          )
+            .bind(activityId, identity.user.id)
+            .first();
+          if (!owned) throw new HttpError(404, 'Activity not found.');
+          // The photo key is queued in the same transaction as the delete, so it survives R2 failures.
+          const [, deleted] = await env.DB.batch([
+            env.DB.prepare(
+              `INSERT OR IGNORE INTO photo_deletions (key, queued_at)
+            SELECT photo_key, ? FROM activities
+            WHERE id = ? AND user_id = ? AND photo_key IS NOT NULL`,
+            ).bind(new Date().toISOString(), activityId, identity.user.id),
+            env.DB.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(
+              activityId,
+              identity.user.id,
+            ),
+            ...deleteActivitySocial(env.DB, activityId),
+          ]);
+          if (!deleted?.meta.changes) throw new HttpError(404, 'Activity not found.');
+        } finally {
+          await purgeDeletedPhotos(env);
+        }
       } else {
         const data = await body(request);
-        if (visibility(data['visibility']) !== 'public')
-          throw new HttpError(400, 'AT Protocol activities are public and cannot be made private.');
-        const exists = await env.DB.prepare(
-          'SELECT 1 AS found FROM atproto_activities WHERE uri = ? AND did = ?',
+        const result = await env.DB.prepare(
+          'UPDATE activities SET visibility = ? WHERE id = ? AND user_id = ?',
         )
-          .bind(activityId, identity.user.id)
-          .first();
-        if (!exists) throw new HttpError(404, 'Activity not found.');
+          .bind(visibility(data['visibility']), activityId, identity.user.id)
+          .run();
+        if (!result.meta.changes) throw new HttpError(404, 'Activity not found.');
       }
       return json({ ok: true });
     }
-    if (method === 'DELETE') {
-      try {
-        const owned = await env.DB.prepare(
-          'SELECT 1 AS found FROM activities WHERE id = ? AND user_id = ?',
-        )
-          .bind(activityId, identity.user.id)
-          .first();
-        if (!owned) throw new HttpError(404, 'Activity not found.');
-        // The photo key is queued in the same transaction as the delete, so it survives R2 failures.
-        const [, deleted] = await env.DB.batch([
-          env.DB.prepare(
-            `INSERT OR IGNORE INTO photo_deletions (key, queued_at)
-            SELECT photo_key, ? FROM activities
-            WHERE id = ? AND user_id = ? AND photo_key IS NOT NULL`,
-          ).bind(new Date().toISOString(), activityId, identity.user.id),
-          env.DB.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(
-            activityId,
-            identity.user.id,
-          ),
-          ...deleteActivitySocial(env.DB, activityId),
-        ]);
-        if (!deleted?.meta.changes) throw new HttpError(404, 'Activity not found.');
-      } finally {
-        await purgeDeletedPhotos(env);
-      }
-    } else {
-      const data = await body(request);
-      const result = await env.DB.prepare(
-        'UPDATE activities SET visibility = ? WHERE id = ? AND user_id = ?',
-      )
-        .bind(visibility(data['visibility']), activityId, identity.user.id)
-        .run();
-      if (!result.meta.changes) throw new HttpError(404, 'Activity not found.');
+    if (url.pathname === '/api/events' && method === 'GET') {
+      if (auth) requireIdentity(auth, 'events:read');
+      return json({ events: await events(env, auth?.user.id) });
     }
-    return json({ ok: true });
-  }
-  if (url.pathname === '/api/events' && method === 'GET') {
-    if (auth) requireIdentity(auth, 'events:read');
-    return json({ events: await events(env, auth?.user.id) });
-  }
-  if (url.pathname === '/api/events' && method === 'POST') {
-    const identity = requireIdentity(auth, undefined, true);
-    const data = await body(request);
-    const fields = eventFields(data);
-    const clubId = await eventClub(env.DB, identity.user, data['clubId']);
-    if (identity.provider === 'atproto') {
-      const id = await saveAtprotoEvent(env, identity, fields, clubId);
+    if (url.pathname === '/api/events' && method === 'POST') {
+      const identity = requireIdentity(auth, undefined, true);
+      const data = await body(request);
+      const fields = eventFields(data);
+      const clubId = await eventClub(env.DB, identity.user, data['clubId']);
+      if (identity.provider === 'atproto') {
+        const id = await saveAtprotoEvent(env, identity, fields, clubId);
+        return json({ id }, 201);
+      }
+      const id = crypto.randomUUID();
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO events (id, host_id, title, sport, starts_at, location, description, level, capacity, conference_name, conference_url, club_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(id, identity.user.id, ...fields, clubId),
+        env.DB.prepare('INSERT INTO event_attendees (event_id, user_id) VALUES (?, ?)').bind(
+          id,
+          identity.user.id,
+        ),
+      ]);
       return json({ id }, 201);
     }
-    const id = crypto.randomUUID();
-    await env.DB.batch([
-      env.DB.prepare(
-        `INSERT INTO events (id, host_id, title, sport, starts_at, location, description, level, capacity, conference_name, conference_url, club_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, identity.user.id, ...fields, clubId),
-      env.DB.prepare('INSERT INTO event_attendees (event_id, user_id) VALUES (?, ?)').bind(
-        id,
-        identity.user.id,
-      ),
-    ]);
-    return json({ id }, 201);
-  }
-  const attendeeMatch = /^\/api\/events\/([^/]+)\/attendees$/.exec(url.pathname);
-  const attendeeEventId = attendeeMatch ? decodedPathPart(attendeeMatch[1]) : '';
-  if (attendeeMatch && method === 'GET') {
-    const identity = requireIdentity(auth, undefined, true);
-    if (attendeeEventId.startsWith('at://')) {
-      const event = await env.DB.prepare('SELECT did FROM atproto_events WHERE uri = ?')
-        .bind(attendeeEventId)
-        .first<{ did: string }>();
-      if (!event) throw new HttpError(404, 'Event not found.');
-      if (event.did !== identity.user.id)
-        throw new HttpError(403, 'Only the host can view event attendees.');
-      const attendees = await env.DB.prepare(
-        `SELECT name, avatar FROM (
+    const attendeeMatch = /^\/api\/events\/([^/]+)\/attendees$/.exec(url.pathname);
+    const attendeeEventId = attendeeMatch ? decodedPathPart(attendeeMatch[1]) : '';
+    if (attendeeMatch && method === 'GET') {
+      const identity = requireIdentity(auth, undefined, true);
+      if (attendeeEventId.startsWith('at://')) {
+        const event = await env.DB.prepare('SELECT did FROM atproto_events WHERE uri = ?')
+          .bind(attendeeEventId)
+          .first<{ did: string }>();
+        if (!event) throw new HttpError(404, 'Event not found.');
+        if (event.did !== identity.user.id)
+          throw new HttpError(403, 'Only the host can view event attendees.');
+        const attendees = await env.DB.prepare(
+          `SELECT name, avatar FROM (
           SELECT u.name AS name, u.avatar AS avatar
           FROM atproto_event_attendees a JOIN users u
             ON a.attendee_id = 'github:' || u.id
@@ -1854,19 +2151,19 @@ async function handle(request: Request, env: Env): Promise<Response> {
             ON a.attendee_id = 'atproto:' || u.did
           WHERE a.event_uri = ? AND a.attendee_id LIKE 'atproto:%'
         ) ORDER BY name`,
-      )
-        .bind(attendeeEventId, attendeeEventId)
-        .all<{ name: string; avatar: string }>();
-      return json({ attendees: attendees.results });
-    }
-    const event = await env.DB.prepare('SELECT host_id FROM events WHERE id = ?')
-      .bind(attendeeEventId)
-      .first<{ host_id: string }>();
-    if (!event) throw new HttpError(404, 'Event not found.');
-    if (event.host_id !== identity.user.id)
-      throw new HttpError(403, 'Only the host can view event attendees.');
-    const attendees = await env.DB.prepare(
-      `SELECT name, avatar FROM (
+        )
+          .bind(attendeeEventId, attendeeEventId)
+          .all<{ name: string; avatar: string }>();
+        return json({ attendees: attendees.results });
+      }
+      const event = await env.DB.prepare('SELECT host_id FROM events WHERE id = ?')
+        .bind(attendeeEventId)
+        .first<{ host_id: string }>();
+      if (!event) throw new HttpError(404, 'Event not found.');
+      if (event.host_id !== identity.user.id)
+        throw new HttpError(403, 'Only the host can view event attendees.');
+      const attendees = await env.DB.prepare(
+        `SELECT name, avatar FROM (
         SELECT u.name AS name, u.avatar AS avatar
         FROM event_attendees a JOIN users u ON u.id = a.user_id
         WHERE a.event_id = ?
@@ -1877,242 +2174,265 @@ async function handle(request: Request, env: Env): Promise<Response> {
           ON a.attendee_id = 'atproto:' || u.did
         WHERE a.event_id = ? AND a.attendee_id LIKE 'atproto:%'
       ) ORDER BY name`,
-    )
-      .bind(attendeeEventId, attendeeEventId)
-      .all<{ name: string; avatar: string }>();
-    return json({ attendees: attendees.results });
-  }
-  const eventMatch = /^\/api\/events\/([^/]+)(\/join)?$/.exec(url.pathname);
-  const eventId = eventMatch ? decodedPathPart(eventMatch[1]) : '';
-  if (eventMatch && !eventMatch[2] && method === 'PATCH') {
-    const identity = requireIdentity(auth, undefined, true);
-    const data = await body(request);
-    const fields = eventFields(data);
-    const updateClub = 'clubId' in data;
-    const clubId = updateClub ? await eventClub(env.DB, identity.user, data['clubId']) : null;
-    if (eventId.startsWith('at://')) {
-      if (identity.provider !== 'atproto')
-        throw new HttpError(403, 'Only the AT Protocol event host can edit this event.');
-      const key = recordKey(eventId, identity.user.id, EVENT_COLLECTION);
-      const event = await env.DB.prepare(
-        `SELECT record_json AS record, starts_at AS startsAt,
+      )
+        .bind(attendeeEventId, attendeeEventId)
+        .all<{ name: string; avatar: string }>();
+      return json({ attendees: attendees.results });
+    }
+    const eventMatch = /^\/api\/events\/([^/]+)(\/join)?$/.exec(url.pathname);
+    const eventId = eventMatch ? decodedPathPart(eventMatch[1]) : '';
+    if (eventMatch && !eventMatch[2] && method === 'PATCH') {
+      const identity = requireIdentity(auth, undefined, true);
+      const data = await body(request);
+      const fields = eventFields(data);
+      const updateClub = 'clubId' in data;
+      const clubId = updateClub ? await eventClub(env.DB, identity.user, data['clubId']) : null;
+      if (eventId.startsWith('at://')) {
+        if (identity.provider !== 'atproto')
+          throw new HttpError(403, 'Only the AT Protocol event host can edit this event.');
+        const key = recordKey(eventId, identity.user.id, EVENT_COLLECTION);
+        const event = await env.DB.prepare(
+          `SELECT record_json AS record, starts_at AS startsAt,
           (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = atproto_events.uri) AS attendees
         FROM atproto_events WHERE uri = ? AND did = ?`,
-      )
-        .bind(eventId, identity.user.id)
-        .first<{ record: string; startsAt: string; attendees: number }>();
-      if (!event || event.startsAt <= new Date().toISOString())
-        throw new HttpError(404, 'Event is no longer available.');
-      if (event.attendees > fields[6])
-        throw new HttpError(
-          409,
-          `${event.attendees} people are already going. Capacity can’t be lower than that.`,
-        );
-      const nextRecord = eventRecord(fields);
-      const indexed = await env.DB.prepare(
-        `UPDATE atproto_events SET record_json = ?, title = ?, sport = ?, starts_at = ?,
+        )
+          .bind(eventId, identity.user.id)
+          .first<{ record: string; startsAt: string; attendees: number }>();
+        if (!event || event.startsAt <= new Date().toISOString())
+          throw new HttpError(404, 'Event is no longer available.');
+        if (event.attendees > fields[6])
+          throw new HttpError(
+            409,
+            `${event.attendees} people are already going. Capacity can’t be lower than that.`,
+          );
+        const nextRecord = eventRecord(fields);
+        const indexed = await env.DB.prepare(
+          `UPDATE atproto_events SET record_json = ?, title = ?, sport = ?, starts_at = ?,
           location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ?
         WHERE uri = ? AND did = ? AND
           (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = ?) <= ?`,
-      )
-        .bind(JSON.stringify(nextRecord), ...fields, eventId, identity.user.id, eventId, fields[6])
-        .run();
-      if (!indexed.meta.changes)
-        throw new HttpError(409, 'Event capacity changed. Please review the attendee count.');
-      try {
-        await identity.atprotoAgent!.com.atproto.repo.putRecord({
-          repo: identity.user.id,
-          collection: EVENT_COLLECTION,
-          rkey: key,
-          record: nextRecord,
-        });
-      } catch (error) {
-        const previous = JSON.parse(event.record) as Record<string, unknown>;
-        await env.DB.prepare(
-          `UPDATE atproto_events SET record_json = ?, title = ?, sport = ?, starts_at = ?,
-            location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ? WHERE uri = ? AND did = ?`,
         )
           .bind(
-            event.record,
-            previous['title'],
-            previous['sport'],
-            previous['startsAt'],
-            previous['location'],
-            previous['description'],
-            previous['level'],
-            previous['capacity'],
-            previous['conferenceName'] ?? null,
-            previous['conferenceUrl'] ?? null,
+            JSON.stringify(nextRecord),
+            ...fields,
             eventId,
             identity.user.id,
+            eventId,
+            fields[6],
           )
           .run();
-        throw error;
+        if (!indexed.meta.changes)
+          throw new HttpError(409, 'Event capacity changed. Please review the attendee count.');
+        try {
+          await identity.atprotoAgent!.com.atproto.repo.putRecord({
+            repo: identity.user.id,
+            collection: EVENT_COLLECTION,
+            rkey: key,
+            record: nextRecord,
+          });
+        } catch (error) {
+          const previous = JSON.parse(event.record) as Record<string, unknown>;
+          await env.DB.prepare(
+            `UPDATE atproto_events SET record_json = ?, title = ?, sport = ?, starts_at = ?,
+            location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ? WHERE uri = ? AND did = ?`,
+          )
+            .bind(
+              event.record,
+              previous['title'],
+              previous['sport'],
+              previous['startsAt'],
+              previous['location'],
+              previous['description'],
+              previous['level'],
+              previous['capacity'],
+              previous['conferenceName'] ?? null,
+              previous['conferenceUrl'] ?? null,
+              eventId,
+              identity.user.id,
+            )
+            .run();
+          throw error;
+        }
+        if (updateClub)
+          await env.DB.prepare('UPDATE atproto_events SET club_id = ? WHERE uri = ? AND did = ?')
+            .bind(clubId, eventId, identity.user.id)
+            .run();
+        return json({ ok: true });
       }
-      if (updateClub)
-        await env.DB.prepare('UPDATE atproto_events SET club_id = ? WHERE uri = ? AND did = ?')
-          .bind(clubId, eventId, identity.user.id)
-          .run();
-      return json({ ok: true });
-    }
-    const id = eventId;
-    const event = await env.DB.prepare(
-      `SELECT host_id, starts_at, cancelled,
+      const id = eventId;
+      const event = await env.DB.prepare(
+        `SELECT host_id, starts_at, cancelled,
       (SELECT COUNT(*) FROM event_attendees WHERE event_id = events.id) +
       (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = events.id) AS attendees
       FROM events WHERE id = ?`,
-    )
-      .bind(id)
-      .first<{ host_id: string; starts_at: string; cancelled: number; attendees: number }>();
-    if (!event || event.cancelled || event.starts_at <= new Date().toISOString())
-      throw new HttpError(404, 'Event is no longer available.');
-    if (event.host_id !== identity.user.id)
-      throw new HttpError(403, 'Only the host can edit an event.');
-    const result = await env.DB.prepare(
-      `UPDATE events SET title = ?, sport = ?, starts_at = ?, location = ?, description = ?,
+      )
+        .bind(id)
+        .first<{ host_id: string; starts_at: string; cancelled: number; attendees: number }>();
+      if (!event || event.cancelled || event.starts_at <= new Date().toISOString())
+        throw new HttpError(404, 'Event is no longer available.');
+      if (event.host_id !== identity.user.id)
+        throw new HttpError(403, 'Only the host can edit an event.');
+      const result = await env.DB.prepare(
+        `UPDATE events SET title = ?, sport = ?, starts_at = ?, location = ?, description = ?,
       level = ?, capacity = ?, conference_name = ?, conference_url = ?,
       club_id = CASE WHEN ? THEN ? ELSE club_id END
       WHERE id = ? AND host_id = ? AND cancelled = 0
       AND (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) +
       (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = ?) <= ?`,
-    )
-      .bind(...fields, updateClub ? 1 : 0, clubId, id, identity.user.id, id, id, fields[6])
-      .run();
-    if (!result.meta.changes)
-      throw new HttpError(
-        409,
-        `${event.attendees} people are already going. Capacity can’t be lower than that.`,
-      );
-    return json({ ok: true });
-  }
-  if (eventMatch && method === 'POST') {
-    const identity = requireIdentity(auth, undefined, true);
-    if (eventId.startsWith('at://')) {
-      const event = await env.DB.prepare(
-        `SELECT did, starts_at AS startsAt FROM atproto_events WHERE uri = ?`,
       )
-        .bind(eventId)
-        .first<{ did: string; startsAt: string }>();
-      if (!event || event.startsAt <= new Date().toISOString())
+        .bind(...fields, updateClub ? 1 : 0, clubId, id, identity.user.id, id, id, fields[6])
+        .run();
+      if (!result.meta.changes)
+        throw new HttpError(
+          409,
+          `${event.attendees} people are already going. Capacity can’t be lower than that.`,
+        );
+      return json({ ok: true });
+    }
+    if (eventMatch && method === 'POST') {
+      const identity = requireIdentity(auth, undefined, true);
+      if (eventId.startsWith('at://')) {
+        const event = await env.DB.prepare(
+          `SELECT did, starts_at AS startsAt FROM atproto_events WHERE uri = ?`,
+        )
+          .bind(eventId)
+          .first<{ did: string; startsAt: string }>();
+        if (!event || event.startsAt <= new Date().toISOString())
+          throw new HttpError(404, 'Event is no longer available.');
+        if (eventMatch[2]) {
+          const data = await body(request);
+          if (typeof data['join'] !== 'boolean')
+            throw new HttpError(400, 'Specify whether to join or leave.');
+          const attendeeId = `${identity.provider}:${identity.user.id}`;
+          if (data['join']) {
+            if (event.did === identity.user.id)
+              throw new HttpError(400, 'As host, cancel the event instead of joining.');
+            await env.DB.prepare(
+              `INSERT OR IGNORE INTO atproto_event_attendees (event_uri, attendee_id)
+            SELECT uri, ? FROM atproto_events WHERE uri = ? AND starts_at > ? AND
+              (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = ?) < capacity`,
+            )
+              .bind(attendeeId, eventId, new Date().toISOString(), eventId)
+              .run();
+            const joined = await env.DB.prepare(
+              'SELECT 1 AS joined FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?',
+            )
+              .bind(eventId, attendeeId)
+              .first();
+            if (!joined) throw new HttpError(409, 'This event is full.');
+          } else {
+            if (event.did === identity.user.id)
+              throw new HttpError(400, 'As host, cancel the event instead of leaving.');
+            await env.DB.prepare(
+              'DELETE FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?',
+            )
+              .bind(eventId, attendeeId)
+              .run();
+          }
+        } else {
+          if (identity.provider !== 'atproto' || event.did !== identity.user.id)
+            throw new HttpError(403, 'Only the host can cancel an event.');
+          const key = recordKey(eventId, identity.user.id, EVENT_COLLECTION);
+          await identity.atprotoAgent!.com.atproto.repo.deleteRecord({
+            repo: identity.user.id,
+            collection: EVENT_COLLECTION,
+            rkey: key,
+          });
+          await env.DB.prepare('DELETE FROM atproto_events WHERE uri = ? AND did = ?')
+            .bind(eventId, identity.user.id)
+            .run();
+        }
+        return json({ ok: true });
+      }
+      const id = eventId;
+      const event = await env.DB.prepare(
+        'SELECT host_id, starts_at, cancelled FROM events WHERE id = ?',
+      )
+        .bind(id)
+        .first<{ host_id: string; starts_at: string; cancelled: number }>();
+      if (!event || event.cancelled || event.starts_at <= new Date().toISOString())
         throw new HttpError(404, 'Event is no longer available.');
       if (eventMatch[2]) {
         const data = await body(request);
         if (typeof data['join'] !== 'boolean')
           throw new HttpError(400, 'Specify whether to join or leave.');
-        const attendeeId = `${identity.provider}:${identity.user.id}`;
         if (data['join']) {
-          if (event.did === identity.user.id)
-            throw new HttpError(400, 'As host, cancel the event instead of joining.');
-          await env.DB.prepare(
-            `INSERT OR IGNORE INTO atproto_event_attendees (event_uri, attendee_id)
-            SELECT uri, ? FROM atproto_events WHERE uri = ? AND starts_at > ? AND
-              (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = ?) < capacity`,
-          )
-            .bind(attendeeId, eventId, new Date().toISOString(), eventId)
-            .run();
-          const joined = await env.DB.prepare(
-            'SELECT 1 AS joined FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?',
-          )
-            .bind(eventId, attendeeId)
-            .first();
+          if (identity.provider === 'atproto') {
+            await env.DB.prepare(
+              `INSERT OR IGNORE INTO atproto_external_event_attendees (event_id, attendee_id)
+            SELECT id, ? FROM events WHERE id = ? AND cancelled = 0 AND
+              (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) +
+              (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = ?) < capacity`,
+            )
+              .bind(`atproto:${identity.user.id}`, id, id, id)
+              .run();
+          } else {
+            await env.DB.prepare(
+              `INSERT OR IGNORE INTO event_attendees (event_id, user_id)
+            SELECT id, ? FROM events WHERE id = ? AND cancelled = 0 AND
+              (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) +
+              (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = ?) < capacity`,
+            )
+              .bind(identity.user.id, id, id, id)
+              .run();
+          }
+          const joined =
+            identity.provider === 'atproto'
+              ? await env.DB.prepare(
+                  'SELECT 1 AS joined FROM atproto_external_event_attendees WHERE event_id = ? AND attendee_id = ?',
+                )
+                  .bind(id, `atproto:${identity.user.id}`)
+                  .first()
+              : await env.DB.prepare(
+                  'SELECT 1 AS joined FROM event_attendees WHERE event_id = ? AND user_id = ?',
+                )
+                  .bind(id, identity.user.id)
+                  .first();
           if (!joined) throw new HttpError(409, 'This event is full.');
         } else {
-          if (event.did === identity.user.id)
+          if (event.host_id === identity.user.id)
             throw new HttpError(400, 'As host, cancel the event instead of leaving.');
-          await env.DB.prepare(
-            'DELETE FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?',
-          )
-            .bind(eventId, attendeeId)
-            .run();
+          if (identity.provider === 'atproto') {
+            await env.DB.prepare(
+              'DELETE FROM atproto_external_event_attendees WHERE event_id = ? AND attendee_id = ?',
+            )
+              .bind(id, `atproto:${identity.user.id}`)
+              .run();
+          } else {
+            await env.DB.prepare('DELETE FROM event_attendees WHERE event_id = ? AND user_id = ?')
+              .bind(id, identity.user.id)
+              .run();
+          }
         }
       } else {
-        if (identity.provider !== 'atproto' || event.did !== identity.user.id)
+        if (event.host_id !== identity.user.id)
           throw new HttpError(403, 'Only the host can cancel an event.');
-        const key = recordKey(eventId, identity.user.id, EVENT_COLLECTION);
-        await identity.atprotoAgent!.com.atproto.repo.deleteRecord({
-          repo: identity.user.id,
-          collection: EVENT_COLLECTION,
-          rkey: key,
-        });
-        await env.DB.prepare('DELETE FROM atproto_events WHERE uri = ? AND did = ?')
-          .bind(eventId, identity.user.id)
-          .run();
+        await env.DB.prepare('UPDATE events SET cancelled = 1 WHERE id = ?').bind(id).run();
       }
       return json({ ok: true });
     }
-    const id = eventId;
-    const event = await env.DB.prepare(
-      'SELECT host_id, starts_at, cancelled FROM events WHERE id = ?',
-    )
-      .bind(id)
-      .first<{ host_id: string; starts_at: string; cancelled: number }>();
-    if (!event || event.cancelled || event.starts_at <= new Date().toISOString())
-      throw new HttpError(404, 'Event is no longer available.');
-    if (eventMatch[2]) {
-      const data = await body(request);
-      if (typeof data['join'] !== 'boolean')
-        throw new HttpError(400, 'Specify whether to join or leave.');
-      if (data['join']) {
-        if (identity.provider === 'atproto') {
-          await env.DB.prepare(
-            `INSERT OR IGNORE INTO atproto_external_event_attendees (event_id, attendee_id)
-            SELECT id, ? FROM events WHERE id = ? AND cancelled = 0 AND
-              (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) +
-              (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = ?) < capacity`,
-          )
-            .bind(`atproto:${identity.user.id}`, id, id, id)
-            .run();
-        } else {
-          await env.DB.prepare(
-            `INSERT OR IGNORE INTO event_attendees (event_id, user_id)
-            SELECT id, ? FROM events WHERE id = ? AND cancelled = 0 AND
-              (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) +
-              (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = ?) < capacity`,
-          )
-            .bind(identity.user.id, id, id, id)
-            .run();
-        }
-        const joined =
-          identity.provider === 'atproto'
-            ? await env.DB.prepare(
-                'SELECT 1 AS joined FROM atproto_external_event_attendees WHERE event_id = ? AND attendee_id = ?',
-              )
-                .bind(id, `atproto:${identity.user.id}`)
-                .first()
-            : await env.DB.prepare(
-                'SELECT 1 AS joined FROM event_attendees WHERE event_id = ? AND user_id = ?',
-              )
-                .bind(id, identity.user.id)
-                .first();
-        if (!joined) throw new HttpError(409, 'This event is full.');
-      } else {
-        if (event.host_id === identity.user.id)
-          throw new HttpError(400, 'As host, cancel the event instead of leaving.');
-        if (identity.provider === 'atproto') {
-          await env.DB.prepare(
-            'DELETE FROM atproto_external_event_attendees WHERE event_id = ? AND attendee_id = ?',
-          )
-            .bind(id, `atproto:${identity.user.id}`)
-            .run();
-        } else {
-          await env.DB.prepare('DELETE FROM event_attendees WHERE event_id = ? AND user_id = ?')
-            .bind(id, identity.user.id)
-            .run();
-        }
+    if (url.pathname === '/api/tokens' && method === 'GET') {
+      const identity = requireIdentity(auth, undefined, true);
+      if (identity.provider === 'atproto') {
+        const result = await env.DB.prepare(
+          `SELECT id, name, scopes, created_at AS createdAt, expires_at AS expiresAt
+        FROM atproto_agent_tokens WHERE did = ? ORDER BY created_at DESC`,
+        )
+          .bind(identity.user.id)
+          .all<{
+            id: string;
+            name: string;
+            scopes: string;
+            createdAt: string;
+            expiresAt: string;
+          }>();
+        return json({
+          tokens: result.results.map((token) => ({ ...token, scopes: JSON.parse(token.scopes) })),
+        });
       }
-    } else {
-      if (event.host_id !== identity.user.id)
-        throw new HttpError(403, 'Only the host can cancel an event.');
-      await env.DB.prepare('UPDATE events SET cancelled = 1 WHERE id = ?').bind(id).run();
-    }
-    return json({ ok: true });
-  }
-  if (url.pathname === '/api/tokens' && method === 'GET') {
-    const identity = requireIdentity(auth, undefined, true);
-    if (identity.provider === 'atproto') {
       const result = await env.DB.prepare(
         `SELECT id, name, scopes, created_at AS createdAt, expires_at AS expiresAt
-        FROM atproto_agent_tokens WHERE did = ? ORDER BY created_at DESC`,
+      FROM agent_tokens WHERE user_id = ? ORDER BY created_at DESC`,
       )
         .bind(identity.user.id)
         .all<{ id: string; name: string; scopes: string; createdAt: string; expiresAt: string }>();
@@ -2120,128 +2440,121 @@ async function handle(request: Request, env: Env): Promise<Response> {
         tokens: result.results.map((token) => ({ ...token, scopes: JSON.parse(token.scopes) })),
       });
     }
-    const result = await env.DB.prepare(
-      `SELECT id, name, scopes, created_at AS createdAt, expires_at AS expiresAt
-      FROM agent_tokens WHERE user_id = ? ORDER BY created_at DESC`,
-    )
-      .bind(identity.user.id)
-      .all<{ id: string; name: string; scopes: string; createdAt: string; expiresAt: string }>();
-    return json({
-      tokens: result.results.map((token) => ({ ...token, scopes: JSON.parse(token.scopes) })),
-    });
-  }
-  if (url.pathname === '/api/tokens' && method === 'POST') {
-    const identity = requireIdentity(auth, undefined, true);
-    const data = await body(request);
-    const scopes = data['scopes'];
-    if (
-      !Array.isArray(scopes) ||
-      scopes.length === 0 ||
-      !scopes.every((scope) => ALL_SCOPES.includes(scope))
-    ) {
-      throw new HttpError(400, 'Choose at least one supported permission.');
-    }
-    const token = `dwm_${secret()}`;
-    const id = crypto.randomUUID();
-    const createdAt = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 90 * 86400_000).toISOString();
-    const tokenHash = await hash(token);
-    const name = text(data['name'], 'Agent name', 60);
-    const result =
-      identity.provider === 'atproto'
-        ? await env.DB.prepare(
-            `INSERT INTO atproto_agent_tokens (id, did, token_hash, name, scopes, created_at, expires_at)
+    if (url.pathname === '/api/tokens' && method === 'POST') {
+      const identity = requireIdentity(auth, undefined, true);
+      const data = await body(request);
+      const scopes = data['scopes'];
+      if (
+        !Array.isArray(scopes) ||
+        scopes.length === 0 ||
+        !scopes.every((scope) => ALL_SCOPES.includes(scope))
+      ) {
+        throw new HttpError(400, 'Choose at least one supported permission.');
+      }
+      const token = `dwm_${secret()}`;
+      const id = crypto.randomUUID();
+      const createdAt = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 90 * 86400_000).toISOString();
+      const tokenHash = await hash(token);
+      const name = text(data['name'], 'Agent name', 60);
+      const result =
+        identity.provider === 'atproto'
+          ? await env.DB.prepare(
+              `INSERT INTO atproto_agent_tokens (id, did, token_hash, name, scopes, created_at, expires_at)
             SELECT ?, ?, ?, ?, ?, ?, ? WHERE
             (SELECT COUNT(*) FROM atproto_agent_tokens WHERE did = ? AND expires_at > ?) < 10`,
-          )
-            .bind(
-              id,
-              identity.user.id,
-              tokenHash,
-              name,
-              JSON.stringify([...new Set(scopes)]),
-              createdAt,
-              expiresAt,
-              identity.user.id,
-              createdAt,
             )
-            .run()
-        : await env.DB.prepare(
-            `INSERT INTO agent_tokens (id, user_id, token_hash, name, scopes, created_at, expires_at)
+              .bind(
+                id,
+                identity.user.id,
+                tokenHash,
+                name,
+                JSON.stringify([...new Set(scopes)]),
+                createdAt,
+                expiresAt,
+                identity.user.id,
+                createdAt,
+              )
+              .run()
+          : await env.DB.prepare(
+              `INSERT INTO agent_tokens (id, user_id, token_hash, name, scopes, created_at, expires_at)
             SELECT ?, ?, ?, ?, ?, ?, ? WHERE
             (SELECT COUNT(*) FROM agent_tokens WHERE user_id = ? AND expires_at > ?) < 10`,
-          )
-            .bind(
-              id,
-              identity.user.id,
-              tokenHash,
-              name,
-              JSON.stringify([...new Set(scopes)]),
-              createdAt,
-              expiresAt,
-              identity.user.id,
-              createdAt,
             )
-            .run();
-    if (!result.meta.changes)
-      throw new HttpError(400, 'You can have at most ten active agent tokens. Revoke one first.');
-    return json({ id, token, expiresAt }, 201);
-  }
-  const tokenMatch = /^\/api\/tokens\/([^/]+)$/.exec(url.pathname);
-  if (tokenMatch && method === 'DELETE') {
-    const identity = requireIdentity(auth, undefined, true);
-    const tokenId = decodedPathPart(tokenMatch[1]);
-    const result =
-      identity.provider === 'atproto'
-        ? await env.DB.prepare('DELETE FROM atproto_agent_tokens WHERE id = ? AND did = ?')
-            .bind(tokenId, identity.user.id)
-            .run()
-        : await env.DB.prepare('DELETE FROM agent_tokens WHERE id = ? AND user_id = ?')
-            .bind(tokenId, identity.user.id)
-            .run();
-    if (!result.meta.changes) throw new HttpError(404, 'Agent token not found.');
-    return json({ ok: true });
-  }
-  const profileMatch = /^\/api\/profiles\/([^/]+)$/.exec(url.pathname);
-  if (profileMatch && method === 'GET') {
-    if (auth?.agent) throw new HttpError(403, 'Agent tokens cannot read profiles.');
-    const username = decodedPathPart(profileMatch[1]);
-    const row = await env.DB.prepare(
-      `SELECT id, username, name, avatar, bio, location, sports, visibility
+              .bind(
+                id,
+                identity.user.id,
+                tokenHash,
+                name,
+                JSON.stringify([...new Set(scopes)]),
+                createdAt,
+                expiresAt,
+                identity.user.id,
+                createdAt,
+              )
+              .run();
+      if (!result.meta.changes)
+        throw new HttpError(400, 'You can have at most ten active agent tokens. Revoke one first.');
+      return json({ id, token, expiresAt }, 201);
+    }
+    const tokenMatch = /^\/api\/tokens\/([^/]+)$/.exec(url.pathname);
+    if (tokenMatch && method === 'DELETE') {
+      const identity = requireIdentity(auth, undefined, true);
+      const tokenId = decodedPathPart(tokenMatch[1]);
+      const result =
+        identity.provider === 'atproto'
+          ? await env.DB.prepare('DELETE FROM atproto_agent_tokens WHERE id = ? AND did = ?')
+              .bind(tokenId, identity.user.id)
+              .run()
+          : await env.DB.prepare('DELETE FROM agent_tokens WHERE id = ? AND user_id = ?')
+              .bind(tokenId, identity.user.id)
+              .run();
+      if (!result.meta.changes) throw new HttpError(404, 'Agent token not found.');
+      return json({ ok: true });
+    }
+    const profileMatch = /^\/api\/profiles\/([^/]+)$/.exec(url.pathname);
+    if (profileMatch && method === 'GET') {
+      if (auth?.agent) throw new HttpError(403, 'Agent tokens cannot read profiles.');
+      const username = decodedPathPart(profileMatch[1]);
+      const row = await env.DB.prepare(
+        `SELECT id, username, name, avatar, bio, location, sports, visibility
       FROM users WHERE username = ? AND (visibility = 'public' OR id = ?)`,
-    )
-      .bind(username, auth?.user.id || '')
-      .first<UserRow>();
-    if (row)
-      return json({
-        profile: profile(row),
-        activities: await withSocial(
-          env.DB,
-          await profileActivities(env, row.id, auth?.user.id || ''),
-          auth?.user.id,
-        ),
-        social: await profileSocial(env.DB, row.id, auth?.user.id),
-      });
-    const atprotoRow = await env.DB.prepare(
-      `SELECT did AS id, handle AS username, name, avatar, bio, '' AS location,
+      )
+        .bind(username, auth?.user.id || '')
+        .first<UserRow>();
+      if (row)
+        return json({
+          profile: profile(row),
+          activities: await withSocial(
+            env.DB,
+            await profileActivities(env, row.id, auth?.user.id || ''),
+            auth?.user.id,
+          ),
+          social: await profileSocial(env.DB, row.id, auth?.user.id),
+        });
+      const atprotoRow = await env.DB.prepare(
+        `SELECT did AS id, handle AS username, name, avatar, bio, '' AS location,
         sports, 'public' AS visibility
       FROM atproto_accounts WHERE handle = ? OR did = ?
       ORDER BY updated_at DESC, did LIMIT 1`,
-    )
-      .bind(username, username)
-      .first<UserRow>();
-    if (!atprotoRow) throw new HttpError(404, 'Profile is private or does not exist.');
-    return json({
-      profile: { ...profile(atprotoRow), provider: 'atproto' },
-      activities: await withSocial(
-        env.DB,
-        await profileActivities(env, atprotoRow.id, auth?.user.id || ''),
-        auth?.user.id,
-      ),
-      social: await profileSocial(env.DB, atprotoRow.id, auth?.user.id),
-    });
+      )
+        .bind(username, username)
+        .first<UserRow>();
+      if (!atprotoRow) throw new HttpError(404, 'Profile is private or does not exist.');
+      return json({
+        profile: { ...profile(atprotoRow), provider: 'atproto' },
+        activities: await withSocial(
+          env.DB,
+          await profileActivities(env, atprotoRow.id, auth?.user.id || ''),
+          auth?.user.id,
+        ),
+        social: await profileSocial(env.DB, atprotoRow.id, auth?.user.id),
+      });
+    }
+    return social(request, env, auth, url);
+  } finally {
+    await releaseMutation?.();
   }
-  return social(request, env, auth, url);
 }
 
 /** Require an explicit boolean toggle in a social request body. */
@@ -2343,9 +2656,9 @@ async function social(
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     try {
-      const response = await handle(request, env);
+      const response = await handle(request, env, ctx);
       const secured = new Response(response.body, response);
       secured.headers.set('X-Content-Type-Options', 'nosniff');
       secured.headers.set('Referrer-Policy', 'same-origin');
@@ -2373,5 +2686,8 @@ export default {
       );
       return json({ error: 'Something went wrong. Please try again.' }, 500);
     }
+  },
+  async scheduled(_event, env) {
+    await Promise.all([purgeDeletedPhotos(env), purgeExpiredAccountExports(env)]);
   },
 } satisfies ExportedHandler<Env>;

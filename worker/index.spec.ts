@@ -250,6 +250,7 @@ describe('Worker with real D1 storage', () => {
         '0006_social.sql',
         '0007_photo_deletions.sql',
         '0008_rate_limits.sql',
+        '0009_account_mutation_locks.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -1686,7 +1687,36 @@ describe('Worker with real D1 storage', () => {
       id: accountId,
     });
 
-    const response = await request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session);
+    await db
+      .prepare(
+        'INSERT INTO account_mutation_locks (actor_id, deleting, active_writes) VALUES (?, 0, 1)',
+      )
+      .bind(`github:${accountId}`)
+      .run();
+    const deletion = request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const lock = await db
+        .prepare('SELECT deleting FROM account_mutation_locks WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first<{ deleting: number }>();
+      if (lock?.deleting) break;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    expect(
+      (
+        await db
+          .prepare('SELECT deleting FROM account_mutation_locks WHERE actor_id = ?')
+          .bind(`github:${accountId}`)
+          .first<{ deleting: number }>()
+      )?.deleting,
+    ).toBe(1);
+    expect((await request('/api/activities', 'POST', activity, session)).status).toBe(409);
+    await db
+      .prepare('UPDATE account_mutation_locks SET active_writes = 0 WHERE actor_id = ?')
+      .bind(`github:${accountId}`)
+      .run();
+
+    const response = await deletion;
     expect(response.status).toBe(204);
     expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
     for (const table of ['users', 'activities', 'events', 'sessions', 'follows']) {
@@ -1706,6 +1736,18 @@ describe('Worker with real D1 storage', () => {
         .first<{ count: number }>();
       expect(row?.count).toBe(0);
     }
+    expect(
+      await db
+        .prepare('SELECT 1 FROM account_mutation_locks WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first(),
+    ).toBeNull();
+    expect(
+      await db
+        .prepare('SELECT 1 FROM rate_limits WHERE bucket IN (?, ?)')
+        .bind(hash(`write:account:${accountId}`), hash(`activity:account:${accountId}`))
+        .first(),
+    ).toBeNull();
     expect(await (await runtime.getR2Bucket('PHOTOS')).get(photoKey)).toBeNull();
     expect((await request('/api/bootstrap')).status).toBe(200);
   });
