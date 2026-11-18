@@ -19,7 +19,7 @@ const POLICIES: Record<string, RatePolicy> = {
   comment: { name: 'comment', windowSeconds: HOUR, accountLimit: 30, ipLimit: 120 },
   social: { name: 'social', windowSeconds: HOUR, accountLimit: 120, ipLimit: 300 },
   activity: { name: 'activity', windowSeconds: HOUR, accountLimit: 60, ipLimit: 120 },
-  event: { name: 'event', windowSeconds: HOUR, accountLimit: 30, ipLimit: 90 },
+  event: { name: 'event', windowSeconds: HOUR, accountLimit: 60, ipLimit: 180 },
   write: { name: 'write', windowSeconds: HOUR, accountLimit: 120, ipLimit: 300 },
 };
 

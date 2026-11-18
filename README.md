@@ -270,18 +270,18 @@ SHA-256 bucket identifiers rather than raw account IDs or IP addresses, and
 reuses each bucket row across windows. A rejected request returns HTTP 429 with
 `Retry-After` seconds.
 
-| Request class | Per account | Per client IP | Window |
-| ------------- | ----------- | ------------- | ------ |
-| OAuth start and callback | — | 10 | 10 minutes |
-| Activity writes, profile edits, visibility changes | 60 | 120 | 1 hour |
-| Bulk activity imports | 10 | 30 | 1 hour |
-| Photo uploads and deletes | 10 | 30 | 1 hour |
-| Comments | 30 | 120 | 1 hour |
-| Other social actions | 120 | 300 | 1 hour |
-| Event and RSVP mutations | 30 | 90 | 1 hour |
-| Other API mutations, including token management | 120 | 300 | 1 hour |
-| API reads | 600 | 1,200 | 1 hour |
-| MCP requests | — | 1,200 | 1 hour |
+| Request class                                      | Per account | Per client IP | Window     |
+| -------------------------------------------------- | ----------- | ------------- | ---------- |
+| OAuth start and callback                           | —           | 10            | 10 minutes |
+| Activity writes, profile edits, visibility changes | 60          | 120           | 1 hour     |
+| Bulk activity imports                              | 10          | 30            | 1 hour     |
+| Photo uploads and deletes                          | 10          | 30            | 1 hour     |
+| Comments                                           | 30          | 120           | 1 hour     |
+| Other social actions                               | 120         | 300           | 1 hour     |
+| Event and RSVP mutations                           | 60          | 180           | 1 hour     |
+| Other API mutations, including token management    | 120         | 300           | 1 hour     |
+| API reads                                          | 600         | 1,200         | 1 hour     |
+| MCP requests                                       | —           | 1,200         | 1 hour     |
 
 The account limit also applies to agent-token writes and MCP tool calls that
 create or update records. Bulk import requests count once toward the limit;
