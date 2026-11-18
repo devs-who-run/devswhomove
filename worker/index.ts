@@ -517,15 +517,18 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
     e.club_id AS clubId, c.name AS clubName, c.slug AS clubSlug,
     (SELECT COUNT(*) FROM event_attendees WHERE event_id = e.id) +
     (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = e.id) AS attendees,
+    (SELECT COUNT(*) FROM event_waitlist WHERE event_id = e.id) AS waitlistCount,
     EXISTS(SELECT 1 FROM event_attendees WHERE event_id = e.id AND user_id = ?) OR
     EXISTS(SELECT 1 FROM atproto_external_event_attendees
-      WHERE event_id = e.id AND attendee_id = ?) AS joined
+      WHERE event_id = e.id AND attendee_id = ?) AS joined,
+    EXISTS(SELECT 1 FROM event_waitlist WHERE event_id = e.id AND attendee_id = ?) AS waitlisted
     FROM events e JOIN users u ON u.id = e.host_id LEFT JOIN clubs c ON c.id = e.club_id
     WHERE e.cancelled = 0 AND e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}
     ORDER BY e.starts_at LIMIT 100`,
     )
       .bind(
         userId || '',
+        userId ? `${userId.startsWith('did:') ? 'atproto' : 'github'}:${userId}` : '',
         userId ? `${userId.startsWith('did:') ? 'atproto' : 'github'}:${userId}` : '',
         new Date().toISOString(),
         ...(clubId ? [clubId] : []),
@@ -537,8 +540,10 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
         e.conference_name AS conferenceName, e.conference_url AS conferenceUrl,
         e.club_id AS clubId, c.name AS clubName, c.slug AS clubSlug,
         (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = e.uri) AS attendees,
+        (SELECT COUNT(*) FROM event_waitlist WHERE event_id = e.uri) AS waitlistCount,
         EXISTS(SELECT 1 FROM atproto_event_attendees
-          WHERE event_uri = e.uri AND attendee_id = ?) AS joined
+          WHERE event_uri = e.uri AND attendee_id = ?) AS joined,
+        EXISTS(SELECT 1 FROM event_waitlist WHERE event_id = e.uri AND attendee_id = ?) AS waitlisted
       FROM atproto_events e JOIN atproto_accounts u ON u.did = e.did
       LEFT JOIN clubs c ON c.id = e.club_id
       WHERE e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}
@@ -546,13 +551,18 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
     )
       .bind(
         userId ? `${userId.startsWith('did:') ? 'atproto' : 'github'}:${userId}` : '',
+        userId ? `${userId.startsWith('did:') ? 'atproto' : 'github'}:${userId}` : '',
         new Date().toISOString(),
         ...(clubId ? [clubId] : []),
       )
       .all<SportEvent>(),
   ]);
   return [...github.results, ...atproto.results]
-    .map((event) => ({ ...event, joined: Boolean(event.joined) }))
+    .map((event) => ({
+      ...event,
+      joined: Boolean(event.joined),
+      waitlisted: Boolean(event.waitlisted),
+    }))
     .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
     .slice(0, 100);
 }
@@ -1780,15 +1790,56 @@ async function handle(request: Request, env: Env): Promise<Response> {
           )
             .bind(eventId, attendeeId)
             .first();
-          if (!joined) throw new HttpError(409, 'This event is full.');
+          if (!joined) {
+            await env.DB.prepare(
+              `INSERT OR IGNORE INTO event_waitlist (event_id, attendee_id)
+              SELECT uri, ? FROM atproto_events WHERE uri = ? AND starts_at > ? AND
+                (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = ?) >= capacity`,
+            )
+              .bind(attendeeId, eventId, new Date().toISOString(), eventId)
+              .run();
+            const queued = await env.DB.prepare(
+              'SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
+            )
+              .bind(eventId, attendeeId)
+              .first();
+            if (!queued) throw new HttpError(409, 'This event is no longer available.');
+          }
         } else {
           if (event.did === identity.user.id)
             throw new HttpError(400, 'As host, cancel the event instead of leaving.');
-          await env.DB.prepare(
-            'DELETE FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?',
+          const waitlisted = await env.DB.prepare(
+            'SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
           )
             .bind(eventId, attendeeId)
-            .run();
+            .first();
+          if (waitlisted) {
+            await env.DB.prepare(
+              'DELETE FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
+            )
+              .bind(eventId, attendeeId)
+              .run();
+          } else {
+            await env.DB.prepare(
+              'DELETE FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?',
+            )
+              .bind(eventId, attendeeId)
+              .run();
+            const next = await env.DB.prepare(
+              'SELECT attendee_id FROM event_waitlist WHERE event_id = ? ORDER BY joined_at LIMIT 1',
+            )
+              .bind(eventId)
+              .first<{ attendee_id: string }>();
+            if (next)
+              await env.DB.batch([
+                env.DB.prepare(
+                  'DELETE FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
+                ).bind(eventId, next.attendee_id),
+                env.DB.prepare(
+                  'INSERT OR IGNORE INTO atproto_event_attendees (event_uri, attendee_id) VALUES (?, ?)',
+                ).bind(eventId, next.attendee_id),
+              ]);
+          }
         }
       } else {
         if (identity.provider !== 'atproto' || event.did !== identity.user.id)
@@ -1849,11 +1900,37 @@ async function handle(request: Request, env: Env): Promise<Response> {
               )
                 .bind(id, identity.user.id)
                 .first();
-        if (!joined) throw new HttpError(409, 'This event is full.');
+        if (!joined) {
+          const attendeeId = `${identity.provider}:${identity.user.id}`;
+          await env.DB.prepare(
+            `INSERT OR IGNORE INTO event_waitlist (event_id, attendee_id)
+            SELECT id, ? FROM events WHERE id = ? AND cancelled = 0 AND
+              (SELECT COUNT(*) FROM event_attendees WHERE event_id = ?) +
+              (SELECT COUNT(*) FROM atproto_external_event_attendees WHERE event_id = ?) >= capacity`,
+          )
+            .bind(attendeeId, id, id, id)
+            .run();
+          const queued = await env.DB.prepare(
+            'SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
+          )
+            .bind(id, attendeeId)
+            .first();
+          if (!queued) throw new HttpError(409, 'This event is no longer available.');
+        }
       } else {
         if (event.host_id === identity.user.id)
           throw new HttpError(400, 'As host, cancel the event instead of leaving.');
-        if (identity.provider === 'atproto') {
+        const attendeeKey = `${identity.provider}:${identity.user.id}`;
+        const waitlisted = await env.DB.prepare(
+          'SELECT 1 FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
+        )
+          .bind(id, attendeeKey)
+          .first();
+        if (waitlisted) {
+          await env.DB.prepare('DELETE FROM event_waitlist WHERE event_id = ? AND attendee_id = ?')
+            .bind(id, attendeeKey)
+            .run();
+        } else if (identity.provider === 'atproto') {
           await env.DB.prepare(
             'DELETE FROM atproto_external_event_attendees WHERE event_id = ? AND attendee_id = ?',
           )
@@ -1863,6 +1940,31 @@ async function handle(request: Request, env: Env): Promise<Response> {
           await env.DB.prepare('DELETE FROM event_attendees WHERE event_id = ? AND user_id = ?')
             .bind(id, identity.user.id)
             .run();
+        }
+        if (!waitlisted) {
+          const next = await env.DB.prepare(
+            'SELECT attendee_id FROM event_waitlist WHERE event_id = ? ORDER BY joined_at LIMIT 1',
+          )
+            .bind(id)
+            .first<{ attendee_id: string }>();
+          if (next) {
+            const table = next.attendee_id.startsWith('atproto:')
+              ? 'atproto_external_event_attendees'
+              : 'event_attendees';
+            const column = table === 'event_attendees' ? 'user_id' : 'attendee_id';
+            const nextId =
+              table === 'event_attendees'
+                ? next.attendee_id.slice(next.attendee_id.indexOf(':') + 1)
+                : next.attendee_id;
+            await env.DB.batch([
+              env.DB.prepare(
+                'DELETE FROM event_waitlist WHERE event_id = ? AND attendee_id = ?',
+              ).bind(id, next.attendee_id),
+              env.DB.prepare(
+                `INSERT OR IGNORE INTO ${table} (event_id, ${column}) VALUES (?, ?)`,
+              ).bind(id, nextId),
+            ]);
+          }
         }
       }
     } else {

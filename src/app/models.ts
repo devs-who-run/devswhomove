@@ -101,7 +101,9 @@ export interface SportEvent {
   level: string;
   capacity: number;
   attendees: number;
+  waitlistCount?: number;
   joined: boolean;
+  waitlisted?: boolean;
   conferenceName?: string | null;
   conferenceUrl?: string | null;
   clubId?: string | null;

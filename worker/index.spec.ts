@@ -250,6 +250,7 @@ describe('Worker with real D1 storage', () => {
         '0006_social.sql',
         '0007_photo_deletions.sql',
         '0008_rate_limits.sql',
+        '0009_event_waitlists.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -1257,19 +1258,34 @@ describe('Worker with real D1 storage', () => {
     }
   });
 
-  it('enforces capacity atomically, treats repeat joins as idempotent and allows leaving', async () => {
-    const results = await Promise.all([
-      request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob),
-      request(`/api/events/${eventId}/join`, 'POST', { join: true }, charlie),
-    ]);
-    expect(results.map((response) => response.status).sort()).toEqual([200, 409]);
-    const winner = results[0].status === 200 ? bob : charlie;
+  it('queues full-event RSVPs, keeps repeat joins idempotent and promotes on leave', async () => {
+    expect((await request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob)).status).toBe(
+      200,
+    );
+    expect((await request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob)).status).toBe(
+      200,
+    );
     expect(
-      (await request(`/api/events/${eventId}/join`, 'POST', { join: true }, winner)).status,
+      (await request(`/api/events/${eventId}/join`, 'POST', { join: true }, charlie)).status,
     ).toBe(200);
     expect(
-      (await request(`/api/events/${eventId}/join`, 'POST', { join: false }, winner)).status,
+      await db
+        .prepare('SELECT attendee_id FROM event_waitlist WHERE event_id = ?')
+        .bind(eventId)
+        .first(),
+    ).toEqual({ attendee_id: 'github:charlie' });
+    expect(
+      (await request(`/api/events/${eventId}/join`, 'POST', { join: false }, bob)).status,
     ).toBe(200);
+    expect(
+      await db
+        .prepare('SELECT user_id FROM event_attendees WHERE event_id = ? AND user_id = ?')
+        .bind(eventId, 'charlie')
+        .first(),
+    ).toEqual({ user_id: 'charlie' });
+    expect(
+      await db.prepare('SELECT 1 FROM event_waitlist WHERE event_id = ?').bind(eventId).first(),
+    ).toBeNull();
     expect(
       (await request(`/api/events/${eventId}/join`, 'POST', { join: false }, alice)).status,
     ).toBe(400);
