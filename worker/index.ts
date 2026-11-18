@@ -56,6 +56,7 @@ interface Env {
   GITHUB_CLIENT_SECRET?: string;
   ATPROTO_OAUTH_PRIVATE_KEY?: string;
   ATPROTO_SESSION_KEY?: string;
+  TEST_MUTATION_PAUSE_ACTOR?: string;
 }
 
 interface UserRow extends Omit<Profile, 'sports'> {
@@ -881,18 +882,30 @@ async function removeStaleAtprotoRecords(
   }
 }
 
-/** Remove queued photos from R2; failures stay queued and are retried on the next activity delete. */
+/** Remove queued photos from R2; failed keys stay queued for a later activity delete or cron run. */
 async function purgeDeletedPhotos(env: Env, all = false): Promise<void> {
   try {
+    let cursor: { queuedAt: string; key: string } | undefined;
     do {
       const queued = await env.DB.prepare(
-        'SELECT key FROM photo_deletions ORDER BY queued_at LIMIT 20',
-      ).all<{ key: string }>();
+        `SELECT key, queued_at AS queuedAt FROM photo_deletions
+        ${cursor ? 'WHERE queued_at > ? OR (queued_at = ? AND key > ?)' : ''}
+        ORDER BY queued_at, key LIMIT 20`,
+      )
+        .bind(...(cursor ? [cursor.queuedAt, cursor.queuedAt, cursor.key] : []))
+        .all<{ key: string; queuedAt: string }>();
+      if (!queued.results.length) return;
+      const last = queued.results[queued.results.length - 1];
+      cursor = { queuedAt: last.queuedAt, key: last.key };
       for (const { key } of queued.results) {
-        await env.PHOTOS.delete(key);
-        await env.DB.prepare('DELETE FROM photo_deletions WHERE key = ?').bind(key).run();
+        try {
+          await env.PHOTOS.delete(key);
+          await env.DB.prepare('DELETE FROM photo_deletions WHERE key = ?').bind(key).run();
+        } catch (error) {
+          console.error(`Photo cleanup failed for ${key}; it will be retried.`, error);
+        }
       }
-      if (!all || queued.results.length === 0) return;
+      if (!all) return;
     } while (true);
   } catch (error) {
     console.error('Photo cleanup failed; it will be retried.', error);
@@ -1238,8 +1251,12 @@ async function exportAccount(
   }
 }
 
+const MUTATION_LEASE_MS = 30 * 60_000;
+const DELETION_LEASE_MS = 30 * 60_000;
+
 /** Atomically reserve an account mutation unless deletion has already started. */
 async function beginAccountMutation(
+  env: Env,
   db: D1Database,
   identity: Identity,
 ): Promise<() => Promise<void>> {
@@ -1248,64 +1265,181 @@ async function beginAccountMutation(
   const actorId = `${identity.provider}:${identity.user.id}`;
   await db
     .prepare(
-      `INSERT OR IGNORE INTO account_mutation_locks (actor_id, deleting, active_writes)
-      SELECT ?, 0, 0 WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
+      `INSERT OR IGNORE INTO account_mutation_locks (actor_id)
+      SELECT ? WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
     )
     .bind(actorId, identity.user.id)
     .run();
+  const id = crypto.randomUUID();
+  const leaseUntil = new Date(Date.now() + MUTATION_LEASE_MS).toISOString();
   const reserved = await db
     .prepare(
-      `UPDATE account_mutation_locks SET active_writes = active_writes + 1
-      WHERE actor_id = ? AND deleting = 0
-      AND EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
+      `INSERT INTO account_mutation_reservations (id, actor_id, generation, lease_until)
+      SELECT ?, actor_id, generation, ? FROM account_mutation_locks
+      WHERE actor_id = ? AND deleting = 0 AND EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
     )
-    .bind(actorId, identity.user.id)
+    .bind(id, leaseUntil, actorId, identity.user.id)
     .run();
   if (!reserved.meta.changes) throw new HttpError(409, 'Account deletion is in progress.');
   let released = false;
+  let renewalFailed = false;
+  const renew = async () => {
+    if (released || renewalFailed) return;
+    const result = await db
+      .prepare(
+        `UPDATE account_mutation_reservations SET lease_until = ? WHERE id = ?
+        AND lease_until > ? AND generation = (SELECT generation FROM account_mutation_locks WHERE actor_id = ? AND deleting = 0)`,
+      )
+      .bind(
+        new Date(Date.now() + MUTATION_LEASE_MS).toISOString(),
+        id,
+        new Date().toISOString(),
+        actorId,
+      )
+      .run();
+    if (!result.meta.changes) renewalFailed = true;
+  };
+  const timer = setInterval(
+    () => {
+      void renew().catch((error) => {
+        renewalFailed = true;
+        console.error('Account mutation reservation renewal failed.', error);
+      });
+    },
+    Math.floor(MUTATION_LEASE_MS / 3),
+  );
+  if (env.TEST_MUTATION_PAUSE_ACTOR === identity.user.id)
+    await new Promise((resolve) => setTimeout(resolve, 500));
   return async () => {
     if (released) return;
     released = true;
-    await db
-      .prepare(
-        'UPDATE account_mutation_locks SET active_writes = active_writes - 1 WHERE actor_id = ? AND active_writes > 0',
-      )
-      .bind(actorId)
-      .run();
+    clearInterval(timer);
+    await db.prepare('DELETE FROM account_mutation_reservations WHERE id = ?').bind(id).run();
   };
 }
 
 /** Close the account to new writes before waiting for writes already in flight. */
-async function startAccountDeletion(db: D1Database, identity: Identity): Promise<string> {
+async function startAccountDeletion(
+  db: D1Database,
+  identity: Identity,
+): Promise<{ actorId: string; attemptId: string }> {
   const table = identity.provider === 'github' ? 'users' : 'atproto_accounts';
   const column = identity.provider === 'github' ? 'id' : 'did';
   const actorId = `${identity.provider}:${identity.user.id}`;
   await db
     .prepare(
-      `INSERT OR IGNORE INTO account_mutation_locks (actor_id, deleting, active_writes)
-      SELECT ?, 0, 0 WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
+      `INSERT OR IGNORE INTO account_mutation_locks (actor_id)
+      SELECT ? WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
     )
     .bind(actorId, identity.user.id)
     .run();
+  const now = new Date().toISOString();
+  const attemptId = crypto.randomUUID();
   const result = await db
     .prepare(
-      `UPDATE account_mutation_locks SET deleting = 1
-      WHERE actor_id = ? AND EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
+      `UPDATE account_mutation_locks SET deleting = 1, deletion_attempt_id = ?,
+        deletion_lease_until = ?, generation = generation + 1
+      WHERE actor_id = ? AND EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)
+      AND (deleting = 0 OR deletion_lease_until < ?)`,
     )
-    .bind(actorId, identity.user.id)
+    .bind(
+      attemptId,
+      new Date(Date.now() + DELETION_LEASE_MS).toISOString(),
+      actorId,
+      identity.user.id,
+      now,
+    )
     .run();
-  if (!result.meta.changes) throw new HttpError(404, 'Account no longer exists.');
+  if (!result.meta.changes) {
+    const existing = await db
+      .prepare('SELECT deleting FROM account_mutation_locks WHERE actor_id = ?')
+      .bind(actorId)
+      .first<{ deleting: number }>();
+    throw new HttpError(
+      existing?.deleting ? 409 : 404,
+      existing?.deleting ? 'Account deletion is already in progress.' : 'Account no longer exists.',
+    );
+  }
+  const ownsAttempt = async () =>
+    db
+      .prepare(
+        'SELECT 1 FROM account_mutation_locks WHERE actor_id = ? AND deleting = 1 AND deletion_attempt_id = ?',
+      )
+      .bind(actorId, attemptId)
+      .first();
   for (let attempt = 0; attempt < 120; attempt++) {
+    if (!(await ownsAttempt()))
+      throw new HttpError(409, 'Account deletion attempt was superseded.');
     const row = await db
       .prepare(
-        'SELECT active_writes AS activeWrites FROM account_mutation_locks WHERE actor_id = ?',
+        'SELECT COUNT(*) AS activeWrites FROM account_mutation_reservations WHERE actor_id = ? AND lease_until > ?',
       )
-      .bind(actorId)
+      .bind(actorId, new Date().toISOString())
       .first<{ activeWrites: number }>();
-    if (!row || row.activeWrites === 0) return actorId;
+    await db
+      .prepare('DELETE FROM account_mutation_reservations WHERE actor_id = ? AND lease_until <= ?')
+      .bind(actorId, new Date().toISOString())
+      .run();
+    if (!row || row.activeWrites === 0) return { actorId, attemptId };
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  if (await ownsAttempt()) {
+    await db
+      .prepare(
+        `UPDATE account_mutation_locks SET deleting = 0, deletion_attempt_id = NULL,
+        deletion_lease_until = NULL, generation = generation - 1
+        WHERE actor_id = ? AND deletion_attempt_id = ?`,
+      )
+      .bind(actorId, attemptId)
+      .run();
+  }
   throw new HttpError(503, 'Account writes are still finishing. Retry deletion shortly.');
+}
+
+/** Retry remote AT Protocol revocation from the durable job committed with account deletion. */
+async function retryAtprotoDeletion(env: Env, actorId?: string): Promise<void> {
+  const jobs = await env.DB.prepare(
+    `SELECT actor_id AS actorId, encrypted_oauth_session AS encryptedSession
+    FROM account_deletion_jobs WHERE actor_id = ? OR ? IS NULL ORDER BY created_at LIMIT 20`,
+  )
+    .bind(actorId ?? null, actorId ?? null)
+    .all<{ actorId: string; encryptedSession: string | null }>();
+  for (const job of jobs.results) {
+    try {
+      if (job.encryptedSession) {
+        await env.DB.prepare(
+          `INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)
+          ON CONFLICT(did) DO UPDATE SET encrypted_session = excluded.encrypted_session, updated_at = excluded.updated_at`,
+        )
+          .bind(job.actorId, job.encryptedSession, new Date().toISOString())
+          .run();
+        await (await oauthClient(env)).revoke(job.actorId);
+      }
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(job.actorId),
+        env.DB.prepare('DELETE FROM account_deletion_jobs WHERE actor_id = ?').bind(job.actorId),
+      ]);
+    } catch (error) {
+      console.error(
+        `AT Protocol deletion cleanup failed for ${job.actorId}; it will be retried.`,
+        error,
+      );
+    }
+  }
+}
+
+async function clearUnstartedDeletionAttempt(
+  db: D1Database,
+  attempt: { actorId: string; attemptId: string },
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE account_mutation_locks SET deleting = 0, deletion_attempt_id = NULL,
+      deletion_lease_until = NULL, generation = generation - 1
+      WHERE actor_id = ? AND deleting = 1 AND deletion_attempt_id = ?`,
+    )
+    .bind(attempt.actorId, attempt.attemptId)
+    .run();
 }
 
 /** Delete app-owned PDS records, then erase this account and its related application data. */
@@ -1317,35 +1451,55 @@ async function deleteAccount(env: Env, identity: Identity, request: Request): Pr
   const actorId = user.id;
   const mutationLockId = await startAccountDeletion(env.DB, identity);
   if (identity.provider === 'atproto') {
-    const agent = identity.atprotoAgent;
-    if (!agent) throw new HttpError(503, 'AT Protocol session is unavailable.');
-    const records: { collection: string; rkey: string }[] = [];
-    for (const collection of [PROFILE_COLLECTION, ACTIVITY_COLLECTION, EVENT_COLLECTION]) {
-      const listed = await listAtprotoRecords(agent, actorId, collection, 10_000);
-      if (!listed.complete)
-        throw new HttpError(
-          409,
-          'This account has too many public records to delete in one request.',
+    let remoteCleanupStarted = false;
+    try {
+      const agent = identity.atprotoAgent;
+      if (!agent) throw new HttpError(503, 'AT Protocol session is unavailable.');
+      const records: { collection: string; rkey: string }[] = [];
+      for (const collection of [PROFILE_COLLECTION, ACTIVITY_COLLECTION, EVENT_COLLECTION]) {
+        const listed = await listAtprotoRecords(agent, actorId, collection, 10_000);
+        if (!listed.complete)
+          throw new HttpError(
+            409,
+            'This account has too many public records to delete in one request.',
+          );
+        records.push(
+          ...listed.records.map(({ uri }) => ({
+            collection,
+            rkey: recordKey(uri, actorId, collection),
+          })),
         );
-      records.push(
-        ...listed.records.map(({ uri }) => ({
-          collection,
-          rkey: recordKey(uri, actorId, collection),
-        })),
-      );
-    }
-    for (let offset = 0; offset < records.length; offset += 100) {
-      await agent.com.atproto.repo.applyWrites({
-        repo: actorId,
-        writes: records.slice(offset, offset + 100).map(({ collection, rkey }) => ({
-          $type: 'com.atproto.repo.applyWrites#delete' as const,
-          collection,
-          rkey,
-        })),
-      });
+      }
+      for (let offset = 0; offset < records.length; offset += 100) {
+        const owner = await env.DB.prepare(
+          'SELECT 1 FROM account_mutation_locks WHERE actor_id = ? AND deleting = 1 AND deletion_attempt_id = ?',
+        )
+          .bind(mutationLockId.actorId, mutationLockId.attemptId)
+          .first();
+        if (!owner) throw new HttpError(409, 'Account deletion attempt was superseded.');
+        remoteCleanupStarted = true;
+        await agent.com.atproto.repo.applyWrites({
+          repo: actorId,
+          writes: records.slice(offset, offset + 100).map(({ collection, rkey }) => ({
+            $type: 'com.atproto.repo.applyWrites#delete' as const,
+            collection,
+            rkey,
+          })),
+        });
+      }
+    } catch (error) {
+      if (!remoteCleanupStarted) await clearUnstartedDeletionAttempt(env.DB, mutationLockId);
+      throw error;
     }
   }
   const rateLimitCleanup = await deleteAccountRateLimits(env.DB, actorId);
+  const oauthDeletionJob =
+    identity.provider === 'atproto'
+      ? env.DB.prepare(
+          `INSERT OR IGNORE INTO account_deletion_jobs (actor_id, encrypted_oauth_session, created_at)
+        SELECT did, encrypted_session, ? FROM atproto_oauth_sessions WHERE did = ?`,
+        ).bind(new Date().toISOString(), actorId)
+      : null;
   const photoQueue =
     identity.provider === 'github'
       ? env.DB.prepare(
@@ -1382,24 +1536,13 @@ async function deleteAccount(env: Env, identity: Identity, request: Request): Pr
       ? [env.DB.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind(actorId)]
       : []),
     rateLimitCleanup,
-    env.DB.prepare('DELETE FROM account_mutation_locks WHERE actor_id = ?').bind(mutationLockId),
+    ...(oauthDeletionJob ? [oauthDeletionJob] : []),
+    env.DB.prepare(
+      'DELETE FROM account_mutation_locks WHERE actor_id = ? AND deletion_attempt_id = ?',
+    ).bind(mutationLockId.actorId, mutationLockId.attemptId),
   ];
   await env.DB.batch(cleanup);
-  if (identity.provider === 'atproto') {
-    try {
-      await (await oauthClient(env)).revoke(actorId);
-    } catch (error) {
-      console.error('AT Protocol OAuth revocation failed after account deletion.', error);
-    }
-    try {
-      await env.DB.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(actorId).run();
-    } catch (error) {
-      console.error(
-        'Local AT Protocol OAuth session cleanup failed after account deletion.',
-        error,
-      );
-    }
-  }
+  if (identity.provider === 'atproto') await retryAtprotoDeletion(env, actorId);
   if (photoQueue) await purgeDeletedPhotos(env, true);
   return new Response(null, {
     status: 204,
@@ -1775,14 +1918,21 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
     }
   }
   const auth = await identity(request, env);
-  await enforceRateLimit(request, env.DB, { accountId: auth?.user.id, includeIp: false });
   const isAccountDeletion = url.pathname === '/api/account' && method === 'DELETE';
   const isAccountExport = url.pathname === '/api/account/export' && method === 'GET';
   const releaseMutation =
     auth && !isAccountDeletion && (isAccountExport || !['GET', 'HEAD', 'OPTIONS'].includes(method))
-      ? await beginAccountMutation(env.DB, auth)
+      ? await beginAccountMutation(env, env.DB, auth)
+      : undefined;
+  let releaseQuotaReservation =
+    auth && !isAccountDeletion && !releaseMutation
+      ? await beginAccountMutation(env, env.DB, auth)
       : undefined;
   try {
+    if (auth && !isAccountDeletion)
+      await enforceRateLimit(request, env.DB, { accountId: auth.user.id, includeIp: false });
+    await releaseQuotaReservation?.();
+    releaseQuotaReservation = undefined;
     if (url.pathname === '/api/insights/weekly' && method === 'GET') {
       const who = requireIdentity(auth, 'activities:read');
       return json(await getWeeklyRecap(env.DB, who));
@@ -1836,7 +1986,7 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
       });
     }
     if (url.pathname === '/api/account/export' && method === 'GET') {
-      return exportAccount(env, requireIdentity(auth, undefined, true), ctx);
+      return await exportAccount(env, requireIdentity(auth, undefined, true), ctx);
     }
     if (url.pathname === '/api/account' && method === 'DELETE') {
       return deleteAccount(env, requireIdentity(auth, undefined, true), request);
@@ -2551,9 +2701,14 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
         social: await profileSocial(env.DB, atprotoRow.id, auth?.user.id),
       });
     }
-    return social(request, env, auth, url);
+    return await social(request, env, auth, url);
   } finally {
-    await releaseMutation?.();
+    try {
+      await releaseQuotaReservation?.();
+      await releaseMutation?.();
+    } catch (error) {
+      console.error('Account mutation reservation release failed; it will expire.', error);
+    }
   }
 }
 
@@ -2688,6 +2843,10 @@ export default {
     }
   },
   async scheduled(_event, env) {
-    await Promise.all([purgeDeletedPhotos(env), purgeExpiredAccountExports(env)]);
+    await Promise.all([
+      purgeDeletedPhotos(env, true),
+      purgeExpiredAccountExports(env),
+      retryAtprotoDeletion(env),
+    ]);
   },
 } satisfies ExportedHandler<Env>;

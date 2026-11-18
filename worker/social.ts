@@ -221,19 +221,20 @@ export async function setFollow(
   if (targetId === user.id) throw new HttpError(400, 'You can’t follow yourself.');
   if (follow) {
     requirePublicProfile(user);
-    const target = await db
-      .prepare(`SELECT 1 AS found FROM ${PUBLIC_ACTORS} WHERE actor_id = ?`)
-      .bind(targetId)
-      .first();
-    if (!target) throw new HttpError(404, 'Profile is private or does not exist.');
     const result = await db
       .prepare(
         `INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at)
-        SELECT ?, ?, ? WHERE (SELECT COUNT(*) FROM follows WHERE follower_id = ?) < ?`,
+        SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM ${PUBLIC_ACTORS} WHERE actor_id = ?)
+        AND (SELECT COUNT(*) FROM follows WHERE follower_id = ?) < ?`,
       )
-      .bind(user.id, targetId, new Date().toISOString(), user.id, MAX_FOLLOWING)
+      .bind(user.id, targetId, new Date().toISOString(), targetId, user.id, MAX_FOLLOWING)
       .run();
     if (!result.meta.changes) {
+      const target = await db
+        .prepare(`SELECT 1 AS found FROM ${PUBLIC_ACTORS} WHERE actor_id = ?`)
+        .bind(targetId)
+        .first();
+      if (!target) throw new HttpError(404, 'Profile is private or does not exist.');
       const existing = await db
         .prepare('SELECT 1 AS found FROM follows WHERE follower_id = ? AND followee_id = ?')
         .bind(user.id, targetId)

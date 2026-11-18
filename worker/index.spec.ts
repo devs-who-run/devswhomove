@@ -166,6 +166,7 @@ describe('Worker with real D1 storage', () => {
         },
         bindings: {
           APP_URL: origin,
+          TEST_MUTATION_PAUSE_ACTOR: 'export-me',
           ATPROTO_OAUTH_PRIVATE_KEY: atprotoSigningKey,
           ATPROTO_SESSION_KEY: atprotoSessionKey,
         },
@@ -1623,6 +1624,43 @@ describe('Worker with real D1 storage', () => {
         dataBase64: Buffer.from(photo).toString('base64'),
       },
     ]);
+
+    const bucket = await runtime.getR2Bucket('PHOTOS');
+    await bucket.put(photoKey, new Uint8Array(12 * 1024 * 1024));
+    const pendingExport = request('/api/account/export', 'GET', undefined, session);
+    for (let attempt = 0; attempt < 1000; attempt++) {
+      const reservation = await db
+        .prepare('SELECT id FROM account_mutation_reservations WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first();
+      if (reservation) break;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    expect(
+      await db
+        .prepare('SELECT 1 FROM account_mutation_reservations WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first(),
+    ).not.toBeNull();
+    const pendingDeletion = request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const lock = await db
+        .prepare('SELECT deleting FROM account_mutation_locks WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first<{ deleting: number }>();
+      if (lock?.deleting) break;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    let deletionSettled = false;
+    void pendingDeletion.then(() => {
+      deletionSettled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(deletionSettled).toBe(false);
+    const concurrentExport = await pendingExport;
+    expect(concurrentExport.status).toBe(200);
+    expect((await concurrentExport.json<{ activities: unknown[] }>()).activities).toHaveLength(1);
+    expect((await pendingDeletion).status).toBe(204);
   });
 
   it('requires typed confirmation and removes account data and photos on deletion', async () => {
@@ -1688,10 +1726,14 @@ describe('Worker with real D1 storage', () => {
     });
 
     await db
-      .prepare(
-        'INSERT INTO account_mutation_locks (actor_id, deleting, active_writes) VALUES (?, 0, 1)',
-      )
+      .prepare('INSERT INTO account_mutation_locks (actor_id) VALUES (?)')
       .bind(`github:${accountId}`)
+      .run();
+    await db
+      .prepare(
+        'INSERT INTO account_mutation_reservations (id, actor_id, generation, lease_until) VALUES (?, ?, 0, ?)',
+      )
+      .bind('test-deletion-reservation', `github:${accountId}`, '2099-01-01T00:00:00.000Z')
       .run();
     const deletion = request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session);
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -1712,8 +1754,8 @@ describe('Worker with real D1 storage', () => {
     ).toBe(1);
     expect((await request('/api/activities', 'POST', activity, session)).status).toBe(409);
     await db
-      .prepare('UPDATE account_mutation_locks SET active_writes = 0 WHERE actor_id = ?')
-      .bind(`github:${accountId}`)
+      .prepare('DELETE FROM account_mutation_reservations WHERE id = ?')
+      .bind('test-deletion-reservation')
       .run();
 
     const response = await deletion;
@@ -1739,6 +1781,12 @@ describe('Worker with real D1 storage', () => {
     expect(
       await db
         .prepare('SELECT 1 FROM account_mutation_locks WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first(),
+    ).toBeNull();
+    expect(
+      await db
+        .prepare('SELECT 1 FROM account_mutation_reservations WHERE actor_id = ?')
         .bind(`github:${accountId}`)
         .first(),
     ).toBeNull();
