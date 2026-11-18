@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { workerModules } from './testing/bundle';
 import { convertV4MiniflareOptions, Miniflare, Response } from 'miniflare';
 import { readFile } from 'node:fs/promises';
@@ -90,6 +90,7 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
           '0005_event_conferences.sql',
           '0006_social.sql',
           '0007_photo_deletions.sql',
+          '0008_rate_limits.sql',
         ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
       )
     ).join(';');
@@ -102,6 +103,10 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
 
   afterAll(async () => {
     await runtime?.dispose();
+  });
+
+  beforeEach(async () => {
+    await db.prepare('DELETE FROM rate_limits').run();
   });
 
   it('only updates native AT Protocol profile fields that changed', () => {

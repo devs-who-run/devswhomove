@@ -25,7 +25,7 @@ describe('Weekly insights with real D1', () => {
       }),
     );
     db = (await runtime.getD1Database('DB')) as unknown as D1Database;
-    for (const file of ['0001_initial.sql', '0003_atproto.sql']) {
+    for (const file of ['0001_initial.sql', '0003_atproto.sql', '0008_rate_limits.sql']) {
       const migration = await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8');
       for (const statement of migration
         .split(';')

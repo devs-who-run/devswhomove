@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { workerModules } from './testing/bundle';
 import { convertV4MiniflareOptions, Miniflare, Response as WorkerResponse } from 'miniflare';
 import { readFile } from 'node:fs/promises';
@@ -249,6 +249,7 @@ describe('Worker with real D1 storage', () => {
         '0005_event_conferences.sql',
         '0006_social.sql',
         '0007_photo_deletions.sql',
+        '0008_rate_limits.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -353,6 +354,10 @@ describe('Worker with real D1 storage', () => {
 
   afterAll(async () => {
     await runtime?.dispose();
+  });
+
+  beforeEach(async () => {
+    await db.prepare('DELETE FROM rate_limits').run();
   });
 
   it('serves an empty anonymous community without leaking profiles', async () => {
@@ -1135,6 +1140,56 @@ describe('Worker with real D1 storage', () => {
       await request('/api/events', 'GET', undefined, alice)
     ).json<{ events: { attendees: number; joined: boolean }[] }>();
     expect(result.events[0]).toMatchObject({ attendees: 1, joined: true });
+  });
+
+  it('rate limits event mutations and returns a retry delay', async () => {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const response = await request('/api/events', 'POST', {}, alice);
+      expect(response.status).toBe(400);
+    }
+
+    const limited = await request('/api/events', 'POST', {}, alice);
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
+  });
+
+  it('keeps rate-limit buckets monotonic when an older window is submitted', async () => {
+    const bucket = hash('event:account:alice');
+    const futureWindow = Math.floor(Date.now() / 3_600_000) * 3_600 + 7_200;
+    await db
+      .prepare('INSERT INTO rate_limits (bucket, window_start, request_count) VALUES (?, ?, ?)')
+      .bind(bucket, futureWindow, 5)
+      .run();
+
+    expect((await request('/api/events', 'POST', {}, alice)).status).toBe(400);
+    expect(
+      await db
+        .prepare('SELECT window_start, request_count FROM rate_limits WHERE bucket = ?')
+        .bind(bucket)
+        .first(),
+    ).toEqual({ window_start: futureWindow, request_count: 5 });
+  });
+
+  it('uses the event policy when an event ID contains the word visibility', async () => {
+    const response = await request(
+      '/api/events/visibility-example/join',
+      'POST',
+      { join: true },
+      alice,
+    );
+    expect(response.status).toBe(404);
+    expect(
+      await db
+        .prepare('SELECT request_count FROM rate_limits WHERE bucket = ?')
+        .bind(hash('event:account:alice'))
+        .first(),
+    ).toEqual({ request_count: 1 });
+    expect(
+      await db
+        .prepare('SELECT request_count FROM rate_limits WHERE bucket = ?')
+        .bind(hash('activity:account:alice'))
+        .first(),
+    ).toBeNull();
   });
 
   it('lets only the host see event attendee names', async () => {

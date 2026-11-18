@@ -261,8 +261,41 @@ pnpm run test:worker
 
 Worker integration tests run in an isolated Miniflare runtime with real D1 SQL, not mocked database responses. They do not use your local or production database. Live GitHub sign-in requires OAuth credentials and is not exercised against GitHub by the automated suite.
 
+## Abuse and rate controls
+
+Worker API routes use fixed-window limits stored in D1. Authenticated requests
+are limited per account and, when Cloudflare supplies `CF-Connecting-IP`, per
+client IP. OAuth starts and callbacks are limited by client IP. The Worker stores
+SHA-256 bucket identifiers rather than raw account IDs or IP addresses, and
+reuses each bucket row across windows. A rejected request returns HTTP 429 with
+`Retry-After` seconds.
+
+| Request class                                      | Per account | Per client IP | Window     |
+| -------------------------------------------------- | ----------- | ------------- | ---------- |
+| OAuth start and callback                           | —           | 10            | 10 minutes |
+| Activity writes, profile edits, visibility changes | 60          | 120           | 1 hour     |
+| Bulk activity imports                              | 10          | 30            | 1 hour     |
+| Photo uploads and deletes                          | 10          | 30            | 1 hour     |
+| Comments                                           | 30          | 120           | 1 hour     |
+| Other social actions                               | 120         | 300           | 1 hour     |
+| Event and RSVP mutations                           | 60          | 180           | 1 hour     |
+| Other API mutations, including token management    | 120         | 300           | 1 hour     |
+| API reads                                          | 600         | 1,200         | 1 hour     |
+| MCP requests                                       | —           | 1,200         | 1 hour     |
+
+The account limit also applies to agent-token writes and MCP tool calls that
+create or update records. Bulk import requests count once toward the limit;
+the API's existing 100-item batch cap still applies. Limits are shared across
+all sessions and agents for one account. These controls provide basic abuse
+friction; they are not a substitute for monitoring, account moderation, or
+operational retention policies.
+
+The limits use fixed windows, so short bursts can cross a window boundary. Apply
+migration `0008_rate_limits.sql` locally and remotely with the normal D1 migration
+commands before running or deploying the updated Worker.
+
 ## Deliberately not yet included
 
-Follow approvals, private clubs, notifications, multiple photos or video, GPS/routes, wearable imports, event waitlists/recurrence, configurable goals, and agent OAuth. Public/private means **everyone or only you**, not followers-only. Before a public launch, add abuse/rate controls, account deletion/export and operational retention policies.
+Follow approvals, private clubs, notifications, multiple photos or video, GPS/routes, wearable imports, event waitlists/recurrence, configurable goals, and agent OAuth. Public/private means **everyone or only you**, not followers-only. Before a public launch, add account deletion/export and operational retention policies.
 
 Cloudflare C3's Angular template currently assumes SSR during its final configuration. This app deliberately uses static Angular assets and a dedicated API Worker; its Wrangler entry point and output directory are configured explicitly.
