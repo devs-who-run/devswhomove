@@ -250,6 +250,8 @@ describe('Worker with real D1 storage', () => {
         '0006_social.sql',
         '0007_photo_deletions.sql',
         '0008_rate_limits.sql',
+        '0009_event_waitlists.sql',
+        '0010_event_waitlist_states.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -316,8 +318,18 @@ describe('Worker with real D1 storage', () => {
       )
       .run();
     for (const statement of migrations
-      .slice(3)
+      .slice(3, -1)
       .join(';')
+      .split(';')
+      .map((part) => part.trim())
+      .filter(Boolean))
+      await db.prepare(statement).run();
+    await db
+      .prepare('INSERT INTO event_waitlist (event_id, attendee_id, joined_at) VALUES (?, ?, ?)')
+      .bind('legacy-event', 'github:legacy', '2026-01-02T03:04:05.000Z')
+      .run();
+    for (const statement of migrations
+      .at(-1)!
       .split(';')
       .map((part) => part.trim())
       .filter(Boolean))
@@ -333,6 +345,20 @@ describe('Worker with real D1 storage', () => {
         await db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first<{ count: number }>(),
       ).toEqual({ count: 1 });
     }
+    expect(
+      await db
+        .prepare(
+          'SELECT event_id, attendee_id, status, joined_at, updated_at FROM event_waitlist WHERE event_id = ?',
+        )
+        .bind('legacy-event')
+        .first(),
+    ).toEqual({
+      event_id: 'legacy-event',
+      attendee_id: 'github:legacy',
+      status: 'waiting',
+      joined_at: '2026-01-02T03:04:05.000Z',
+      updated_at: '2026-01-02T03:04:05.000Z',
+    });
     await db.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind('did:plc:migration').run();
     for (const [id, session, visibility] of [
       ['alice', alice, 'public'],
@@ -1257,22 +1283,144 @@ describe('Worker with real D1 storage', () => {
     }
   });
 
-  it('enforces capacity atomically, treats repeat joins as idempotent and allows leaving', async () => {
-    const results = await Promise.all([
-      request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob),
-      request(`/api/events/${eventId}/join`, 'POST', { join: true }, charlie),
-    ]);
-    expect(results.map((response) => response.status).sort()).toEqual([200, 409]);
-    const winner = results[0].status === 200 ? bob : charlie;
-    expect(
-      (await request(`/api/events/${eventId}/join`, 'POST', { join: true }, winner)).status,
-    ).toBe(200);
-    expect(
-      (await request(`/api/events/${eventId}/join`, 'POST', { join: false }, winner)).status,
-    ).toBe(200);
-    expect(
-      (await request(`/api/events/${eventId}/join`, 'POST', { join: false }, alice)).status,
-    ).toBe(400);
+  it('queues full-event RSVPs, keeps repeat joins idempotent and promotes on leave', async () => {
+    try {
+      expect(
+        (await request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob)).status,
+      ).toBe(200);
+      expect(
+        (await request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob)).status,
+      ).toBe(200);
+      expect(
+        (await request(`/api/events/${eventId}/join`, 'POST', { join: true }, charlie)).status,
+      ).toBe(200);
+      expect(
+        (
+          await db
+            .prepare(
+              "SELECT attendee_id, status FROM event_waitlist WHERE event_id = ? AND status = 'waiting' ORDER BY joined_at, id",
+            )
+            .bind(eventId)
+            .all()
+        ).results,
+      ).toEqual([{ attendee_id: 'github:charlie', status: 'waiting' }]);
+      expect(
+        (await request(`/api/events/${eventId}/join`, 'POST', { join: true }, charlie)).status,
+      ).toBe(200);
+      await db
+        .prepare('INSERT INTO event_waitlist (event_id, attendee_id) VALUES (?, ?)')
+        .bind(eventId, 'atproto:extra')
+        .run();
+      expect(
+        (
+          await request(
+            `/api/events/${eventId}`,
+            'PATCH',
+            {
+              title: 'Friendly tennis',
+              sport: 'Tennis',
+              startsAt: '2098-01-01T09:00:00.000Z',
+              location: 'City park',
+              description: 'Bring a racket.',
+              level: 'Beginners',
+              capacity: 3,
+            },
+            alice,
+          )
+        ).status,
+      ).toBe(200);
+      expect(
+        await db
+          .prepare('SELECT user_id FROM event_attendees WHERE event_id = ? AND user_id = ?')
+          .bind(eventId, 'charlie')
+          .first(),
+      ).toEqual({ user_id: 'charlie' });
+      expect(
+        (
+          await db
+            .prepare(
+              "SELECT attendee_id FROM event_waitlist WHERE event_id = ? AND status = 'waiting' ORDER BY joined_at, id",
+            )
+            .bind(eventId)
+            .all()
+        ).results,
+      ).toEqual([{ attendee_id: 'atproto:extra' }]);
+      const readmitted = await request(
+        `/api/events/${eventId}/join`,
+        'POST',
+        { join: true },
+        charlie,
+      );
+      expect(await readmitted.json()).toEqual({ joined: true, waitlisted: false });
+      expect(
+        await db
+          .prepare('SELECT status FROM event_waitlist WHERE event_id = ? AND attendee_id = ?')
+          .bind(eventId, 'github:charlie')
+          .first(),
+      ).toEqual({ status: 'promoted' });
+      expect(
+        (await request(`/api/events/${eventId}/join`, 'POST', { join: false }, bob)).status,
+      ).toBe(200);
+      expect(
+        await db
+          .prepare(
+            'SELECT attendee_id FROM atproto_external_event_attendees WHERE event_id = ? AND attendee_id = ?',
+          )
+          .bind(eventId, 'atproto:extra')
+          .first(),
+      ).toEqual({ attendee_id: 'atproto:extra' });
+      await db
+        .prepare('INSERT INTO event_waitlist (event_id, attendee_id) VALUES (?, ?)')
+        .bind(eventId, 'atproto:pending')
+        .run();
+      expect(
+        await (await request(`/api/events/${eventId}/join`, 'POST', { join: true }, bob)).json(),
+      ).toEqual({ joined: false, waitlisted: true });
+      expect(
+        (await request(`/api/events/${eventId}/join`, 'POST', { join: false }, bob)).status,
+      ).toBe(200);
+      expect(
+        (
+          await db
+            .prepare(
+              "SELECT attendee_id, status FROM event_waitlist WHERE event_id = ? AND status = 'waiting' ORDER BY joined_at, id",
+            )
+            .bind(eventId)
+            .all()
+        ).results,
+      ).toEqual([{ attendee_id: 'atproto:pending', status: 'waiting' }]);
+      expect(
+        await db
+          .prepare('SELECT status FROM event_waitlist WHERE event_id = ? AND attendee_id = ?')
+          .bind(eventId, 'github:bob')
+          .first(),
+      ).toEqual({ status: 'left' });
+      expect(
+        (await request(`/api/events/${eventId}/join`, 'POST', { join: false }, bob)).status,
+      ).toBe(200);
+      expect(
+        (
+          await db
+            .prepare(
+              "SELECT attendee_id FROM event_waitlist WHERE event_id = ? AND status = 'waiting' ORDER BY joined_at, id",
+            )
+            .bind(eventId)
+            .all()
+        ).results,
+      ).toEqual([{ attendee_id: 'atproto:pending' }]);
+      expect(
+        (await request(`/api/events/${eventId}/join`, 'POST', { join: false }, alice)).status,
+      ).toBe(400);
+    } finally {
+      await db.batch([
+        db.prepare('DELETE FROM event_waitlist WHERE event_id = ?').bind(eventId),
+        db.prepare('DELETE FROM atproto_external_event_attendees WHERE event_id = ?').bind(eventId),
+        db
+          .prepare('DELETE FROM event_attendees WHERE event_id = ? AND user_id = ?')
+          .bind(eventId, 'charlie'),
+        db.prepare('UPDATE events SET capacity = 2 WHERE id = ?').bind(eventId),
+      ]);
+    }
   });
 
   it('lets only the host edit an event and never below current attendance', async () => {
@@ -1426,15 +1574,42 @@ describe('Worker with real D1 storage', () => {
         expect(await listed()).toMatchObject(edited);
         expect((await request(`${path}/join`, 'POST', { join: true }, bob)).status).toBe(200);
         expect((await request(`${path}/join`, 'POST', { join: true }, charlie)).status).toBe(200);
+        let finalEdited = edited;
+        if (provider === 'atproto') {
+          expect((await request(`${path}/join`, 'POST', { join: true }, alice)).status).toBe(200);
+          await db
+            .prepare('INSERT INTO event_waitlist (event_id, attendee_id) VALUES (?, ?)')
+            .bind(id, 'atproto:capacity-waiter')
+            .run();
+          finalEdited = { ...edited, capacity: 5 };
+          expect((await request(path, 'PATCH', finalEdited, session)).status).toBe(200);
+          expect(
+            await db
+              .prepare('SELECT status FROM event_waitlist WHERE event_id = ? AND attendee_id = ?')
+              .bind(id, 'atproto:capacity-waiter')
+              .first(),
+          ).toEqual({ status: 'promoted' });
+          expect(
+            await db
+              .prepare(
+                'SELECT attendee_id FROM atproto_event_attendees WHERE event_uri = ? AND attendee_id = ?',
+              )
+              .bind(id, 'atproto:capacity-waiter')
+              .first(),
+          ).toEqual({ attendee_id: 'atproto:capacity-waiter' });
+        }
         expect((await request(path, 'PATCH', { ...edited, capacity: 2 }, session)).status).toBe(
           409,
         );
-        expect(await listed()).toMatchObject({ ...edited, attendees: 3 });
+        expect(await listed()).toMatchObject({
+          ...finalEdited,
+          attendees: provider === 'atproto' ? 5 : 3,
+        });
         expect(
-          (await request(path, 'PATCH', { ...edited, conferenceUrl: '' }, session)).status,
+          (await request(path, 'PATCH', { ...finalEdited, conferenceUrl: '' }, session)).status,
         ).toBe(200);
         expect(await listed()).toMatchObject({ conferenceName: 'BikeConf', conferenceUrl: null });
-        const { conferenceName, conferenceUrl, ...normal } = edited;
+        const { conferenceName, conferenceUrl, ...normal } = finalEdited;
         expect((await request(path, 'PATCH', normal, session)).status).toBe(200);
         expect(await listed()).toMatchObject({ conferenceName: null, conferenceUrl: null });
         if (provider === 'atproto') {
@@ -1442,8 +1617,10 @@ describe('Worker with real D1 storage', () => {
           expect(publishedAtprotoRecords.at(-1)).not.toHaveProperty('conferenceUrl');
         }
       } finally {
-        if (provider === 'atproto') await cleanConferenceHost();
-        else if (id) await db.prepare('DELETE FROM events WHERE id = ?').bind(id).run();
+        if (provider === 'atproto') {
+          if (id) await db.prepare('DELETE FROM event_waitlist WHERE event_id = ?').bind(id).run();
+          await cleanConferenceHost();
+        } else if (id) await db.prepare('DELETE FROM events WHERE id = ?').bind(id).run();
       }
     },
   );

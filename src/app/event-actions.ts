@@ -22,13 +22,20 @@ export class EventActions {
   async join(event: SportEvent): Promise<void> {
     if (!this.context.signedIn()) return;
     await this.context.action(async () => {
-      await request(`/api/events/${encodeURIComponent(event.id)}/join`, 'POST', {
-        join: !event.joined,
-      });
+      const joining = !event.joined && !event.waitlisted;
+      const membership = await request<{ joined: boolean; waitlisted: boolean }>(
+        `/api/events/${encodeURIComponent(event.id)}/join`,
+        'POST',
+        { join: joining },
+      );
       this.context.notice.set(
-        event.joined
-          ? 'You have left the event.'
-          : 'You are in! The event is now in your upcoming sessions.',
+        joining
+          ? membership.joined
+            ? 'You are in! The event is now in your upcoming sessions.'
+            : membership.waitlisted
+              ? 'You’re on the waitlist.'
+              : 'Your event RSVP could not be confirmed.'
+          : 'Your RSVP was withdrawn.',
       );
       await this.context.load();
       await this.context.refreshClub();

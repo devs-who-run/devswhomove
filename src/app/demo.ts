@@ -96,7 +96,9 @@ export const DEMO_EVENTS: SportEvent[] = [
     level: 'Easy pace · All levels',
     capacity: 12,
     attendees: 8,
+    waitlistCount: 0,
     joined: false,
+    waitlisted: false,
   },
   {
     id: 'preview-tennis',
@@ -111,7 +113,9 @@ export const DEMO_EVENTS: SportEvent[] = [
     level: 'Beginner friendly',
     capacity: 8,
     attendees: 5,
+    waitlistCount: 0,
     joined: false,
+    waitlisted: false,
   },
   {
     id: 'preview-cycle',
@@ -126,6 +130,8 @@ export const DEMO_EVENTS: SportEvent[] = [
     level: 'Social · 20–25 km',
     capacity: 16,
     attendees: 9,
+    waitlistCount: 0,
     joined: false,
+    waitlisted: false,
   },
 ];

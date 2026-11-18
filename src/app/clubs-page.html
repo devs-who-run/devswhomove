@@ -83,17 +83,15 @@
                 >{{ event.attendees }} / {{ event.capacity }} going</span
               >
               @if (event.hostId !== viewer()?.id) {
-                <button
-                  class="text-button"
-                  [disabled]="saving() || (!event.joined && event.attendees >= event.capacity)"
-                  (click)="joinEvent.emit(event)"
-                >
+                <button class="text-button" [disabled]="saving()" (click)="joinEvent.emit(event)">
                   {{
                     event.joined
                       ? 'Leave event'
-                      : event.attendees >= event.capacity
-                        ? 'Full'
-                        : 'Count me in'
+                      : event.waitlisted
+                        ? 'On waitlist · Leave'
+                        : event.attendees >= event.capacity
+                          ? 'Join waitlist'
+                          : 'Count me in'
                   }}
                 </button>
               }

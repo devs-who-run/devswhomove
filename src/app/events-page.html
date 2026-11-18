@@ -63,6 +63,9 @@
         <p class="event-detail"><app-icon name="move" />{{ event.level }}</p>
         <p class="event-detail">
           <app-icon name="people" />{{ event.attendees }} / {{ event.capacity }} going
+          @if (event.waitlistCount) {
+            <span>· {{ event.waitlistCount }} waiting</span>
+          }
           <span class="host-name">· Hosted by {{ event.hostName }}</span>
         </p>
         @if (event.hostId === viewer()?.id) {
@@ -106,17 +109,19 @@
         } @else {
           <button
             class="button full"
-            [class.primary]="!event.joined"
-            [class.outline]="event.joined"
-            [disabled]="saving() || (!event.joined && event.attendees >= event.capacity)"
+            [class.primary]="!event.joined && !event.waitlisted"
+            [class.outline]="event.joined || event.waitlisted"
+            [disabled]="saving()"
             (click)="joinEvent.emit(event)"
           >
             <app-icon [name]="event.joined ? 'check' : 'plus'" />{{
               event.joined
                 ? 'You’re going · Leave event'
-                : event.attendees >= event.capacity
-                  ? 'This one’s full'
-                  : 'Count me in'
+                : event.waitlisted
+                  ? 'On waitlist · Leave'
+                  : event.attendees >= event.capacity
+                    ? 'Join waitlist'
+                    : 'Count me in'
             }}
           </button>
         }
