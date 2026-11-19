@@ -4,6 +4,7 @@ import {
   cardSvg,
   cardVersion,
   shareMeta,
+  websiteShareTags,
   wrapText,
   type CardActivity,
 } from './share-card';
@@ -63,5 +64,12 @@ describe('share card', () => {
     expect(meta.tags).toContain('<meta name="twitter:card" content="summary_large_image" />');
     expect(meta.tags).toContain('<meta property="og:image:width" content="1200" />');
     expect(meta.tags).not.toContain('<script>');
+  });
+
+  it('escapes the website preview URL', () => {
+    const tags = websiteShareTags('https://devswhorun.dev', '/profile/a&b');
+    expect(tags).toContain(
+      '<meta property="og:url" content="https://devswhorun.dev/profile/a&amp;b" />',
+    );
   });
 });

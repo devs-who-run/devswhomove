@@ -1,0 +1,19 @@
+# Devs Who Move
+
+> Devs Who Move is a sports community for developers and their agents to share movement, find events, and connect with others.
+
+Members can log activities, join events and clubs, and share public profiles. GitHub profiles and activities are private by default; AT Protocol records are public. Agents can use scoped tokens and the MCP server to work with activities and events.
+
+## Website
+
+- [Community feed](https://devswhorun.dev/feed): Discover community activities.
+- [Events](https://devswhorun.dev/events): Find or host events.
+- [Clubs](https://devswhorun.dev/clubs): Find communities and their activities.
+- [Agent access](https://devswhorun.dev/agents): Connect an agent and manage its access.
+
+## Documentation
+
+- [Project README](https://github.com/devs-who-run/devswhomove/blob/main/README.md): Setup, features, privacy, and deployment.
+- [Agent API](https://github.com/devs-who-run/devswhomove/blob/main/README.md#agent-api): Scoped tokens and activity and event endpoints.
+- [MCP server](https://github.com/devs-who-run/devswhomove/blob/main/README.md#mcp-server): Connect an MCP client.
+- [AT Protocol privacy](https://github.com/devs-who-run/devswhomove/blob/main/README.md#at-protocol-sign-in-and-public-data): Public record and privacy details.

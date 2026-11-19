@@ -24,7 +24,7 @@ import {
 import type { Agent } from '@atproto/api';
 import { MAX_PHOTO_BYTES, sanitizeImage } from './images';
 import { handleMcp } from './mcp';
-import { cardSvg, cardVersion, shareMeta } from './share-card';
+import { cardSvg, cardVersion, shareMeta, websiteShareTags } from './share-card';
 import { renderPng } from './share-render';
 import { getWeeklyRecap, getGithubInsights } from './insights';
 import { enforceRateLimit } from './rate-limit';
@@ -433,14 +433,11 @@ async function publicActivity(env: Env, id: string): Promise<Activity | null> {
 async function appPage(request: Request, env: Env): Promise<Response> {
   const page = await env.ASSETS.fetch(request);
   if (!page.ok || !page.headers.get('Content-Type')?.includes('text/html')) return page;
-  const image = `${new URL(env.APP_URL).origin}/og-image.png`;
+  const tags = websiteShareTags(new URL(env.APP_URL).origin, new URL(request.url).pathname);
   return new HTMLRewriter()
     .on('head', {
       element(element) {
-        element.append(
-          `<meta property="og:image" content="${image}" /><meta name="twitter:card" content="summary_large_image" /><meta name="twitter:image" content="${image}" />`,
-          { html: true },
-        );
+        element.append(tags, { html: true });
       },
     })
     .transform(page);
