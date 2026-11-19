@@ -1,5 +1,7 @@
+import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
-import { mastodonHost, shareTargets } from './activity-share';
+import { ActivityShare, mastodonHost, shareTargets } from './activity-share';
+import { DEMO_ACTIVITIES } from './demo';
 
 describe('activity sharing', () => {
   it('builds share intents for each network', () => {
@@ -23,5 +25,16 @@ describe('activity sharing', () => {
     expect(mastodonHost('javascript:alert(1)')).toBe('');
     expect(mastodonHost('evil.com/path?x')).toBe('evil.com');
     expect(mastodonHost('localhost')).toBe('');
+  });
+
+  it('uses the same versioned card URL for the preview and download', () => {
+    const fixture = TestBed.createComponent(ActivityShare);
+    fixture.componentRef.setInput('activity', { ...DEMO_ACTIVITIES[0], id: 'a/b' });
+    fixture.detectChanges();
+    const preview = fixture.nativeElement.querySelector('.share-preview') as HTMLImageElement;
+    const download = fixture.nativeElement.querySelector('[download]') as HTMLAnchorElement;
+    const url = preview.getAttribute('src');
+    expect(url).toMatch(/^\/api\/activities\/a%2Fb\/card\.png\?v=\d+$/);
+    expect(download.getAttribute('href')).toBe(url);
   });
 });

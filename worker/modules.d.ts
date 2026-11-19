@@ -7,3 +7,8 @@ declare module '*.ttf' {
   const data: ArrayBuffer | Uint8Array;
   export default data;
 }
+
+declare module '*.svg?raw' {
+  const svg: string;
+  export default svg;
+}

@@ -26,8 +26,11 @@
       "/agents/",
     ],
   },
-  // Share-card fonts are bundled as binary modules; the resvg WASM uses the default CompiledWasm rule.
-  "rules": [{ "type": "Data", "globs": ["**/*.ttf"], "fallthrough": true }],
+  // Share-card fonts and logo are bundled as modules; the resvg WASM uses the default CompiledWasm rule.
+  "rules": [
+    { "type": "Data", "globs": ["**/*.ttf"], "fallthrough": true },
+    { "type": "Text", "globs": ["**/*.svg?raw"], "fallthrough": true },
+  ],
   "triggers": { "crons": ["*/15 * * * *"] },
   "d1_databases": [
     {

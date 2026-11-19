@@ -1,8 +1,12 @@
 import type { Activity } from '../src/app/models';
+import { SHARE_CARD_DESIGN_VERSION } from '../src/app/share-card-version';
 import { SPORT_ICON_PATHS } from '../src/app/sport-icons';
+import brandIcon from '../public/brand/icon.svg?raw';
 
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
+
+const brandIconUri = `data:image/svg+xml,${encodeURIComponent(brandIcon)}`;
 
 /** Fields rendered on a public share card. Notes and photos are deliberately left out. */
 export type CardActivity = Pick<
@@ -133,10 +137,7 @@ export function cardSvg(activity: CardActivity, host: string): string {
     <path d="${SPORT_ICON_PATHS[sport]}"/>
   </g>
   <g transform="translate(72 64)">
-    <rect width="52" height="52" rx="14" fill="#d8f294"/>
-    <g transform="translate(12 12) scale(1.15)" fill="none" stroke="#234d3c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="m3 17 6-10 4 6 3-5 5 9M6 4h3m8 16h3"/>
-    </g>
+    <image width="52" height="52" href="${brandIconUri}"/>
     <text x="70" y="36" font-family="Manrope" font-weight="800" font-size="28" fill="#ffffff">Devs Who Move</text>
   </g>
   <g transform="translate(${CARD_WIDTH - 72} 64)">
@@ -166,7 +167,7 @@ export function cardSvg(activity: CardActivity, host: string): string {
 </svg>`;
 }
 
-/** Content hash used to version card URLs and cache entries when the activity changes. */
+/** Content hash used to version card URLs and cache entries when activity or design changes. */
 export async function cardVersion(activity: CardActivity): Promise<string> {
   const fields = [
     activity.id,
@@ -177,10 +178,11 @@ export async function cardVersion(activity: CardActivity): Promise<string> {
     activity.occurredAt,
     activity.duration,
     activity.distance,
+    brandIcon,
   ];
   const digest = await crypto.subtle.digest(
     'SHA-256',
-    new TextEncoder().encode(`v1:${JSON.stringify(fields)}`),
+    new TextEncoder().encode(`v${SHARE_CARD_DESIGN_VERSION}:${JSON.stringify(fields)}`),
   );
   return Array.from(new Uint8Array(digest).slice(0, 6), (byte) =>
     byte.toString(16).padStart(2, '0'),

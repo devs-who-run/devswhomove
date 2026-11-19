@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { initWasm, Resvg } from '@resvg/resvg-wasm';
+import { describe, expect, it, vi } from 'vitest';
 import {
   cardMetrics,
   cardSvg,
@@ -49,11 +51,67 @@ describe('share card', () => {
     expect(svg).toContain('Ada &lt;Lovelace&gt;');
   });
 
+  it('renders the same logo as the site', async () => {
+    const logo = await readFile('public/brand/icon.svg', 'utf8');
+    const svg = cardSvg(activity, 'devswhorun.dev');
+    expect(svg).toContain(`href="data:image/svg+xml,${encodeURIComponent(logo)}"`);
+
+    await initWasm(await readFile('node_modules/@resvg/resvg-wasm/index_bg.wasm'));
+    const card = new Resvg(svg, {});
+    const icon = new Resvg(logo, { fitTo: { mode: 'width', value: 52 } });
+    try {
+      const cardImage = card.render();
+      const iconImage = icon.render();
+      try {
+        expect([iconImage.width, iconImage.height]).toEqual([52, 52]);
+        const cardPixels = cardImage.pixels;
+        const iconPixels = iconImage.pixels;
+        let compared = 0;
+        let mismatched = 0;
+        for (let y = 2; y < 50; y++) {
+          for (let x = 2; x < 50; x++) {
+            const iconOffset = (y * 52 + x) * 4;
+            if (iconPixels[iconOffset + 3] !== 255) continue;
+            compared++;
+            const cardOffset = ((y + 64) * 1200 + x + 72) * 4;
+            if (
+              [0, 1, 2, 3].some(
+                (channel) => cardPixels[cardOffset + channel] !== iconPixels[iconOffset + channel],
+              )
+            )
+              mismatched++;
+          }
+        }
+        expect(compared).toBeGreaterThan(0);
+        expect(mismatched).toBe(0);
+      } finally {
+        cardImage.free();
+        iconImage.free();
+      }
+    } finally {
+      card.free();
+      icon.free();
+    }
+  });
+
   it('versions cards by rendered content', async () => {
     const version = await cardVersion(activity);
     expect(version).toMatch(/^[0-9a-f]{12}$/);
     expect(await cardVersion({ ...activity })).toBe(version);
     expect(await cardVersion({ ...activity, title: 'Changed' })).not.toBe(version);
+  });
+
+  it('changes the card version when the logo changes', async () => {
+    const version = await cardVersion(activity);
+    vi.resetModules();
+    vi.doMock('../public/brand/icon.svg?raw', () => ({ default: '<svg>Updated logo</svg>' }));
+    try {
+      const updated = await import('./share-card');
+      expect(await updated.cardVersion(activity)).not.toBe(version);
+    } finally {
+      vi.doUnmock('../public/brand/icon.svg?raw');
+      vi.resetModules();
+    }
   });
 
   it('builds escaped OpenGraph and Twitter tags', () => {
