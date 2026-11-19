@@ -100,6 +100,21 @@ describe('App', () => {
     expect(html.querySelector('.week-chart')?.getAttribute('aria-label')).toContain('Monday');
   });
 
+  it('uses the brand artwork for the home link', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const link = fixture.nativeElement.querySelector('.sidebar .brand') as HTMLAnchorElement;
+    expect(link.getAttribute('aria-label')).toBe('Devs Who Move home');
+    expect(link.querySelector('.brand-lockup-light')?.getAttribute('src')).toBe(
+      '/brand/lockup_horizontal_light.svg',
+    );
+    expect(link.querySelector('.brand-lockup-dark')?.getAttribute('src')).toBe(
+      '/brand/lockup_horizontal_dark.svg',
+    );
+    expect(link.querySelector('.brand-mark')?.getAttribute('src')).toBe('/brand/icon.svg');
+  });
+
   it('routes sign-in actions from each app entry point to the existing auth handlers', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();

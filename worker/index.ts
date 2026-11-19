@@ -429,6 +429,23 @@ async function publicActivity(env: Env, id: string): Promise<Activity | null> {
   return activity?.visibility === 'public' ? activity : null;
 }
 
+/** Add the default brand image to SPA pages without affecting activity-specific previews. */
+async function appPage(request: Request, env: Env): Promise<Response> {
+  const page = await env.ASSETS.fetch(request);
+  if (!page.ok || !page.headers.get('Content-Type')?.includes('text/html')) return page;
+  const image = `${new URL(env.APP_URL).origin}/og-image.png`;
+  return new HTMLRewriter()
+    .on('head', {
+      element(element) {
+        element.append(
+          `<meta property="og:image" content="${image}" /><meta name="twitter:card" content="summary_large_image" /><meta name="twitter:image" content="${image}" />`,
+          { html: true },
+        );
+      },
+    })
+    .transform(page);
+}
+
 /** Serve the SPA for a shared activity, with OpenGraph tags when the activity is public. */
 async function activityPage(request: Request, env: Env, rawId: string): Promise<Response> {
   const page = await env.ASSETS.fetch(request);
@@ -1249,7 +1266,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const sharedActivity = /^\/activities\/([^/]+)\/?$/.exec(url.pathname);
   if (sharedActivity && (method === 'GET' || method === 'HEAD'))
     return activityPage(request, env, sharedActivity[1]);
-  if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+  if (!url.pathname.startsWith('/api/')) return appPage(request, env);
 
   await enforceRateLimit(request, env.DB);
 
