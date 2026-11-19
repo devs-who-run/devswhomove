@@ -2,6 +2,7 @@ import { Component, computed, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Icon } from './icon';
 import type { Activity } from './models';
+import { SHARE_CARD_DESIGN_VERSION } from './share-card-version';
 
 const MASTODON_KEY = 'dwm.mastodonInstance';
 const HOSTNAME = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
@@ -106,7 +107,8 @@ export class ActivityShare {
     () => `${location.origin}/activities/${encodeURIComponent(this.activity().id)}`,
   );
   readonly cardUrl = computed(
-    () => `/api/activities/${encodeURIComponent(this.activity().id)}/card.png`,
+    () =>
+      `/api/activities/${encodeURIComponent(this.activity().id)}/card.png?v=${SHARE_CARD_DESIGN_VERSION}`,
   );
   readonly text = computed(
     () => `${this.activity().title} · ${this.activity().sport} on Devs Who Move`,

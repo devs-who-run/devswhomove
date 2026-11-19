@@ -4,8 +4,8 @@ import { readFile } from 'node:fs/promises';
 const RESVG_WASM = '@resvg/resvg-wasm/index_bg.wasm';
 
 /**
- * Bundle the Worker for Miniflare. Fonts are inlined, and the resvg WASM is supplied as a
- * precompiled module because workerd, like production, cannot compile WASM from bytes.
+ * Bundle the Worker for Miniflare. Fonts and the logo are inlined, and the resvg WASM is
+ * supplied as a precompiled module because workerd cannot compile WASM from bytes.
  */
 export async function workerModules() {
   const bundle = await build({
@@ -15,7 +15,7 @@ export async function workerModules() {
     format: 'esm',
     platform: 'browser',
     target: 'es2022',
-    loader: { '.ttf': 'binary' },
+    loader: { '.ttf': 'binary', '.svg': 'text' },
     external: [RESVG_WASM],
   });
   return {
