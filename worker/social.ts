@@ -152,26 +152,34 @@ export async function addComment(
   const ownerId = await publicActivityOwner(db, activityId);
   const body = text(input, 'Comment', 500);
   const id = crypto.randomUUID();
-  const result = await db
-    .prepare(
-      `INSERT INTO activity_comments (id, activity_id, actor_id, body, created_at)
+  const [result, diagnosis] = await db.batch([
+    db
+      .prepare(
+        `INSERT INTO activity_comments (id, activity_id, actor_id, body, created_at)
       SELECT ?, ?, ?, ?, ? WHERE
         EXISTS (SELECT 1 FROM ${PUBLIC_ACTIVITIES} WHERE activity_id = ?) AND
         (SELECT COUNT(*) FROM activity_comments WHERE activity_id = ?) < ?`,
-    )
-    .bind(
-      id,
-      activityId,
-      user.id,
-      body,
-      new Date().toISOString(),
-      activityId,
-      activityId,
-      MAX_COMMENTS_PER_ACTIVITY,
-    )
-    .run();
+      )
+      .bind(
+        id,
+        activityId,
+        user.id,
+        body,
+        new Date().toISOString(),
+        activityId,
+        activityId,
+        MAX_COMMENTS_PER_ACTIVITY,
+      ),
+    db
+      .prepare(
+        `SELECT EXISTS(SELECT 1 FROM ${PUBLIC_ACTIVITIES} WHERE activity_id = ?) AS targetExists,
+        (SELECT COUNT(*) FROM activity_comments WHERE activity_id = ?) AS commentCount`,
+      )
+      .bind(activityId, activityId),
+  ]);
   if (!result.meta.changes) {
-    await publicActivityOwner(db, activityId);
+    const state = diagnosis.results[0] as { targetExists: number; commentCount: number };
+    if (!state.targetExists) throw new HttpError(404, 'Activity not found.');
     throw new HttpError(409, 'This activity has reached the comment limit.');
   }
   const row = await db.prepare(`${COMMENT_SELECT} WHERE c.id = ?`).bind(id).first<CommentRow>();
@@ -225,25 +233,31 @@ export async function setFollow(
   if (targetId === user.id) throw new HttpError(400, 'You can’t follow yourself.');
   if (follow) {
     requirePublicProfile(user);
-    const result = await db
-      .prepare(
-        `INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at)
+    const [result, diagnosis] = await db.batch([
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at)
         SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM ${PUBLIC_ACTORS} WHERE actor_id = ?)
         AND (SELECT COUNT(*) FROM follows WHERE follower_id = ?) < ?`,
-      )
-      .bind(user.id, targetId, new Date().toISOString(), targetId, user.id, MAX_FOLLOWING)
-      .run();
+        )
+        .bind(user.id, targetId, new Date().toISOString(), targetId, user.id, MAX_FOLLOWING),
+      db
+        .prepare(
+          `SELECT EXISTS(SELECT 1 FROM ${PUBLIC_ACTORS} WHERE actor_id = ?) AS targetExists,
+          EXISTS(SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?) AS alreadyFollowing,
+          (SELECT COUNT(*) FROM follows WHERE follower_id = ?) AS followingCount`,
+        )
+        .bind(targetId, user.id, targetId, user.id),
+    ]);
     if (!result.meta.changes) {
-      const target = await db
-        .prepare(`SELECT 1 AS found FROM ${PUBLIC_ACTORS} WHERE actor_id = ?`)
-        .bind(targetId)
-        .first();
-      if (!target) throw new HttpError(404, 'Profile is private or does not exist.');
-      const existing = await db
-        .prepare('SELECT 1 AS found FROM follows WHERE follower_id = ? AND followee_id = ?')
-        .bind(user.id, targetId)
-        .first();
-      if (!existing) throw new HttpError(400, `You can follow at most ${MAX_FOLLOWING} people.`);
+      const state = diagnosis.results[0] as {
+        targetExists: number;
+        alreadyFollowing: number;
+        followingCount: number;
+      };
+      if (!state.targetExists) throw new HttpError(404, 'Profile is private or does not exist.');
+      if (!state.alreadyFollowing && state.followingCount >= MAX_FOLLOWING)
+        throw new HttpError(400, `You can follow at most ${MAX_FOLLOWING} people.`);
     }
   } else {
     await db

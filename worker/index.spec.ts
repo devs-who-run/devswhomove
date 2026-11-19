@@ -22,6 +22,7 @@ describe('Worker with real D1 storage', () => {
   let failAtprotoEventUpdate = false;
   let failAtprotoListRecords = false;
   let failAtprotoRevocation = false;
+  let omitAtprotoRevocationEndpoint = false;
   let atprotoRevocations = 0;
   let atprotoDeleteCheckpoint: { started: () => void; resume: Promise<void> } | undefined;
   const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -242,7 +243,9 @@ describe('Worker with real D1 storage', () => {
               issuer: 'https://auth.example',
               authorization_endpoint: 'https://auth.example/authorize',
               token_endpoint: 'https://auth.example/token',
-              revocation_endpoint: 'https://auth.example/revoke',
+              ...(omitAtprotoRevocationEndpoint
+                ? {}
+                : { revocation_endpoint: 'https://auth.example/revoke' }),
               pushed_authorization_request_endpoint: 'https://auth.example/par',
               response_types_supported: ['code'],
               grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -274,6 +277,7 @@ describe('Worker with real D1 storage', () => {
         '0008_rate_limits.sql',
         '0009_account_mutation_locks.sql',
         '0010_account_deletion_recovery.sql',
+        '0011_account_deletion_failure_audit.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -1201,14 +1205,58 @@ describe('Worker with real D1 storage', () => {
   });
 
   it('rate limits event mutations and returns a retry delay', async () => {
-    for (let attempt = 0; attempt < 60; attempt++) {
-      const response = await request('/api/events', 'POST', {}, alice);
-      expect(response.status).toBe(400);
-    }
-
+    const userId = await db
+      .prepare('SELECT user_id FROM sessions WHERE token_hash = ?')
+      .bind(hash(alice))
+      .first<string>('user_id');
+    const bucket = hash(`event:account:${userId}`);
+    const windowStart = Math.floor(Date.now() / 3_600_000) * 3_600;
+    await db
+      .prepare('INSERT INTO rate_limits (bucket, window_start, request_count) VALUES (?, ?, ?)')
+      .bind(bucket, windowStart, 60)
+      .run();
     const limited = await request('/api/events', 'POST', {}, alice);
     expect(limited.status).toBe(429);
     expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
+  });
+
+  it('expires deletion retry credentials after 30 days and records a credential-free failure', async () => {
+    const did = 'did:plc:7sagqfh4v4t6zl7bdwbikdc8';
+    const jobId = 'expired-deletion-job';
+    await db
+      .prepare(
+        `INSERT INTO account_deletion_jobs
+          (id, actor_id, encrypted_oauth_session, created_at, next_attempt_at)
+        VALUES (?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        jobId,
+        did,
+        encryptedAtprotoSession(did),
+        new Date(Date.now() - 31 * 86400_000).toISOString(),
+        '2000-01-01T00:00:00.000Z',
+      )
+      .run();
+    try {
+      await (await runtime.getWorker()).scheduled();
+      expect(
+        await db.prepare('SELECT id FROM account_deletion_jobs WHERE id = ?').bind(jobId).first(),
+      ).toBeNull();
+      expect(
+        await db
+          .prepare('SELECT failure_code FROM account_deletion_failures WHERE id = ?')
+          .bind(jobId)
+          .first('failure_code'),
+      ).toBe('revocation_expired');
+      const audit = await db
+        .prepare('SELECT * FROM account_deletion_failures WHERE id = ?')
+        .bind(jobId)
+        .first();
+      expect(JSON.stringify(audit)).not.toContain('encrypted');
+    } finally {
+      await db.prepare('DELETE FROM account_deletion_jobs WHERE id = ?').bind(jobId).run();
+      await db.prepare('DELETE FROM account_deletion_failures WHERE id = ?').bind(jobId).run();
+    }
   });
 
   it('keeps rate-limit buckets monotonic when an older window is submitted', async () => {
@@ -1681,6 +1729,32 @@ describe('Worker with real D1 storage', () => {
       },
     ]);
 
+    const staleMutation = request(
+      '/api/activities',
+      'POST',
+      { ...activity, title: 'Must not be saved after losing its reservation' },
+      session,
+    );
+    for (let attempt = 0; attempt < 1000; attempt++) {
+      const reservation = await db
+        .prepare('SELECT id FROM account_mutation_reservations WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first();
+      if (reservation) break;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    await db
+      .prepare('DELETE FROM account_mutation_reservations WHERE actor_id = ?')
+      .bind(`github:${accountId}`)
+      .run();
+    expect((await staleMutation).status).toBe(409);
+    expect(
+      await db
+        .prepare('SELECT id FROM activities WHERE user_id = ? AND title = ?')
+        .bind(accountId, 'Must not be saved after losing its reservation')
+        .first(),
+    ).toBeNull();
+
     const bucket = await runtime.getR2Bucket('PHOTOS');
     await bucket.put(photoKey, new Uint8Array(12 * 1024 * 1024));
     const pendingExport = request('/api/account/export', 'GET', undefined, session);
@@ -2069,7 +2143,7 @@ describe('Worker with real D1 storage', () => {
           'newer-job',
           newerDid,
           encryptedAtprotoSession(newerDid),
-          '2026-01-01T00:00:00.000Z',
+          new Date().toISOString(),
           '2000-01-01T00:00:00.000Z',
         )
         .run();
@@ -2100,6 +2174,50 @@ describe('Worker with real D1 storage', () => {
       await db.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(did).run();
       await db.prepare('DELETE FROM account_deletion_jobs WHERE actor_id = ?').bind(did).run();
       await db.prepare("DELETE FROM account_deletion_jobs WHERE id = 'newer-job'").run();
+    }
+  });
+
+  it('discards credentials and records unsupported OAuth revocation', async () => {
+    const did = 'did:plc:7sagqfh4v4t6zl7bdwbikdc7';
+    const session = 'atproto-unsupported-revocation-session';
+    omitAtprotoRevocationEndpoint = true;
+    await db.batch([
+      db
+        .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+        .bind(did, 'unsupported.example', 'Unsupported', new Date().toISOString()),
+      db
+        .prepare('INSERT INTO atproto_sessions (token_hash, did, expires_at) VALUES (?, ?, ?)')
+        .bind(hash(session), did, '2099-01-01T00:00:00.000Z'),
+      db
+        .prepare(
+          'INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)',
+        )
+        .bind(did, encryptedAtprotoSession(did), new Date().toISOString()),
+    ]);
+    try {
+      expect(
+        (await request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session)).status,
+      ).toBe(204);
+      expect(
+        await db
+          .prepare('SELECT id FROM account_deletion_jobs WHERE actor_id = ?')
+          .bind(did)
+          .first(),
+      ).toBeNull();
+      const failure = await db
+        .prepare('SELECT failure_code FROM account_deletion_failures WHERE actor_id = ?')
+        .bind(did)
+        .first('failure_code');
+      expect(failure).toBe('revocation_unsupported');
+      const audit = await db
+        .prepare('SELECT * FROM account_deletion_failures WHERE actor_id = ?')
+        .bind(did)
+        .first();
+      expect(JSON.stringify(audit)).not.toContain('encrypted');
+    } finally {
+      omitAtprotoRevocationEndpoint = false;
+      await db.prepare('DELETE FROM account_deletion_jobs WHERE actor_id = ?').bind(did).run();
+      await db.prepare('DELETE FROM account_deletion_failures WHERE actor_id = ?').bind(did).run();
     }
   });
 

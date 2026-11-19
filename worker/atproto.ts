@@ -342,6 +342,13 @@ export async function oauthClient(
 }
 
 /** Revoke the saved grant without touching the live OAuth session for the same DID. */
+export class AtprotoRevocationUnsupportedError extends Error {
+  constructor() {
+    super('The OAuth issuer does not support token revocation.');
+    this.name = 'AtprotoRevocationUnsupportedError';
+  }
+}
+
 export async function revokeSavedAtprotoSession(
   env: AtprotoEnv,
   did: string,
@@ -365,6 +372,7 @@ export async function revokeSavedAtprotoSession(
     session.authMethod,
     session.dpopKey,
   );
+  if (!server.serverMetadata.revocation_endpoint) throw new AtprotoRevocationUnsupportedError();
   await server.request('revocation', {
     token: session.tokenSet.refresh_token ?? session.tokenSet.access_token,
   });
@@ -373,4 +381,27 @@ export async function revokeSavedAtprotoSession(
 /** Create an AT Protocol API agent backed by the restored OAuth session. */
 export function atprotoAgent(session: Awaited<ReturnType<OAuthClient['restore']>>): Agent {
   return new Agent(session);
+}
+
+/** Rebuild an agent whose requests stop when the account mutation reservation is lost. */
+export function guardAtprotoAgent(
+  agent: Agent,
+  assertActive: () => Promise<void>,
+  signal: AbortSignal,
+): Agent {
+  const sessionManager = agent.sessionManager;
+  const fetchHandler = sessionManager.fetchHandler;
+  return new Agent({
+    did: sessionManager.did,
+    fetchHandler: async (url, init) => {
+      await assertActive();
+      const signals = [signal, init?.signal].filter(
+        (value): value is AbortSignal => value !== undefined,
+      );
+      return fetchHandler.call(sessionManager, url, {
+        ...init,
+        signal: AbortSignal.any(signals),
+      });
+    },
+  });
 }

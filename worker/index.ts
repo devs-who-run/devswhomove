@@ -11,7 +11,9 @@ import {
   ATPROTO_OAUTH_SCOPE,
   atprotoAgent,
   atprotoProfileChanges,
+  AtprotoRevocationUnsupportedError,
   EVENT_COLLECTION,
+  guardAtprotoAgent,
   oauthClient,
   PROFILE_COLLECTION,
   revokeSavedAtprotoSession,
@@ -1167,17 +1169,8 @@ async function exportAccount(
       where: github ? 'user_id = ?' : 'did = ?',
       args: [actorId],
     },
-    ...(github
-      ? {
-          photos: {
-            table: 'activities',
-            columns: 'id, photo_key, photo_type',
-            where: 'user_id = ? AND photo_key IS NOT NULL',
-            args: [actorId],
-          },
-        }
-      : {}),
   };
+  const photoRows: { activityId: unknown; photoKey: string; contentType: unknown }[] = [];
   const atprotoRecords: Record<string, { uri: string; value: unknown }[]> = {};
   if (identity.provider === 'atproto') {
     if (!identity.atprotoAgent) throw new HttpError(503, 'AT Protocol session is unavailable.');
@@ -1246,23 +1239,31 @@ async function exportAccount(
         for await (const row of exportRows(env.DB, queries[name])) {
           await writer.write(first ? '\n    ' : ',\n    ');
           first = false;
-          if (name === 'photos') {
-            const object = await env.PHOTOS.get(row['photo_key'] as string);
-            if (!object)
-              throw new HttpError(
-                503,
-                'A stored photo could not be read; retry the export shortly.',
-              );
-            await writer.write(
-              `{\n      "activityId": ${JSON.stringify(row['id'])},\n      "contentType": ${JSON.stringify(row['photo_type'])},\n      "dataBase64": "`,
-            );
-            await writeBase64(writer, object.body);
-            await writer.write('"\n    }');
-          } else {
-            for (const chunk of prettyJson(row, 2)) await writer.write(chunk);
+          if (name === 'activities' && github && typeof row['photo_key'] === 'string') {
+            photoRows.push({
+              activityId: row['id'],
+              photoKey: row['photo_key'],
+              contentType: row['photo_type'],
+            });
           }
+          for (const chunk of prettyJson(row, 2)) await writer.write(chunk);
         }
         await writer.write(first ? ']' : '\n  ]');
+      } else if (name === 'photos') {
+        await writer.write(photoRows.length ? '[\n    ' : '[]');
+        for (let photoIndex = 0; photoIndex < photoRows.length; photoIndex++) {
+          const row = photoRows[photoIndex];
+          const object = await env.PHOTOS.get(row.photoKey);
+          if (!object)
+            throw new HttpError(503, 'A stored photo could not be read; retry the export shortly.');
+          if (photoIndex) await writer.write(',\n    ');
+          await writer.write(
+            `{\n      "activityId": ${JSON.stringify(row.activityId)},\n      "contentType": ${JSON.stringify(row.contentType)},\n      "dataBase64": "`,
+          );
+          await writeBase64(writer, object.body);
+          await writer.write('"\n    }');
+        }
+        if (photoRows.length) await writer.write('\n  ]');
       } else {
         for (const chunk of prettyJson(value, 1)) await writer.write(chunk);
       }
@@ -1284,13 +1285,19 @@ async function exportAccount(
 const MUTATION_LEASE_MS = 30 * 60_000;
 const DELETION_LEASE_MS = 30 * 60_000;
 
+interface AccountMutationReservation {
+  assertActive: () => Promise<void>;
+  release: () => Promise<void>;
+  signal: AbortSignal;
+}
+
 /** Atomically reserve an account mutation unless deletion has already started. */
 async function beginAccountMutation(
   env: Env,
   db: D1Database,
   identity: Identity,
   kind: 'mutation' | 'export' = 'mutation',
-): Promise<() => Promise<void>> {
+): Promise<AccountMutationReservation> {
   const table = identity.provider === 'github' ? 'users' : 'atproto_accounts';
   const column = identity.provider === 'github' ? 'id' : 'did';
   const actorId = `${identity.provider}:${identity.user.id}`;
@@ -1313,38 +1320,109 @@ async function beginAccountMutation(
     .run();
   if (!reserved.meta.changes) throw new HttpError(409, 'Account deletion is in progress.');
   let released = false;
+  let lost = false;
+  const abortController = new AbortController();
+  const assertActive = async () => {
+    if (released || lost)
+      throw new HttpError(409, 'Account mutation reservation is no longer active.');
+    try {
+      const result = await db
+        .prepare(
+          `UPDATE account_mutation_reservations SET lease_until = ? WHERE id = ?
+          AND lease_until > ? AND EXISTS (
+            SELECT 1 FROM account_mutation_locks
+            WHERE actor_id = ?
+          )`,
+        )
+        .bind(
+          new Date(Date.now() + MUTATION_LEASE_MS).toISOString(),
+          id,
+          new Date().toISOString(),
+          actorId,
+        )
+        .run();
+      if (result.meta.changes) return;
+      lost = true;
+      abortController.abort();
+      throw new HttpError(409, 'Account mutation reservation is no longer active.');
+    } catch (error) {
+      if (!lost) {
+        lost = true;
+        abortController.abort();
+      }
+      throw error;
+    }
+  };
   const renew = async () => {
-    if (released) return;
-    const result = await db
-      .prepare(
-        `UPDATE account_mutation_reservations SET lease_until = ? WHERE id = ?
-        AND lease_until > ? AND actor_id = ?`,
-      )
-      .bind(
-        new Date(Date.now() + MUTATION_LEASE_MS).toISOString(),
-        id,
-        new Date().toISOString(),
-        actorId,
-      )
-      .run();
-    if (!result.meta.changes) console.error('Account mutation reservation expired before renewal.');
+    if (released || lost) return;
+    await assertActive();
   };
   const timer = setInterval(
     () => {
       void renew().catch((error) => {
-        console.error('Account mutation reservation renewal failed.', error);
+        console.error(
+          'Account mutation reservation was lost; the mutation has been stopped.',
+          error,
+        );
       });
     },
     Math.floor(MUTATION_LEASE_MS / 3),
   );
   if (env.TEST_MUTATION_PAUSE_ACTOR === identity.user.id)
     await new Promise((resolve) => setTimeout(resolve, 500));
-  return async () => {
-    if (released) return;
-    released = true;
-    clearInterval(timer);
-    await db.prepare('DELETE FROM account_mutation_reservations WHERE id = ?').bind(id).run();
+  return {
+    assertActive,
+    signal: abortController.signal,
+    release: async () => {
+      if (released) return;
+      released = true;
+      clearInterval(timer);
+      await db.prepare('DELETE FROM account_mutation_reservations WHERE id = ?').bind(id).run();
+    },
   };
+}
+
+/** Guard D1 operations so a request cannot continue after its lease is lost. */
+function guardMutationDatabase(db: D1Database, assertActive: () => Promise<void>): D1Database {
+  const unwrapped = new WeakMap<D1PreparedStatement, D1PreparedStatement>();
+  const wrapStatement = (statement: D1PreparedStatement): D1PreparedStatement => {
+    const wrapped = new Proxy(statement, {
+      get(target, property, receiver) {
+        const value: unknown = Reflect.get(target, property, receiver);
+        if (property === 'bind' && typeof value === 'function')
+          return (...values: unknown[]) =>
+            wrapStatement(Reflect.apply(value, target, values) as D1PreparedStatement);
+        if (
+          ['all', 'first', 'raw', 'run'].includes(String(property)) &&
+          typeof value === 'function'
+        )
+          return (...args: unknown[]) =>
+            assertActive().then(() => Reflect.apply(value, target, args));
+        return value;
+      },
+    });
+    unwrapped.set(wrapped, statement);
+    return wrapped;
+  };
+
+  return new Proxy(db, {
+    get(target, property, receiver) {
+      const value: unknown = Reflect.get(target, property, receiver);
+      if (property === 'prepare' && typeof value === 'function')
+        return (query: string) => wrapStatement(Reflect.apply(value, target, [query]));
+      if (property === 'batch' && typeof value === 'function')
+        return (statements: D1PreparedStatement[]) =>
+          assertActive().then(() =>
+            Reflect.apply(value, target, [
+              statements.map((statement) => unwrapped.get(statement) ?? statement),
+            ]),
+          );
+      if (property === 'exec' && typeof value === 'function')
+        return (...args: unknown[]) =>
+          assertActive().then(() => Reflect.apply(value, target, args));
+      return value;
+    },
+  });
 }
 
 /** Close the account to new writes before waiting for writes already in flight. */
@@ -1424,28 +1502,84 @@ async function startAccountDeletion(
 
 /** Retry remote AT Protocol revocation from the durable job committed with account deletion. */
 async function retryAtprotoDeletion(env: Env, jobId?: string): Promise<void> {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const expireFailures = () =>
+    env.DB.prepare('DELETE FROM account_deletion_failures WHERE delete_after <= ?').bind(nowIso);
   const jobs = await env.DB.prepare(
-    `SELECT id, actor_id AS actorId, encrypted_oauth_session AS encryptedSession
+    `SELECT id, actor_id AS actorId, encrypted_oauth_session AS encryptedSession,
+      created_at AS createdAt
     FROM account_deletion_jobs WHERE (? IS NOT NULL AND id = ?)
       OR (? IS NULL AND next_attempt_at <= ?)
     ORDER BY next_attempt_at, created_at, id LIMIT 20`,
   )
-    .bind(jobId ?? null, jobId ?? null, jobId ?? null, new Date().toISOString())
-    .all<{ id: string; actorId: string; encryptedSession: string }>();
+    .bind(jobId ?? null, jobId ?? null, jobId ?? null, nowIso)
+    .all<{ id: string; actorId: string; encryptedSession: string; createdAt: string }>();
   for (const job of jobs.results) {
+    const failureCode =
+      Date.parse(job.createdAt) + 30 * 86400_000 <= now.getTime()
+        ? 'revocation_expired'
+        : undefined;
+    if (failureCode) {
+      await env.DB.batch([
+        expireFailures(),
+        env.DB.prepare(
+          `INSERT INTO account_deletion_failures (id, actor_id, failure_code, recorded_at, delete_after)
+          VALUES (?, ?, ?, ?, ?)`,
+        ).bind(
+          job.id,
+          job.actorId,
+          failureCode,
+          nowIso,
+          new Date(now.getTime() + 30 * 86400_000).toISOString(),
+        ),
+        env.DB.prepare('DELETE FROM account_deletion_jobs WHERE id = ?').bind(job.id),
+      ]);
+      console.error(
+        `AT Protocol revocation was not completed for deletion ${job.id}: ${failureCode}.`,
+      );
+      continue;
+    }
     try {
       await revokeSavedAtprotoSession(env, job.actorId, job.encryptedSession);
-      await env.DB.prepare('DELETE FROM account_deletion_jobs WHERE id = ?').bind(job.id).run();
+      await env.DB.batch([
+        expireFailures(),
+        env.DB.prepare('DELETE FROM account_deletion_jobs WHERE id = ?').bind(job.id),
+      ]);
     } catch (error) {
+      if (error instanceof AtprotoRevocationUnsupportedError) {
+        await env.DB.batch([
+          expireFailures(),
+          env.DB.prepare(
+            `INSERT INTO account_deletion_failures (id, actor_id, failure_code, recorded_at, delete_after)
+            VALUES (?, ?, 'revocation_unsupported', ?, ?)`,
+          ).bind(
+            job.id,
+            job.actorId,
+            nowIso,
+            new Date(now.getTime() + 30 * 86400_000).toISOString(),
+          ),
+          env.DB.prepare('DELETE FROM account_deletion_jobs WHERE id = ?').bind(job.id),
+        ]);
+        console.error(
+          `AT Protocol revocation was not supported for deletion ${job.id}; encrypted credentials were discarded.`,
+        );
+        continue;
+      }
       console.error(
         `AT Protocol deletion cleanup failed for ${job.actorId}; it will be retried.`,
         error,
       );
-      await env.DB.prepare('UPDATE account_deletion_jobs SET next_attempt_at = ? WHERE id = ?')
-        .bind(new Date(Date.now() + 60 * 60_000).toISOString(), job.id)
-        .run();
+      await env.DB.batch([
+        expireFailures(),
+        env.DB.prepare('UPDATE account_deletion_jobs SET next_attempt_at = ? WHERE id = ?').bind(
+          new Date(Date.now() + 60 * 60_000).toISOString(),
+          job.id,
+        ),
+      ]);
     }
   }
+  if (!jobs.results.length) await expireFailures().run();
 }
 
 async function clearUnstartedDeletionAttempt(
@@ -1970,7 +2104,7 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
   const auth = await identity(request, env);
   const isAccountDeletion = url.pathname === '/api/account' && method === 'DELETE';
   const isAccountExport = url.pathname === '/api/account/export' && method === 'GET';
-  const releaseMutation =
+  let releaseMutation =
     auth && !isAccountDeletion && (isAccountExport || !['GET', 'HEAD', 'OPTIONS'].includes(method))
       ? await beginAccountMutation(env, env.DB, auth, isAccountExport ? 'export' : 'mutation')
       : undefined;
@@ -1986,8 +2120,18 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
       method === 'GET' &&
       (url.pathname === '/api/bootstrap' || url.pathname === '/api/activities');
     if (!syncsAtproto) {
-      await releaseQuotaReservation?.();
+      await releaseQuotaReservation?.release();
       releaseQuotaReservation = undefined;
+    }
+    const activeReservation = releaseMutation ?? releaseQuotaReservation;
+    if (activeReservation) {
+      env = { ...env, DB: guardMutationDatabase(env.DB, activeReservation.assertActive) };
+      if (auth?.atprotoAgent)
+        auth.atprotoAgent = guardAtprotoAgent(
+          auth.atprotoAgent,
+          activeReservation.assertActive,
+          activeReservation.signal,
+        );
     }
     if (url.pathname === '/api/insights/weekly' && method === 'GET') {
       const who = requireIdentity(auth, 'activities:read');
@@ -2770,8 +2914,8 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
     return await social(request, env, auth, url);
   } finally {
     try {
-      await releaseQuotaReservation?.();
-      await releaseMutation?.();
+      await releaseQuotaReservation?.release();
+      await releaseMutation?.release();
     } catch (error) {
       console.error('Account mutation reservation release failed; it will expire.', error);
     }

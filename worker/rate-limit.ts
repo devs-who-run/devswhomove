@@ -86,7 +86,7 @@ async function consume(
   const row = await db
     .prepare(
       `INSERT INTO rate_limits (bucket, window_start, request_count)
-      VALUES (?, CAST(strftime('%s', 'now') AS INTEGER) / ? * ?, 1)
+      VALUES (?, CAST(CAST(strftime('%s', 'now') AS INTEGER) / ? AS INTEGER) * ?, 1)
       ON CONFLICT(bucket) DO UPDATE SET
         request_count = CASE
           WHEN excluded.window_start > rate_limits.window_start THEN 1

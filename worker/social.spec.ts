@@ -188,6 +188,46 @@ describe('Social API', () => {
     expect((await call('/api/activities/alice-secret/comments')).status).toBe(404);
   });
 
+  it('distinguishes a missing comment target from a full comment thread', async () => {
+    await db.batch(
+      Array.from({ length: 200 }, (_, index) =>
+        db
+          .prepare(
+            'INSERT INTO activity_comments (id, activity_id, actor_id, body, created_at) VALUES (?, ?, ?, ?, ?)',
+          )
+          .bind(
+            `comment-limit-${index}`,
+            'bob-ride',
+            'alice',
+            'A comment',
+            `2026-01-01T00:00:${String(index % 60).padStart(2, '0')}.000Z`,
+          ),
+      ),
+    );
+    try {
+      expect(
+        (
+          await call('/api/activities/bob-ride/comments', {
+            as: 'alice',
+            method: 'POST',
+            data: { body: 'One too many' },
+          })
+        ).status,
+      ).toBe(409);
+      expect(
+        (
+          await call('/api/activities/alice-secret/comments', {
+            as: 'alice',
+            method: 'POST',
+            data: { body: 'Not public' },
+          })
+        ).status,
+      ).toBe(404);
+    } finally {
+      await db.prepare("DELETE FROM activity_comments WHERE id LIKE 'comment-limit-%'").run();
+    }
+  });
+
   it('hides social data from people who make their profile private', async () => {
     await call('/api/activities/bob-ride/comments', {
       as: 'alice',
@@ -247,6 +287,51 @@ describe('Social API', () => {
       { as: 'alice' },
     );
     expect(profile.body.social).toMatchObject({ followers: 1, viewerFollows: true });
+  });
+
+  it('keeps duplicate follows idempotent when the follower is at the limit', async () => {
+    const userId = 'limit-follower';
+    const session = 'limit-follower-session';
+    const sessionHash = hash(session);
+    await db.batch([
+      db
+        .prepare(
+          "INSERT INTO users (id, github_id, username, name, visibility) VALUES (?, ?, ?, ?, 'public')",
+        )
+        .bind(userId, 99, 'limit-follower', 'Limit Follower'),
+      db
+        .prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+        .bind(sessionHash, userId, '2099-01-01T00:00:00.000Z'),
+      db
+        .prepare(
+          `WITH RECURSIVE ids(value) AS (
+          SELECT 1 UNION ALL SELECT value + 1 FROM ids WHERE value < 999
+        )
+        INSERT INTO follows (follower_id, followee_id, created_at)
+        SELECT ?, 'limit-target-' || value, '2026-01-01' FROM ids`,
+        )
+        .bind(userId),
+      db
+        .prepare('INSERT INTO follows (follower_id, followee_id, created_at) VALUES (?, ?, ?)')
+        .bind(userId, 'bob', '2026-01-01'),
+    ]);
+    try {
+      const request = (followee: string) =>
+        runtime.dispatchFetch(`${origin}/api/follows`, {
+          method: 'POST',
+          headers: {
+            Origin: origin,
+            Cookie: `dwm_session=${session}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId: followee, follow: true }),
+        });
+      expect((await request('bob')).status).toBe(200);
+      expect((await request('alice')).status).toBe(400);
+    } finally {
+      await db.prepare('DELETE FROM follows WHERE follower_id = ?').bind(userId).run();
+      await db.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
+    }
   });
 
   it('runs open clubs with their own feed and member-only events', async () => {
