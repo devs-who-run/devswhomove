@@ -172,6 +172,7 @@ describe('Worker with real D1 storage', () => {
         bindings: {
           APP_URL: origin,
           TEST_MUTATION_PAUSE_ACTOR: 'export-me',
+          TEST_MUTATION_CHECKPOINT_ACTOR: 'export-me',
           ATPROTO_OAUTH_PRIVATE_KEY: atprotoSigningKey,
           ATPROTO_SESSION_KEY: atprotoSessionKey,
         },
@@ -278,6 +279,7 @@ describe('Worker with real D1 storage', () => {
         '0009_account_mutation_locks.sql',
         '0010_account_deletion_recovery.sql',
         '0011_account_deletion_failure_audit.sql',
+        '0012_atproto_event_edit_tokens.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {

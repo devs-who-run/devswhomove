@@ -60,6 +60,7 @@ interface Env {
   ATPROTO_OAUTH_PRIVATE_KEY?: string;
   ATPROTO_SESSION_KEY?: string;
   TEST_MUTATION_PAUSE_ACTOR?: string;
+  TEST_MUTATION_CHECKPOINT_ACTOR?: string;
 }
 
 interface UserRow extends Omit<Profile, 'sports'> {
@@ -1287,6 +1288,7 @@ const DELETION_LEASE_MS = 30 * 60_000;
 
 interface AccountMutationReservation {
   assertActive: () => Promise<void>;
+  assertNotLost: () => void;
   release: () => Promise<void>;
   signal: AbortSignal;
 }
@@ -1368,10 +1370,20 @@ async function beginAccountMutation(
     },
     Math.floor(MUTATION_LEASE_MS / 3),
   );
-  if (env.TEST_MUTATION_PAUSE_ACTOR === identity.user.id)
+  if (env.TEST_MUTATION_CHECKPOINT_ACTOR === identity.user.id && kind === 'mutation') {
+    while (
+      await db.prepare('SELECT 1 FROM account_mutation_reservations WHERE id = ?').bind(id).first()
+    )
+      await new Promise((resolve) => setTimeout(resolve, 1));
+  } else if (env.TEST_MUTATION_PAUSE_ACTOR === identity.user.id) {
     await new Promise((resolve) => setTimeout(resolve, 500));
+  }
   return {
     assertActive,
+    assertNotLost: () => {
+      if (released || lost)
+        throw new HttpError(409, 'Account mutation reservation is no longer active.');
+    },
     signal: abortController.signal,
     release: async () => {
       if (released) return;
@@ -1382,8 +1394,14 @@ async function beginAccountMutation(
   };
 }
 
+const unguardedDatabases = new WeakMap<D1Database, D1Database>();
+
+function unguardedDatabase(db: D1Database): D1Database {
+  return unguardedDatabases.get(db) ?? db;
+}
+
 /** Guard D1 operations so a request cannot continue after its lease is lost. */
-function guardMutationDatabase(db: D1Database, assertActive: () => Promise<void>): D1Database {
+function guardMutationDatabase(db: D1Database, assertNotLost: () => void): D1Database {
   const unwrapped = new WeakMap<D1PreparedStatement, D1PreparedStatement>();
   const wrapStatement = (statement: D1PreparedStatement): D1PreparedStatement => {
     const wrapped = new Proxy(statement, {
@@ -1397,7 +1415,10 @@ function guardMutationDatabase(db: D1Database, assertActive: () => Promise<void>
           typeof value === 'function'
         )
           return (...args: unknown[]) =>
-            assertActive().then(() => Reflect.apply(value, target, args));
+            Promise.resolve().then(() => {
+              assertNotLost();
+              return Reflect.apply(value, target, args);
+            });
         return value;
       },
     });
@@ -1405,24 +1426,30 @@ function guardMutationDatabase(db: D1Database, assertActive: () => Promise<void>
     return wrapped;
   };
 
-  return new Proxy(db, {
+  const guarded = new Proxy(db, {
     get(target, property, receiver) {
       const value: unknown = Reflect.get(target, property, receiver);
       if (property === 'prepare' && typeof value === 'function')
         return (query: string) => wrapStatement(Reflect.apply(value, target, [query]));
       if (property === 'batch' && typeof value === 'function')
         return (statements: D1PreparedStatement[]) =>
-          assertActive().then(() =>
-            Reflect.apply(value, target, [
+          Promise.resolve().then(() => {
+            assertNotLost();
+            return Reflect.apply(value, target, [
               statements.map((statement) => unwrapped.get(statement) ?? statement),
-            ]),
-          );
+            ]);
+          });
       if (property === 'exec' && typeof value === 'function')
         return (...args: unknown[]) =>
-          assertActive().then(() => Reflect.apply(value, target, args));
+          Promise.resolve().then(() => {
+            assertNotLost();
+            return Reflect.apply(value, target, args);
+          });
       return value;
     },
   });
+  unguardedDatabases.set(guarded, db);
+  return guarded;
 }
 
 /** Close the account to new writes before waiting for writes already in flight. */
@@ -1795,7 +1822,7 @@ async function syncAtprotoData(env: Env, auth: Identity): Promise<void> {
           location = excluded.location, description = excluded.description,
           level = excluded.level, capacity = excluded.capacity,
           conference_name = excluded.conference_name, conference_url = excluded.conference_url,
-          indexed_at = excluded.indexed_at`,
+          indexed_at = excluded.indexed_at, edit_token = NULL`,
       ).bind(
         item.uri,
         auth.user.id,
@@ -2113,8 +2140,6 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
       ? await beginAccountMutation(env, env.DB, auth)
       : undefined;
   try {
-    if (auth && !isAccountDeletion)
-      await enforceRateLimit(request, env.DB, { accountId: auth.user.id, includeIp: false });
     const syncsAtproto =
       auth?.provider === 'atproto' &&
       method === 'GET' &&
@@ -2125,7 +2150,8 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
     }
     const activeReservation = releaseMutation ?? releaseQuotaReservation;
     if (activeReservation) {
-      env = { ...env, DB: guardMutationDatabase(env.DB, activeReservation.assertActive) };
+      await activeReservation.assertActive();
+      env = { ...env, DB: guardMutationDatabase(env.DB, activeReservation.assertNotLost) };
       if (auth?.atprotoAgent)
         auth.atprotoAgent = guardAtprotoAgent(
           auth.atprotoAgent,
@@ -2133,6 +2159,8 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
           activeReservation.signal,
         );
     }
+    if (auth && !isAccountDeletion)
+      await enforceRateLimit(request, env.DB, { accountId: auth.user.id, includeIp: false });
     if (url.pathname === '/api/insights/weekly' && method === 'GET') {
       const who = requireIdentity(auth, 'activities:read');
       return json(await getWeeklyRecap(env.DB, who));
@@ -2552,12 +2580,17 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
           throw new HttpError(403, 'Only the AT Protocol event host can edit this event.');
         const key = recordKey(eventId, identity.user.id, EVENT_COLLECTION);
         const event = await env.DB.prepare(
-          `SELECT record_json AS record, starts_at AS startsAt,
+          `SELECT record_json AS record, starts_at AS startsAt, edit_token AS editToken,
           (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = atproto_events.uri) AS attendees
         FROM atproto_events WHERE uri = ? AND did = ?`,
         )
           .bind(eventId, identity.user.id)
-          .first<{ record: string; startsAt: string; attendees: number }>();
+          .first<{
+            record: string;
+            startsAt: string;
+            editToken: string | null;
+            attendees: number;
+          }>();
         if (!event || event.startsAt <= new Date().toISOString())
           throw new HttpError(404, 'Event is no longer available.');
         if (event.attendees > fields[6])
@@ -2566,15 +2599,18 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
             `${event.attendees} people are already going. Capacity can’t be lower than that.`,
           );
         const nextRecord = eventRecord(fields);
+        const editToken = crypto.randomUUID();
         const indexed = await env.DB.prepare(
           `UPDATE atproto_events SET record_json = ?, title = ?, sport = ?, starts_at = ?,
-          location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ?
+          location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ?,
+          edit_token = ?
         WHERE uri = ? AND did = ? AND
           (SELECT COUNT(*) FROM atproto_event_attendees WHERE event_uri = ?) <= ?`,
         )
           .bind(
             JSON.stringify(nextRecord),
             ...fields,
+            editToken,
             eventId,
             identity.user.id,
             eventId,
@@ -2592,10 +2628,13 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
           });
         } catch (error) {
           const previous = JSON.parse(event.record) as Record<string, unknown>;
-          await env.DB.prepare(
-            `UPDATE atproto_events SET record_json = ?, title = ?, sport = ?, starts_at = ?,
-            location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ? WHERE uri = ? AND did = ?`,
-          )
+          await unguardedDatabase(env.DB)
+            .prepare(
+              `UPDATE atproto_events SET record_json = ?, title = ?, sport = ?, starts_at = ?,
+              location = ?, description = ?, level = ?, capacity = ?, conference_name = ?, conference_url = ?,
+              edit_token = ?
+            WHERE uri = ? AND did = ? AND edit_token = ?`,
+            )
             .bind(
               event.record,
               previous['title'],
@@ -2607,12 +2646,19 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
               previous['capacity'],
               previous['conferenceName'] ?? null,
               previous['conferenceUrl'] ?? null,
+              event.editToken,
               eventId,
               identity.user.id,
+              editToken,
             )
             .run();
           throw error;
         }
+        await env.DB.prepare(
+          'UPDATE atproto_events SET edit_token = NULL WHERE uri = ? AND did = ? AND edit_token = ?',
+        )
+          .bind(eventId, identity.user.id, editToken)
+          .run();
         if (updateClub)
           await env.DB.prepare('UPDATE atproto_events SET club_id = ? WHERE uri = ? AND did = ?')
             .bind(clubId, eventId, identity.user.id)
