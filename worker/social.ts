@@ -156,6 +156,7 @@ export async function addComment(
     .prepare(
       `INSERT INTO activity_comments (id, activity_id, actor_id, body, created_at)
       SELECT ?, ?, ?, ?, ? WHERE
+        EXISTS (SELECT 1 FROM ${PUBLIC_ACTIVITIES} WHERE activity_id = ?) AND
         (SELECT COUNT(*) FROM activity_comments WHERE activity_id = ?) < ?`,
     )
     .bind(
@@ -165,11 +166,14 @@ export async function addComment(
       body,
       new Date().toISOString(),
       activityId,
+      activityId,
       MAX_COMMENTS_PER_ACTIVITY,
     )
     .run();
-  if (!result.meta.changes)
+  if (!result.meta.changes) {
+    await publicActivityOwner(db, activityId);
     throw new HttpError(409, 'This activity has reached the comment limit.');
+  }
   const row = await db.prepare(`${COMMENT_SELECT} WHERE c.id = ?`).bind(id).first<CommentRow>();
   if (!row) throw new HttpError(500, 'Could not save your comment.');
   return comment(row, user.id, ownerId);

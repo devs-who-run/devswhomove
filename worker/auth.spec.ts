@@ -92,6 +92,7 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
           '0007_photo_deletions.sql',
           '0008_rate_limits.sql',
           '0009_account_mutation_locks.sql',
+          '0010_account_deletion_recovery.sql',
         ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
       )
     ).join(';');

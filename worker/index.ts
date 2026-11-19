@@ -14,6 +14,7 @@ import {
   EVENT_COLLECTION,
   oauthClient,
   PROFILE_COLLECTION,
+  revokeSavedAtprotoSession,
 } from './atproto';
 import {
   OAuthResponseError,
@@ -889,10 +890,18 @@ async function purgeDeletedPhotos(env: Env, all = false): Promise<void> {
     do {
       const queued = await env.DB.prepare(
         `SELECT key, queued_at AS queuedAt FROM photo_deletions
-        ${cursor ? 'WHERE queued_at > ? OR (queued_at = ? AND key > ?)' : ''}
+        WHERE next_attempt_at <= ? AND NOT EXISTS (
+          SELECT 1 FROM account_mutation_reservations
+          WHERE kind = 'export' AND lease_until > ?
+            AND (photo_deletions.actor_id IS NULL OR actor_id = photo_deletions.actor_id)
+        ) ${cursor ? 'AND (queued_at > ? OR (queued_at = ? AND key > ?))' : ''}
         ORDER BY queued_at, key LIMIT 20`,
       )
-        .bind(...(cursor ? [cursor.queuedAt, cursor.queuedAt, cursor.key] : []))
+        .bind(
+          new Date().toISOString(),
+          new Date().toISOString(),
+          ...(cursor ? [cursor.queuedAt, cursor.queuedAt, cursor.key] : []),
+        )
         .all<{ key: string; queuedAt: string }>();
       if (!queued.results.length) return;
       const last = queued.results[queued.results.length - 1];
@@ -903,6 +912,9 @@ async function purgeDeletedPhotos(env: Env, all = false): Promise<void> {
           await env.DB.prepare('DELETE FROM photo_deletions WHERE key = ?').bind(key).run();
         } catch (error) {
           console.error(`Photo cleanup failed for ${key}; it will be retried.`, error);
+          await env.DB.prepare('UPDATE photo_deletions SET next_attempt_at = ? WHERE key = ?')
+            .bind(new Date(Date.now() + 60 * 60_000).toISOString(), key)
+            .run();
         }
       }
       if (!all) return;
@@ -1078,6 +1090,34 @@ async function purgeExpiredAccountExports(env: Env): Promise<void> {
 }
 
 /** Build a complete export of the browser account's application data and attached photos. */
+interface ExportQuery {
+  table: string;
+  where: string;
+  args: string[];
+  columns?: string;
+}
+
+async function* exportRows(
+  db: D1Database,
+  query: ExportQuery,
+): AsyncGenerator<Record<string, unknown>> {
+  let cursor = 0;
+  for (;;) {
+    const page = await db
+      .prepare(
+        `SELECT rowid AS __export_rowid, ${query.columns ?? '*'} FROM ${query.table}
+        WHERE (${query.where}) AND rowid > ? ORDER BY rowid LIMIT 50`,
+      )
+      .bind(...query.args, cursor)
+      .all<Record<string, unknown> & { __export_rowid: number }>();
+    for (const { __export_rowid, ...row } of page.results) {
+      cursor = __export_rowid;
+      yield row;
+    }
+    if (page.results.length < 50) return;
+  }
+}
+
 async function exportAccount(
   env: Env,
   identity: Identity,
@@ -1085,79 +1125,59 @@ async function exportAccount(
 ): Promise<Response> {
   const { user } = identity;
   const actorId = user.id;
-  const [
-    activities,
-    events,
-    hostedEventRsvps,
-    atprotoEventRsvps,
-    externalEventRsvps,
-    clubs,
-    memberships,
-    follows,
-    comments,
-    kudos,
-    tokens,
-  ] = await Promise.all([
-    identity.provider === 'github'
-      ? env.DB.prepare('SELECT * FROM activities WHERE user_id = ? ORDER BY occurred_at DESC')
-          .bind(actorId)
-          .all<Record<string, unknown>>()
-      : env.DB.prepare('SELECT * FROM atproto_activities WHERE did = ? ORDER BY indexed_at DESC')
-          .bind(actorId)
-          .all<Record<string, unknown>>(),
-    identity.provider === 'github'
-      ? env.DB.prepare('SELECT * FROM events WHERE host_id = ? ORDER BY starts_at DESC')
-          .bind(actorId)
-          .all<Record<string, unknown>>()
-      : env.DB.prepare('SELECT * FROM atproto_events WHERE did = ? ORDER BY starts_at DESC')
-          .bind(actorId)
-          .all<Record<string, unknown>>(),
-    identity.provider === 'github'
-      ? env.DB.prepare('SELECT * FROM event_attendees WHERE user_id = ?')
-          .bind(actorId)
-          .all<Record<string, unknown>>()
-      : Promise.resolve({ results: [] as Record<string, unknown>[] }),
-    env.DB.prepare('SELECT * FROM atproto_event_attendees WHERE attendee_id = ?')
-      .bind(`${identity.provider}:${actorId}`)
-      .all<Record<string, unknown>>(),
-    env.DB.prepare('SELECT * FROM atproto_external_event_attendees WHERE attendee_id = ?')
-      .bind(`${identity.provider}:${actorId}`)
-      .all<Record<string, unknown>>(),
-    env.DB.prepare('SELECT * FROM clubs WHERE owner_id = ? ORDER BY created_at')
-      .bind(actorId)
-      .all<Record<string, unknown>>(),
-    env.DB.prepare('SELECT * FROM club_members WHERE actor_id = ? ORDER BY joined_at')
-      .bind(actorId)
-      .all<Record<string, unknown>>(),
-    env.DB.prepare('SELECT * FROM follows WHERE follower_id = ? OR followee_id = ?')
-      .bind(actorId, actorId)
-      .all<Record<string, unknown>>(),
-    env.DB.prepare(
-      'SELECT * FROM activity_comments WHERE actor_id = ? OR activity_id IN (SELECT id FROM activities WHERE user_id = ?) OR activity_id IN (SELECT uri FROM atproto_activities WHERE did = ?)',
-    )
-      .bind(actorId, actorId, actorId)
-      .all<Record<string, unknown>>(),
-    env.DB.prepare(
-      'SELECT * FROM activity_kudos WHERE actor_id = ? OR activity_id IN (SELECT id FROM activities WHERE user_id = ?) OR activity_id IN (SELECT uri FROM atproto_activities WHERE did = ?)',
-    )
-      .bind(actorId, actorId, actorId)
-      .all<Record<string, unknown>>(),
-    identity.provider === 'github'
-      ? env.DB.prepare(
-          'SELECT id, name, scopes, created_at, expires_at FROM agent_tokens WHERE user_id = ?',
-        )
-          .bind(actorId)
-          .all<Record<string, unknown>>()
-      : env.DB.prepare(
-          'SELECT id, name, scopes, created_at, expires_at FROM atproto_agent_tokens WHERE did = ?',
-        )
-          .bind(actorId)
-          .all<Record<string, unknown>>(),
-  ]);
-  const photoRows =
-    identity.provider === 'github'
-      ? activities.results.filter((row) => typeof row['photo_key'] === 'string')
-      : [];
+  const github = identity.provider === 'github';
+  const socialWhere =
+    'actor_id = ? OR activity_id IN (SELECT id FROM activities WHERE user_id = ?) OR activity_id IN (SELECT uri FROM atproto_activities WHERE did = ?)';
+  const queries: Record<string, ExportQuery> = {
+    activities: {
+      table: github ? 'activities' : 'atproto_activities',
+      where: github ? 'user_id = ?' : 'did = ?',
+      args: [actorId],
+    },
+    hostedEvents: {
+      table: github ? 'events' : 'atproto_events',
+      where: github ? 'host_id = ?' : 'did = ?',
+      args: [actorId],
+    },
+    ...(github
+      ? { eventRsvps: { table: 'event_attendees', where: 'user_id = ?', args: [actorId] } }
+      : {}),
+    atprotoEventRsvps: {
+      table: 'atproto_event_attendees',
+      where: 'attendee_id = ?',
+      args: [`${identity.provider}:${actorId}`],
+    },
+    externalEventRsvps: {
+      table: 'atproto_external_event_attendees',
+      where: 'attendee_id = ?',
+      args: [`${identity.provider}:${actorId}`],
+    },
+    ownedClubs: { table: 'clubs', where: 'owner_id = ?', args: [actorId] },
+    clubMemberships: { table: 'club_members', where: 'actor_id = ?', args: [actorId] },
+    follows: {
+      table: 'follows',
+      where: 'follower_id = ? OR followee_id = ?',
+      args: [actorId, actorId],
+    },
+    comments: { table: 'activity_comments', where: socialWhere, args: [actorId, actorId, actorId] },
+    kudos: { table: 'activity_kudos', where: socialWhere, args: [actorId, actorId, actorId] },
+    agentTokens: {
+      table: github ? 'agent_tokens' : 'atproto_agent_tokens',
+      columns: 'id, name, scopes, created_at, expires_at',
+      where: github ? 'user_id = ?' : 'did = ?',
+      args: [actorId],
+    },
+    ...(github
+      ? {
+          photos: {
+            table: 'activities',
+            columns: 'id, photo_key, photo_type',
+            where: 'user_id = ? AND photo_key IS NOT NULL',
+            args: [actorId],
+          },
+        }
+      : {}),
+  };
   const atprotoRecords: Record<string, { uri: string; value: unknown }[]> = {};
   if (identity.provider === 'atproto') {
     if (!identity.atprotoAgent) throw new HttpError(503, 'AT Protocol session is unavailable.');
@@ -1177,17 +1197,17 @@ async function exportAccount(
     exportedAt: new Date().toISOString(),
     account: user,
     provider: identity.provider,
-    activities: activities.results,
-    hostedEvents: events.results,
-    eventRsvps: hostedEventRsvps.results,
-    atprotoEventRsvps: atprotoEventRsvps.results,
-    externalEventRsvps: externalEventRsvps.results,
-    ownedClubs: clubs.results,
-    clubMemberships: memberships.results,
-    follows: follows.results,
-    comments: comments.results,
-    kudos: kudos.results,
-    agentTokens: tokens.results,
+    activities: [],
+    hostedEvents: [],
+    eventRsvps: [],
+    atprotoEventRsvps: [],
+    externalEventRsvps: [],
+    ownedClubs: [],
+    clubMemberships: [],
+    follows: [],
+    comments: [],
+    kudos: [],
+    agentTokens: [],
     atprotoRecords,
   };
   const key = `${TEMP_EXPORT_PREFIX}${crypto.randomUUID()}.json`;
@@ -1213,26 +1233,36 @@ async function exportAccount(
       ['comments', data.comments],
       ['kudos', data.kudos],
       ['agentTokens', data.agentTokens],
-      ['photos', photoRows],
+      ['photos', []],
       ['atprotoRecords', data.atprotoRecords],
     ];
     await writer.write('{\n');
     for (let index = 0; index < fields.length; index++) {
       const [name, value] = fields[index];
       await writer.write(`  ${JSON.stringify(name)}: `);
-      if (name === 'photos') {
-        await writer.write(photoRows.length ? '[\n' : '[]');
-        for (let photoIndex = 0; photoIndex < photoRows.length; photoIndex++) {
-          const row = photoRows[photoIndex];
-          const object = await env.PHOTOS.get(row['photo_key'] as string);
-          if (!object)
-            throw new HttpError(503, 'A stored photo could not be read; retry the export shortly.');
-          await writer.write(
-            `    {\n      "activityId": ${JSON.stringify(row['id'])},\n      "contentType": ${JSON.stringify(row['photo_type'])},\n      "dataBase64": "`,
-          );
-          await writeBase64(writer, object.body);
-          await writer.write(photoIndex === photoRows.length - 1 ? '"\n    }\n  ]' : '"\n    },\n');
+      if (queries[name]) {
+        await writer.write('[');
+        let first = true;
+        for await (const row of exportRows(env.DB, queries[name])) {
+          await writer.write(first ? '\n    ' : ',\n    ');
+          first = false;
+          if (name === 'photos') {
+            const object = await env.PHOTOS.get(row['photo_key'] as string);
+            if (!object)
+              throw new HttpError(
+                503,
+                'A stored photo could not be read; retry the export shortly.',
+              );
+            await writer.write(
+              `{\n      "activityId": ${JSON.stringify(row['id'])},\n      "contentType": ${JSON.stringify(row['photo_type'])},\n      "dataBase64": "`,
+            );
+            await writeBase64(writer, object.body);
+            await writer.write('"\n    }');
+          } else {
+            for (const chunk of prettyJson(row, 2)) await writer.write(chunk);
+          }
         }
+        await writer.write(first ? ']' : '\n  ]');
       } else {
         for (const chunk of prettyJson(value, 1)) await writer.write(chunk);
       }
@@ -1259,6 +1289,7 @@ async function beginAccountMutation(
   env: Env,
   db: D1Database,
   identity: Identity,
+  kind: 'mutation' | 'export' = 'mutation',
 ): Promise<() => Promise<void>> {
   const table = identity.provider === 'github' ? 'users' : 'atproto_accounts';
   const column = identity.provider === 'github' ? 'id' : 'did';
@@ -1274,21 +1305,20 @@ async function beginAccountMutation(
   const leaseUntil = new Date(Date.now() + MUTATION_LEASE_MS).toISOString();
   const reserved = await db
     .prepare(
-      `INSERT INTO account_mutation_reservations (id, actor_id, generation, lease_until)
-      SELECT ?, actor_id, generation, ? FROM account_mutation_locks
+      `INSERT INTO account_mutation_reservations (id, actor_id, generation, lease_until, kind)
+      SELECT ?, actor_id, generation, ?, ? FROM account_mutation_locks
       WHERE actor_id = ? AND deleting = 0 AND EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ?)`,
     )
-    .bind(id, leaseUntil, actorId, identity.user.id)
+    .bind(id, leaseUntil, kind, actorId, identity.user.id)
     .run();
   if (!reserved.meta.changes) throw new HttpError(409, 'Account deletion is in progress.');
   let released = false;
-  let renewalFailed = false;
   const renew = async () => {
-    if (released || renewalFailed) return;
+    if (released) return;
     const result = await db
       .prepare(
         `UPDATE account_mutation_reservations SET lease_until = ? WHERE id = ?
-        AND lease_until > ? AND generation = (SELECT generation FROM account_mutation_locks WHERE actor_id = ? AND deleting = 0)`,
+        AND lease_until > ? AND actor_id = ?`,
       )
       .bind(
         new Date(Date.now() + MUTATION_LEASE_MS).toISOString(),
@@ -1297,12 +1327,11 @@ async function beginAccountMutation(
         actorId,
       )
       .run();
-    if (!result.meta.changes) renewalFailed = true;
+    if (!result.meta.changes) console.error('Account mutation reservation expired before renewal.');
   };
   const timer = setInterval(
     () => {
       void renew().catch((error) => {
-        renewalFailed = true;
         console.error('Account mutation reservation renewal failed.', error);
       });
     },
@@ -1367,63 +1396,54 @@ async function startAccountDeletion(
       )
       .bind(actorId, attemptId)
       .first();
-  for (let attempt = 0; attempt < 120; attempt++) {
-    if (!(await ownsAttempt()))
-      throw new HttpError(409, 'Account deletion attempt was superseded.');
-    const row = await db
-      .prepare(
-        'SELECT COUNT(*) AS activeWrites FROM account_mutation_reservations WHERE actor_id = ? AND lease_until > ?',
-      )
-      .bind(actorId, new Date().toISOString())
-      .first<{ activeWrites: number }>();
-    await db
-      .prepare('DELETE FROM account_mutation_reservations WHERE actor_id = ? AND lease_until <= ?')
-      .bind(actorId, new Date().toISOString())
-      .run();
-    if (!row || row.activeWrites === 0) return { actorId, attemptId };
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  try {
+    for (let attempt = 0; attempt < 120; attempt++) {
+      if (!(await ownsAttempt()))
+        throw new HttpError(409, 'Account deletion attempt was superseded.');
+      const row = await db
+        .prepare(
+          'SELECT COUNT(*) AS activeWrites FROM account_mutation_reservations WHERE actor_id = ? AND lease_until > ?',
+        )
+        .bind(actorId, new Date().toISOString())
+        .first<{ activeWrites: number }>();
+      await db
+        .prepare(
+          'DELETE FROM account_mutation_reservations WHERE actor_id = ? AND lease_until <= ?',
+        )
+        .bind(actorId, new Date().toISOString())
+        .run();
+      if (!row || row.activeWrites === 0) return { actorId, attemptId };
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new HttpError(503, 'Account writes are still finishing. Retry deletion shortly.');
+  } catch (error) {
+    await clearUnstartedDeletionAttempt(db, { actorId, attemptId });
+    throw error;
   }
-  if (await ownsAttempt()) {
-    await db
-      .prepare(
-        `UPDATE account_mutation_locks SET deleting = 0, deletion_attempt_id = NULL,
-        deletion_lease_until = NULL, generation = generation - 1
-        WHERE actor_id = ? AND deletion_attempt_id = ?`,
-      )
-      .bind(actorId, attemptId)
-      .run();
-  }
-  throw new HttpError(503, 'Account writes are still finishing. Retry deletion shortly.');
 }
 
 /** Retry remote AT Protocol revocation from the durable job committed with account deletion. */
-async function retryAtprotoDeletion(env: Env, actorId?: string): Promise<void> {
+async function retryAtprotoDeletion(env: Env, jobId?: string): Promise<void> {
   const jobs = await env.DB.prepare(
-    `SELECT actor_id AS actorId, encrypted_oauth_session AS encryptedSession
-    FROM account_deletion_jobs WHERE actor_id = ? OR ? IS NULL ORDER BY created_at LIMIT 20`,
+    `SELECT id, actor_id AS actorId, encrypted_oauth_session AS encryptedSession
+    FROM account_deletion_jobs WHERE (? IS NOT NULL AND id = ?)
+      OR (? IS NULL AND next_attempt_at <= ?)
+    ORDER BY next_attempt_at, created_at, id LIMIT 20`,
   )
-    .bind(actorId ?? null, actorId ?? null)
-    .all<{ actorId: string; encryptedSession: string | null }>();
+    .bind(jobId ?? null, jobId ?? null, jobId ?? null, new Date().toISOString())
+    .all<{ id: string; actorId: string; encryptedSession: string }>();
   for (const job of jobs.results) {
     try {
-      if (job.encryptedSession) {
-        await env.DB.prepare(
-          `INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)
-          ON CONFLICT(did) DO UPDATE SET encrypted_session = excluded.encrypted_session, updated_at = excluded.updated_at`,
-        )
-          .bind(job.actorId, job.encryptedSession, new Date().toISOString())
-          .run();
-        await (await oauthClient(env)).revoke(job.actorId);
-      }
-      await env.DB.batch([
-        env.DB.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(job.actorId),
-        env.DB.prepare('DELETE FROM account_deletion_jobs WHERE actor_id = ?').bind(job.actorId),
-      ]);
+      await revokeSavedAtprotoSession(env, job.actorId, job.encryptedSession);
+      await env.DB.prepare('DELETE FROM account_deletion_jobs WHERE id = ?').bind(job.id).run();
     } catch (error) {
       console.error(
         `AT Protocol deletion cleanup failed for ${job.actorId}; it will be retried.`,
         error,
       );
+      await env.DB.prepare('UPDATE account_deletion_jobs SET next_attempt_at = ? WHERE id = ?')
+        .bind(new Date(Date.now() + 60 * 60_000).toISOString(), job.id)
+        .run();
     }
   }
 }
@@ -1436,7 +1456,7 @@ async function clearUnstartedDeletionAttempt(
     .prepare(
       `UPDATE account_mutation_locks SET deleting = 0, deletion_attempt_id = NULL,
       deletion_lease_until = NULL, generation = generation - 1
-      WHERE actor_id = ? AND deleting = 1 AND deletion_attempt_id = ?`,
+      WHERE actor_id = ? AND deleting = 1 AND deletion_attempt_id = ? AND remote_cleanup_started = 0`,
     )
     .bind(attempt.actorId, attempt.attemptId)
     .run();
@@ -1451,7 +1471,6 @@ async function deleteAccount(env: Env, identity: Identity, request: Request): Pr
   const actorId = user.id;
   const mutationLockId = await startAccountDeletion(env.DB, identity);
   if (identity.provider === 'atproto') {
-    let remoteCleanupStarted = false;
     try {
       const agent = identity.atprotoAgent;
       if (!agent) throw new HttpError(503, 'AT Protocol session is unavailable.');
@@ -1472,12 +1491,14 @@ async function deleteAccount(env: Env, identity: Identity, request: Request): Pr
       }
       for (let offset = 0; offset < records.length; offset += 100) {
         const owner = await env.DB.prepare(
-          'SELECT 1 FROM account_mutation_locks WHERE actor_id = ? AND deleting = 1 AND deletion_attempt_id = ?',
+          `UPDATE account_mutation_locks SET remote_cleanup_started = 1
+          WHERE actor_id = ? AND deleting = 1 AND deletion_attempt_id = ?
+            AND deletion_lease_until > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
         )
           .bind(mutationLockId.actorId, mutationLockId.attemptId)
-          .first();
-        if (!owner) throw new HttpError(409, 'Account deletion attempt was superseded.');
-        remoteCleanupStarted = true;
+          .run();
+        if (!owner.meta.changes)
+          throw new HttpError(409, 'Account deletion attempt was superseded.');
         await agent.com.atproto.repo.applyWrites({
           repo: actorId,
           writes: records.slice(offset, offset + 100).map(({ collection, rkey }) => ({
@@ -1488,7 +1509,7 @@ async function deleteAccount(env: Env, identity: Identity, request: Request): Pr
         });
       }
     } catch (error) {
-      if (!remoteCleanupStarted) await clearUnstartedDeletionAttempt(env.DB, mutationLockId);
+      await clearUnstartedDeletionAttempt(env.DB, mutationLockId);
       throw error;
     }
   }
@@ -1496,18 +1517,30 @@ async function deleteAccount(env: Env, identity: Identity, request: Request): Pr
   const oauthDeletionJob =
     identity.provider === 'atproto'
       ? env.DB.prepare(
-          `INSERT OR IGNORE INTO account_deletion_jobs (actor_id, encrypted_oauth_session, created_at)
-        SELECT did, encrypted_session, ? FROM atproto_oauth_sessions WHERE did = ?`,
-        ).bind(new Date().toISOString(), actorId)
+          `INSERT INTO account_deletion_jobs (id, actor_id, encrypted_oauth_session, created_at, next_attempt_at)
+        SELECT ?, did, encrypted_session, ?, ? FROM atproto_oauth_sessions WHERE did = ?`,
+        ).bind(
+          mutationLockId.attemptId,
+          new Date().toISOString(),
+          new Date().toISOString(),
+          actorId,
+        )
       : null;
   const photoQueue =
     identity.provider === 'github'
       ? env.DB.prepare(
-          `INSERT OR IGNORE INTO photo_deletions (key, queued_at)
-      SELECT photo_key, ? FROM activities WHERE user_id = ? AND photo_key IS NOT NULL`,
-        ).bind(new Date().toISOString(), actorId)
+          `INSERT OR IGNORE INTO photo_deletions (key, queued_at, actor_id)
+      SELECT photo_key, ?, ? FROM activities WHERE user_id = ? AND photo_key IS NOT NULL`,
+        ).bind(new Date().toISOString(), mutationLockId.actorId, actorId)
       : null;
   const cleanup = [
+    env.DB.prepare(
+      `INSERT INTO account_deletion_guard (owned) VALUES (
+        EXISTS(SELECT 1 FROM account_mutation_locks
+          WHERE actor_id = ? AND deleting = 1 AND deletion_attempt_id = ?
+            AND deletion_lease_until > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')))`,
+    ).bind(mutationLockId.actorId, mutationLockId.attemptId),
+    env.DB.prepare('DELETE FROM account_deletion_guard'),
     ...(photoQueue ? [photoQueue] : []),
     env.DB.prepare(
       `DELETE FROM activity_comments WHERE actor_id = ? OR activity_id IN (SELECT id FROM activities WHERE user_id = ?) OR activity_id IN (SELECT uri FROM atproto_activities WHERE did = ?)`,
@@ -1537,12 +1570,29 @@ async function deleteAccount(env: Env, identity: Identity, request: Request): Pr
       : []),
     rateLimitCleanup,
     ...(oauthDeletionJob ? [oauthDeletionJob] : []),
+    ...(oauthDeletionJob
+      ? [env.DB.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(actorId)]
+      : []),
     env.DB.prepare(
       'DELETE FROM account_mutation_locks WHERE actor_id = ? AND deletion_attempt_id = ?',
     ).bind(mutationLockId.actorId, mutationLockId.attemptId),
   ];
-  await env.DB.batch(cleanup);
-  if (identity.provider === 'atproto') await retryAtprotoDeletion(env, actorId);
+  try {
+    await env.DB.batch(cleanup);
+  } catch (error) {
+    await clearUnstartedDeletionAttempt(env.DB, mutationLockId);
+    throw error;
+  }
+  if (identity.provider === 'atproto') {
+    try {
+      await retryAtprotoDeletion(env, mutationLockId.attemptId);
+    } catch (error) {
+      console.error(
+        'AT Protocol deletion cleanup could not be started; it will be retried.',
+        error,
+      );
+    }
+  }
   if (photoQueue) await purgeDeletedPhotos(env, true);
   return new Response(null, {
     status: 204,
@@ -1922,7 +1972,7 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
   const isAccountExport = url.pathname === '/api/account/export' && method === 'GET';
   const releaseMutation =
     auth && !isAccountDeletion && (isAccountExport || !['GET', 'HEAD', 'OPTIONS'].includes(method))
-      ? await beginAccountMutation(env, env.DB, auth)
+      ? await beginAccountMutation(env, env.DB, auth, isAccountExport ? 'export' : 'mutation')
       : undefined;
   let releaseQuotaReservation =
     auth && !isAccountDeletion && !releaseMutation
@@ -1931,8 +1981,14 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
   try {
     if (auth && !isAccountDeletion)
       await enforceRateLimit(request, env.DB, { accountId: auth.user.id, includeIp: false });
-    await releaseQuotaReservation?.();
-    releaseQuotaReservation = undefined;
+    const syncsAtproto =
+      auth?.provider === 'atproto' &&
+      method === 'GET' &&
+      (url.pathname === '/api/bootstrap' || url.pathname === '/api/activities');
+    if (!syncsAtproto) {
+      await releaseQuotaReservation?.();
+      releaseQuotaReservation = undefined;
+    }
     if (url.pathname === '/api/insights/weekly' && method === 'GET') {
       const who = requireIdentity(auth, 'activities:read');
       return json(await getWeeklyRecap(env.DB, who));
@@ -2135,16 +2191,21 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
         type = image.type;
         await env.PHOTOS.put(key, image.bytes, { httpMetadata: { contentType: image.type } });
       }
-      const result = await env.DB.prepare(
-        'UPDATE activities SET photo_key = ?, photo_type = ? WHERE id = ? AND user_id = ?',
-      )
-        .bind(key, type, activityId, actor.user.id)
-        .run();
+      const [, result] = await env.DB.batch([
+        env.DB.prepare(
+          `INSERT OR IGNORE INTO photo_deletions (key, queued_at, actor_id)
+          SELECT photo_key, ?, ? FROM activities
+          WHERE id = ? AND user_id = ? AND photo_key IS NOT NULL`,
+        ).bind(new Date().toISOString(), `github:${actor.user.id}`, activityId, actor.user.id),
+        env.DB.prepare(
+          'UPDATE activities SET photo_key = ?, photo_type = ? WHERE id = ? AND user_id = ?',
+        ).bind(key, type, activityId, actor.user.id),
+      ]);
       if (!result.meta.changes) {
         if (key) await env.PHOTOS.delete(key);
         throw new HttpError(404, 'Activity not found.');
       }
-      if (current.key) await env.PHOTOS.delete(current.key);
+      await purgeDeletedPhotos(env);
       return json({
         photo: key ? `/api/activities/${activityId}/photo?v=${key.slice(-12)}` : null,
       });
@@ -2226,10 +2287,15 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
           // The photo key is queued in the same transaction as the delete, so it survives R2 failures.
           const [, deleted] = await env.DB.batch([
             env.DB.prepare(
-              `INSERT OR IGNORE INTO photo_deletions (key, queued_at)
-            SELECT photo_key, ? FROM activities
+              `INSERT OR IGNORE INTO photo_deletions (key, queued_at, actor_id)
+            SELECT photo_key, ?, ? FROM activities
             WHERE id = ? AND user_id = ? AND photo_key IS NOT NULL`,
-            ).bind(new Date().toISOString(), activityId, identity.user.id),
+            ).bind(
+              new Date().toISOString(),
+              `github:${identity.user.id}`,
+              activityId,
+              identity.user.id,
+            ),
             env.DB.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(
               activityId,
               identity.user.id,

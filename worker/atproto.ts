@@ -228,7 +228,10 @@ export function installEdgeRequest(): void {
 }
 
 /** Create the AT Protocol OAuth client with encrypted D1 stores and Worker WebCrypto. */
-export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
+export async function oauthClient(
+  env: AtprotoEnv,
+  oauthFetch: typeof edgeFetch = edgeFetch,
+): Promise<OAuthClient> {
   installEdgeRequest();
   const origin = oauthOrigin(env);
   const key = await privateKey(env);
@@ -320,7 +323,7 @@ export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
           jwks_uri: `${origin}/oauth/jwks.json`,
         }) as OAuthClientMetadataInput,
     keyset: [key],
-    fetch: edgeFetch,
+    fetch: oauthFetch,
     handleResolver: new AtprotoDohHandleResolver({
       dohEndpoint: 'https://cloudflare-dns.com/dns-query',
       fetch: edgeFetch,
@@ -335,6 +338,35 @@ export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
     },
     stateStore,
     sessionStore,
+  });
+}
+
+/** Revoke the saved grant without touching the live OAuth session for the same DID. */
+export async function revokeSavedAtprotoSession(
+  env: AtprotoEnv,
+  did: string,
+  encryptedSession: string,
+): Promise<void> {
+  const session = await deserializeDpopValue<Session>(env, `session:${did}`, encryptedSession);
+  const client = await oauthClient(env, async (input, init) => {
+    const response = await edgeFetch(input, init);
+    const method = input instanceof Request ? input.method : init?.method;
+    if (method === 'POST' && response.ok) {
+      await response.body?.cancel();
+      const headers = new Headers(response.headers);
+      headers.set('Content-Type', 'application/json');
+      headers.delete('Content-Length');
+      return Response.json({}, { headers });
+    }
+    return response;
+  });
+  const server = await client.serverFactory.fromIssuer(
+    session.tokenSet.iss,
+    session.authMethod,
+    session.dpopKey,
+  );
+  await server.request('revocation', {
+    token: session.tokenSet.refresh_token ?? session.tokenSet.access_token,
   });
 }
 
