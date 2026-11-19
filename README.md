@@ -165,7 +165,7 @@ Giving kudos, commenting, following and joining or creating clubs require a **pu
 | `GET`/`DELETE /api/clubs/:slug`            | Club detail (feed, events, members) or delete (creator) |
 | `POST /api/clubs/:slug/membership`         | `{ "join": true \| false }`                             |
 
-Social features require migration `0006_social.sql`, and activity photo cleanup uses `0007_photo_deletions.sql`: deleted photo keys are queued with the activity delete and removed from R2 afterwards, with failures retried on the next activity delete. Run `pnpm run db:local` locally and `pnpm run db:remote` before deploying.
+Social features require migration `0006_social.sql`. Photo cleanup queues replaced or deleted objects for removal from R2, retries failures on a schedule, and defers removal while an account export is active. Account deletion recovery, its credential-free failure audit, and recoverable AT Protocol event edits require migrations `0010_account_deletion_recovery.sql`, `0011_account_deletion_failure_audit.sql`, and `0012_atproto_event_edit_tokens.sql`. Run `pnpm run db:local` locally and `pnpm run db:remote` before deploying.
 
 ## Sharing
 

@@ -61,6 +61,21 @@ async function hash(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/** Prepare removal of the account's opaque quota buckets for an atomic account cleanup batch. */
+export async function deleteAccountRateLimits(
+  db: D1Database,
+  accountId: string,
+): Promise<D1PreparedStatement> {
+  const buckets = await Promise.all(
+    Object.values(POLICIES)
+      .filter((policy) => policy.accountLimit)
+      .map((policy) => hash(`${policy.name}:account:${accountId}`)),
+  );
+  return db
+    .prepare(`DELETE FROM rate_limits WHERE bucket IN (${buckets.map(() => '?').join(',')})`)
+    .bind(...buckets);
+}
+
 async function consume(
   db: D1Database,
   bucket: string,
@@ -71,7 +86,7 @@ async function consume(
   const row = await db
     .prepare(
       `INSERT INTO rate_limits (bucket, window_start, request_count)
-      VALUES (?, CAST(strftime('%s', 'now') AS INTEGER) / ? * ?, 1)
+      VALUES (?, CAST(CAST(strftime('%s', 'now') AS INTEGER) / ? AS INTEGER) * ?, 1)
       ON CONFLICT(bucket) DO UPDATE SET
         request_count = CASE
           WHEN excluded.window_start > rate_limits.window_start THEN 1

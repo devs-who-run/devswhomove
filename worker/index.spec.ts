@@ -20,6 +20,11 @@ describe('Worker with real D1 storage', () => {
   const publishedAtprotoRecords: Record<string, unknown>[] = [];
   let remoteAtprotoEvents: { uri: string; cid: string; value: Record<string, unknown> }[] = [];
   let failAtprotoEventUpdate = false;
+  let failAtprotoListRecords = false;
+  let failAtprotoRevocation = false;
+  let omitAtprotoRevocationEndpoint = false;
+  let atprotoRevocations = 0;
+  let atprotoDeleteCheckpoint: { started: () => void; resume: Promise<void> } | undefined;
   const hash = (value: string) => createHash('sha256').update(value).digest('hex');
   function encryptedAtprotoSession(did: string): string {
     const iv = randomBytes(12);
@@ -166,6 +171,8 @@ describe('Worker with real D1 storage', () => {
         },
         bindings: {
           APP_URL: origin,
+          TEST_MUTATION_PAUSE_ACTOR: 'export-me',
+          TEST_MUTATION_CHECKPOINT_ACTOR: 'export-me',
           ATPROTO_OAUTH_PRIVATE_KEY: atprotoSigningKey,
           ATPROTO_SESSION_KEY: atprotoSessionKey,
         },
@@ -185,13 +192,23 @@ describe('Worker with real D1 storage', () => {
           if (
             url.origin === 'https://pds.example' &&
             url.pathname.endsWith('/com.atproto.repo.listRecords')
-          )
+          ) {
+            if (failAtprotoListRecords)
+              return WorkerResponse.json({ error: 'Unavailable' }, { status: 503 });
             return WorkerResponse.json({
               records:
                 url.searchParams.get('collection') === 'dev.devswhorun.event'
                   ? remoteAtprotoEvents
                   : [],
             });
+          }
+          if (request.url === 'https://pds.example/xrpc/com.atproto.repo.applyWrites') {
+            if (atprotoDeleteCheckpoint) {
+              atprotoDeleteCheckpoint.started();
+              await atprotoDeleteCheckpoint.resume;
+            }
+            return WorkerResponse.json({});
+          }
           if (request.url === 'https://pds.example/xrpc/com.atproto.repo.putRecord') {
             if (failAtprotoEventUpdate)
               return WorkerResponse.json(
@@ -227,6 +244,9 @@ describe('Worker with real D1 storage', () => {
               issuer: 'https://auth.example',
               authorization_endpoint: 'https://auth.example/authorize',
               token_endpoint: 'https://auth.example/token',
+              ...(omitAtprotoRevocationEndpoint
+                ? {}
+                : { revocation_endpoint: 'https://auth.example/revoke' }),
               pushed_authorization_request_endpoint: 'https://auth.example/par',
               response_types_supported: ['code'],
               grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -235,6 +255,12 @@ describe('Worker with real D1 storage', () => {
               dpop_signing_alg_values_supported: ['ES256'],
               client_id_metadata_document_supported: true,
             });
+          if (request.url === 'https://auth.example/revoke') {
+            atprotoRevocations++;
+            return failAtprotoRevocation
+              ? WorkerResponse.json({ error: 'server_error' }, { status: 500 })
+              : new WorkerResponse(null, { status: 200 });
+          }
           throw new Error(`Unexpected external request: ${request.url}`);
         },
       }),
@@ -250,6 +276,10 @@ describe('Worker with real D1 storage', () => {
         '0006_social.sql',
         '0007_photo_deletions.sql',
         '0008_rate_limits.sql',
+        '0009_account_mutation_locks.sql',
+        '0010_account_deletion_recovery.sql',
+        '0011_account_deletion_failure_audit.sql',
+        '0012_atproto_event_edit_tokens.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -757,6 +787,40 @@ describe('Worker with real D1 storage', () => {
     );
   });
 
+  it('defers replacing photos until active exports release their reservations', async () => {
+    const bucket = await runtime.getR2Bucket('PHOTOS');
+    const created = await request('/api/activities', 'POST', activity, alice);
+    expect(created.status).toBe(201);
+    const { id } = await created.json<{ id: string }>();
+    expect((await upload(id, photo, alice)).status).toBe(200);
+    const oldKey = await db
+      .prepare('SELECT photo_key FROM activities WHERE id = ?')
+      .bind(id)
+      .first<string>('photo_key');
+    await db
+      .prepare('INSERT OR IGNORE INTO account_mutation_locks (actor_id) VALUES (?)')
+      .bind('github:alice')
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO account_mutation_reservations (id, actor_id, generation, lease_until, kind)
+        VALUES ('photo-export', 'github:alice', 0, '2099-01-01T00:00:00.000Z', 'export')`,
+      )
+      .run();
+    try {
+      expect((await upload(id, photo, alice)).status).toBe(200);
+      expect(await bucket.get(oldKey!)).not.toBeNull();
+      expect(
+        await db.prepare('SELECT key FROM photo_deletions WHERE key = ?').bind(oldKey).first(),
+      ).not.toBeNull();
+    } finally {
+      await db.prepare("DELETE FROM account_mutation_reservations WHERE id = 'photo-export'").run();
+    }
+    await (await runtime.getWorker()).scheduled();
+    expect(await bucket.get(oldKey!)).toBeNull();
+    expect((await request(`/api/activities/${id}`, 'DELETE', undefined, alice)).status).toBe(200);
+  });
+
   it('imports valid bulk items while returning validation and idempotency errors per item', async () => {
     const firstItem = { ...activity, idempotencyKey: 'bulk-run' };
     const response = await request(
@@ -1143,14 +1207,58 @@ describe('Worker with real D1 storage', () => {
   });
 
   it('rate limits event mutations and returns a retry delay', async () => {
-    for (let attempt = 0; attempt < 60; attempt++) {
-      const response = await request('/api/events', 'POST', {}, alice);
-      expect(response.status).toBe(400);
-    }
-
+    const userId = await db
+      .prepare('SELECT user_id FROM sessions WHERE token_hash = ?')
+      .bind(hash(alice))
+      .first<string>('user_id');
+    const bucket = hash(`event:account:${userId}`);
+    const windowStart = Math.floor(Date.now() / 3_600_000) * 3_600;
+    await db
+      .prepare('INSERT INTO rate_limits (bucket, window_start, request_count) VALUES (?, ?, ?)')
+      .bind(bucket, windowStart, 60)
+      .run();
     const limited = await request('/api/events', 'POST', {}, alice);
     expect(limited.status).toBe(429);
     expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
+  });
+
+  it('expires deletion retry credentials after 30 days and records a credential-free failure', async () => {
+    const did = 'did:plc:7sagqfh4v4t6zl7bdwbikdc8';
+    const jobId = 'expired-deletion-job';
+    await db
+      .prepare(
+        `INSERT INTO account_deletion_jobs
+          (id, actor_id, encrypted_oauth_session, created_at, next_attempt_at)
+        VALUES (?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        jobId,
+        did,
+        encryptedAtprotoSession(did),
+        new Date(Date.now() - 31 * 86400_000).toISOString(),
+        '2000-01-01T00:00:00.000Z',
+      )
+      .run();
+    try {
+      await (await runtime.getWorker()).scheduled();
+      expect(
+        await db.prepare('SELECT id FROM account_deletion_jobs WHERE id = ?').bind(jobId).first(),
+      ).toBeNull();
+      expect(
+        await db
+          .prepare('SELECT failure_code FROM account_deletion_failures WHERE id = ?')
+          .bind(jobId)
+          .first('failure_code'),
+      ).toBe('revocation_expired');
+      const audit = await db
+        .prepare('SELECT * FROM account_deletion_failures WHERE id = ?')
+        .bind(jobId)
+        .first();
+      expect(JSON.stringify(audit)).not.toContain('encrypted');
+    } finally {
+      await db.prepare('DELETE FROM account_deletion_jobs WHERE id = ?').bind(jobId).run();
+      await db.prepare('DELETE FROM account_deletion_failures WHERE id = ?').bind(jobId).run();
+    }
   });
 
   it('keeps rate-limit buckets monotonic when an older window is submitted', async () => {
@@ -1546,6 +1654,573 @@ describe('Worker with real D1 storage', () => {
     expect(response.status).toBe(204);
     expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
     expect((await request('/api/activities', 'GET', undefined, alice)).status).toBe(401);
+  });
+
+  it('exports account data including photos without exposing token hashes', async () => {
+    const accountId = 'export-me';
+    const session = 'export-session';
+    await db
+      .prepare(
+        'INSERT INTO users (id, github_id, username, name, visibility) VALUES (?, ?, ?, ?, ?)',
+      )
+      .bind(accountId, 9901, 'export-me', 'Export Me', 'public')
+      .run();
+    await db
+      .prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+      .bind(hash(session), accountId, '2099-01-01T00:00:00.000Z')
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO activities (id, user_id, title, sport, occurred_at, duration, notes, visibility, source, payload_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        'export-activity',
+        accountId,
+        'Export run',
+        'Running',
+        '2026-01-01T08:00:00.000Z',
+        30,
+        'My notes',
+        'public',
+        'web',
+        'payload',
+      )
+      .run();
+    const photoKey = 'activities/export-activity/photo.jpg';
+    await (await runtime.getR2Bucket('PHOTOS')).put(photoKey, photo);
+    await db
+      .prepare('UPDATE activities SET photo_key = ?, photo_type = ? WHERE id = ?')
+      .bind(photoKey, 'image/jpeg', 'export-activity')
+      .run();
+    await db
+      .prepare(
+        'INSERT INTO agent_tokens (id, user_id, token_hash, name, scopes, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .bind(
+        'export-token',
+        accountId,
+        'secret-token-hash',
+        'Watch',
+        '[]',
+        '2026-01-01',
+        '2099-01-01',
+      )
+      .run();
+
+    const response = await request('/api/account/export', 'GET', undefined, session);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Disposition')).toContain('attachment');
+    const exported = await response.json<{
+      activities: { id: string; notes: string }[];
+      agentTokens: Record<string, unknown>[];
+      photos: { activityId: string; contentType: string; dataBase64: string }[];
+    }>();
+    expect(exported.activities).toContainEqual(
+      expect.objectContaining({ id: 'export-activity', notes: 'My notes' }),
+    );
+    expect(exported.agentTokens).toEqual([
+      expect.objectContaining({ id: 'export-token', name: 'Watch' }),
+    ]);
+    expect(JSON.stringify(exported)).not.toContain('secret-token-hash');
+    expect(exported.photos).toEqual([
+      {
+        activityId: 'export-activity',
+        contentType: 'image/jpeg',
+        dataBase64: Buffer.from(photo).toString('base64'),
+      },
+    ]);
+
+    const staleMutation = request(
+      '/api/activities',
+      'POST',
+      { ...activity, title: 'Must not be saved after losing its reservation' },
+      session,
+    );
+    for (let attempt = 0; attempt < 1000; attempt++) {
+      const reservation = await db
+        .prepare('SELECT id FROM account_mutation_reservations WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first();
+      if (reservation) break;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    await db
+      .prepare('DELETE FROM account_mutation_reservations WHERE actor_id = ?')
+      .bind(`github:${accountId}`)
+      .run();
+    expect((await staleMutation).status).toBe(409);
+    expect(
+      await db
+        .prepare('SELECT id FROM activities WHERE user_id = ? AND title = ?')
+        .bind(accountId, 'Must not be saved after losing its reservation')
+        .first(),
+    ).toBeNull();
+
+    const bucket = await runtime.getR2Bucket('PHOTOS');
+    await bucket.put(photoKey, new Uint8Array(12 * 1024 * 1024));
+    const pendingExport = request('/api/account/export', 'GET', undefined, session);
+    for (let attempt = 0; attempt < 1000; attempt++) {
+      const reservation = await db
+        .prepare('SELECT id FROM account_mutation_reservations WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first();
+      if (reservation) break;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    expect(
+      await db
+        .prepare('SELECT 1 FROM account_mutation_reservations WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first(),
+    ).not.toBeNull();
+    const pendingDeletion = request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const lock = await db
+        .prepare('SELECT deleting FROM account_mutation_locks WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first<{ deleting: number }>();
+      if (lock?.deleting) break;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    let deletionSettled = false;
+    void pendingDeletion.then(() => {
+      deletionSettled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(deletionSettled).toBe(false);
+    const concurrentExport = await pendingExport;
+    expect(concurrentExport.status).toBe(200);
+    expect((await concurrentExport.json<{ activities: unknown[] }>()).activities).toHaveLength(1);
+    expect((await pendingDeletion).status).toBe(204);
+  });
+
+  it('exports complete histories across multiple database pages', async () => {
+    const accountId = 'export-pages';
+    const session = 'export-pages-session';
+    await db.batch([
+      db
+        .prepare('INSERT INTO users (id, github_id, username, name) VALUES (?, ?, ?, ?)')
+        .bind(accountId, 9910, accountId, 'Export Pages'),
+      db
+        .prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+        .bind(hash(session), accountId, '2099-01-01T00:00:00.000Z'),
+      ...Array.from({ length: 105 }, (_, index) =>
+        db
+          .prepare(
+            `INSERT INTO activities (id, user_id, title, sport, occurred_at, duration, source, payload_hash)
+            VALUES (?, ?, ?, 'Running', '2026-01-01', 30, 'web', 'hash')`,
+          )
+          .bind(`export-page-${index}`, accountId, `Run ${index}`),
+      ),
+    ]);
+    const response = await request('/api/account/export', 'GET', undefined, session);
+    expect(response.status).toBe(200);
+    const data = await response.json<{ activities: { id: string }[] }>();
+    expect(data.activities.map(({ id }) => id)).toEqual(
+      Array.from({ length: 105 }, (_, index) => `export-page-${index}`),
+    );
+    expect(data.activities[0]).not.toHaveProperty('__export_rowid');
+    await db.prepare('DELETE FROM users WHERE id = ?').bind(accountId).run();
+  });
+
+  it('requires typed confirmation and removes account data and photos on deletion', async () => {
+    const accountId = 'delete-me';
+    const session = 'delete-session';
+    await db
+      .prepare(
+        'INSERT INTO users (id, github_id, username, name, visibility) VALUES (?, ?, ?, ?, ?)',
+      )
+      .bind(accountId, 9902, 'delete-me', 'Delete Me', 'public')
+      .run();
+    await db
+      .prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+      .bind(hash(session), accountId, '2099-01-01T00:00:00.000Z')
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO activities (id, user_id, title, sport, occurred_at, duration, source, payload_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        'delete-activity',
+        accountId,
+        'Delete run',
+        'Running',
+        '2026-01-01T08:00:00.000Z',
+        30,
+        'web',
+        'payload',
+      )
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO events (id, host_id, title, sport, starts_at, location, level, capacity)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        'delete-event',
+        accountId,
+        'Delete event',
+        'Running',
+        '2099-01-01T08:00:00.000Z',
+        'Park',
+        'All',
+        10,
+      )
+      .run();
+    await db
+      .prepare('INSERT INTO follows (follower_id, followee_id, created_at) VALUES (?, ?, ?)')
+      .bind(accountId, 'alice', '2026-01-01')
+      .run();
+    const photoKey = 'activities/delete-activity/photo.jpg';
+    await (await runtime.getR2Bucket('PHOTOS')).put(photoKey, photo);
+    await db
+      .prepare('UPDATE activities SET photo_key = ?, photo_type = ? WHERE id = ?')
+      .bind(photoKey, 'image/jpeg', 'delete-activity')
+      .run();
+
+    const rejected = await request('/api/account', 'DELETE', { confirmation: 'delete' }, session);
+    expect(rejected.status).toBe(400);
+    expect(await db.prepare('SELECT id FROM users WHERE id = ?').bind(accountId).first()).toEqual({
+      id: accountId,
+    });
+
+    await db
+      .prepare('INSERT INTO account_mutation_locks (actor_id) VALUES (?)')
+      .bind(`github:${accountId}`)
+      .run();
+    await db
+      .prepare(
+        'INSERT INTO account_mutation_reservations (id, actor_id, generation, lease_until) VALUES (?, ?, 0, ?)',
+      )
+      .bind('test-deletion-reservation', `github:${accountId}`, '2099-01-01T00:00:00.000Z')
+      .run();
+    const deletion = request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const lock = await db
+        .prepare('SELECT deleting FROM account_mutation_locks WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first<{ deleting: number }>();
+      if (lock?.deleting) break;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    expect(
+      (
+        await db
+          .prepare('SELECT deleting FROM account_mutation_locks WHERE actor_id = ?')
+          .bind(`github:${accountId}`)
+          .first<{ deleting: number }>()
+      )?.deleting,
+    ).toBe(1);
+    expect((await request('/api/activities', 'POST', activity, session)).status).toBe(409);
+    await db
+      .prepare('DELETE FROM account_mutation_reservations WHERE id = ?')
+      .bind('test-deletion-reservation')
+      .run();
+
+    const response = await deletion;
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
+    for (const table of ['users', 'activities', 'events', 'sessions', 'follows']) {
+      const row = await db
+        .prepare(
+          table === 'follows'
+            ? 'SELECT COUNT(*) AS count FROM follows WHERE follower_id = ? OR followee_id = ?'
+            : table === 'activities'
+              ? 'SELECT COUNT(*) AS count FROM activities WHERE user_id = ?'
+              : table === 'events'
+                ? 'SELECT COUNT(*) AS count FROM events WHERE host_id = ?'
+                : table === 'sessions'
+                  ? 'SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?'
+                  : 'SELECT COUNT(*) AS count FROM users WHERE id = ?',
+        )
+        .bind(...(table === 'follows' ? [accountId, accountId] : [accountId]))
+        .first<{ count: number }>();
+      expect(row?.count).toBe(0);
+    }
+    expect(
+      await db
+        .prepare('SELECT 1 FROM account_mutation_locks WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first(),
+    ).toBeNull();
+    expect(
+      await db
+        .prepare('SELECT 1 FROM account_mutation_reservations WHERE actor_id = ?')
+        .bind(`github:${accountId}`)
+        .first(),
+    ).toBeNull();
+    expect(
+      await db
+        .prepare('SELECT 1 FROM rate_limits WHERE bucket IN (?, ?)')
+        .bind(hash(`write:account:${accountId}`), hash(`activity:account:${accountId}`))
+        .first(),
+    ).toBeNull();
+    expect(await (await runtime.getR2Bucket('PHOTOS')).get(photoKey)).toBeNull();
+    expect((await request('/api/bootstrap')).status).toBe(200);
+  });
+
+  it('reopens an intact account after its deletion transaction rolls back', async () => {
+    const accountId = 'delete-rollback';
+    const session = 'delete-rollback-session';
+    await db.batch([
+      db
+        .prepare('INSERT INTO users (id, github_id, username, name) VALUES (?, ?, ?, ?)')
+        .bind(accountId, 9911, accountId, 'Delete Rollback'),
+      db
+        .prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+        .bind(hash(session), accountId, '2099-01-01T00:00:00.000Z'),
+    ]);
+    await db
+      .prepare(
+        `CREATE TRIGGER test_deletion_rollback BEFORE DELETE ON users
+        WHEN OLD.id = 'delete-rollback' BEGIN SELECT RAISE(ABORT, 'test rollback'); END`,
+      )
+      .run();
+    try {
+      expect(
+        (await request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session)).status,
+      ).toBe(500);
+      expect(
+        await db
+          .prepare('SELECT deleting FROM account_mutation_locks WHERE actor_id = ?')
+          .bind(`github:${accountId}`)
+          .first('deleting'),
+      ).toBe(0);
+      expect((await request('/api/activities', 'POST', activity, session)).status).toBe(201);
+    } finally {
+      await db.prepare('DROP TRIGGER test_deletion_rollback').run();
+      await db.prepare('DELETE FROM users WHERE id = ?').bind(accountId).run();
+    }
+  });
+
+  it('keeps partially erased accounts locked when a later deletion attempt fails', async () => {
+    const did = 'did:plc:7sagqfh4v4t6zl7bdwbikdc4';
+    const session = 'atproto-partial-delete-session';
+    await db.batch([
+      db
+        .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+        .bind(did, 'partial.example', 'Partial', new Date().toISOString()),
+      db
+        .prepare('INSERT INTO atproto_sessions (token_hash, did, expires_at) VALUES (?, ?, ?)')
+        .bind(hash(session), did, '2099-01-01T00:00:00.000Z'),
+      db
+        .prepare(
+          'INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)',
+        )
+        .bind(did, encryptedAtprotoSession(did), new Date().toISOString()),
+      db
+        .prepare(
+          `INSERT INTO account_mutation_locks
+            (actor_id, deleting, deletion_attempt_id, deletion_lease_until, remote_cleanup_started)
+          VALUES (?, 1, 'old-attempt', '2000-01-01T00:00:00.000Z', 1)`,
+        )
+        .bind(`atproto:${did}`),
+    ]);
+    failAtprotoListRecords = true;
+    try {
+      expect(
+        (await request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session)).status,
+      ).toBe(500);
+      expect(
+        await db
+          .prepare(
+            'SELECT deleting, remote_cleanup_started FROM account_mutation_locks WHERE actor_id = ?',
+          )
+          .bind(`atproto:${did}`)
+          .first(),
+      ).toEqual({ deleting: 1, remote_cleanup_started: 1 });
+    } finally {
+      failAtprotoListRecords = false;
+      await db
+        .prepare('DELETE FROM account_mutation_locks WHERE actor_id = ?')
+        .bind(`atproto:${did}`)
+        .run();
+      await db.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind(did).run();
+      await db.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(did).run();
+    }
+  });
+
+  it('does not erase local data after a deletion attempt loses ownership', async () => {
+    const did = 'did:plc:7sagqfh4v4t6zl7bdwbikdc5';
+    const session = 'atproto-superseded-delete-session';
+    await db.batch([
+      db
+        .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+        .bind(did, 'superseded.example', 'Superseded', new Date().toISOString()),
+      db
+        .prepare('INSERT INTO atproto_sessions (token_hash, did, expires_at) VALUES (?, ?, ?)')
+        .bind(hash(session), did, '2099-01-01T00:00:00.000Z'),
+      db
+        .prepare(
+          'INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)',
+        )
+        .bind(did, encryptedAtprotoSession(did), new Date().toISOString()),
+    ]);
+    remoteAtprotoEvents = [
+      {
+        uri: `at://${did}/dev.devswhorun.event/old-event`,
+        cid: 'bafyreie5cvnrvd6gd3wmqx5r3gkqjfwq3fvmsk6i3q4c2av4d6sp6j5sja',
+        value: {},
+      },
+    ];
+    let started!: () => void;
+    let resume!: () => void;
+    const ready = new Promise<void>((resolve) => (started = resolve));
+    const release = new Promise<void>((resolve) => (resume = resolve));
+    atprotoDeleteCheckpoint = { started, resume: release };
+    try {
+      const deletion = request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session);
+      await ready;
+      await db
+        .prepare('UPDATE account_mutation_locks SET deletion_attempt_id = ? WHERE actor_id = ?')
+        .bind('replacement-attempt', `atproto:${did}`)
+        .run();
+      resume();
+      expect((await deletion).status).toBe(500);
+      expect(
+        await db.prepare('SELECT did FROM atproto_accounts WHERE did = ?').bind(did).first(),
+      ).toEqual({ did });
+    } finally {
+      resume();
+      atprotoDeleteCheckpoint = undefined;
+      remoteAtprotoEvents = [];
+      await db
+        .prepare('DELETE FROM account_mutation_locks WHERE actor_id = ?')
+        .bind(`atproto:${did}`)
+        .run();
+      await db.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind(did).run();
+      await db.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(did).run();
+    }
+  });
+
+  it('retries failed OAuth revocation without changing a newly signed-in session', async () => {
+    const did = 'did:plc:7sagqfh4v4t6zl7bdwbikdc3';
+    const session = 'atproto-deletion-session';
+    const savedSession = encryptedAtprotoSession(did);
+    remoteAtprotoEvents = [];
+    failAtprotoRevocation = true;
+    atprotoRevocations = 0;
+    await db.batch([
+      db
+        .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+        .bind(did, 'delete.example', 'Delete', new Date().toISOString()),
+      db
+        .prepare('INSERT INTO atproto_sessions (token_hash, did, expires_at) VALUES (?, ?, ?)')
+        .bind(hash(session), did, '2099-01-01T00:00:00.000Z'),
+      db
+        .prepare(
+          'INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)',
+        )
+        .bind(did, savedSession, new Date().toISOString()),
+    ]);
+
+    try {
+      const deleted = await request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session);
+      expect(deleted.status).toBe(204);
+      expect(atprotoRevocations).toBe(1);
+      const job = await db
+        .prepare('SELECT id, next_attempt_at FROM account_deletion_jobs WHERE actor_id = ?')
+        .bind(did)
+        .first<{ id: string; next_attempt_at: string }>();
+      expect(job).not.toBeNull();
+      expect(job!.next_attempt_at > new Date().toISOString()).toBe(true);
+
+      const replacementSession = encryptedAtprotoSession(did);
+      await db
+        .prepare(
+          'INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)',
+        )
+        .bind(did, replacementSession, new Date().toISOString())
+        .run();
+      const newerDid = 'did:plc:7sagqfh4v4t6zl7bdwbikdc6';
+      await db
+        .prepare(
+          `INSERT INTO account_deletion_jobs
+            (id, actor_id, encrypted_oauth_session, created_at, next_attempt_at)
+          VALUES (?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          'newer-job',
+          newerDid,
+          encryptedAtprotoSession(newerDid),
+          new Date().toISOString(),
+          '2000-01-01T00:00:00.000Z',
+        )
+        .run();
+      failAtprotoRevocation = false;
+      const worker = await runtime.getWorker();
+      await worker.scheduled();
+      expect(atprotoRevocations).toBe(2);
+      expect(
+        await db.prepare("SELECT id FROM account_deletion_jobs WHERE id = 'newer-job'").first(),
+      ).toBeNull();
+      await db
+        .prepare('UPDATE account_deletion_jobs SET next_attempt_at = ? WHERE id = ?')
+        .bind('2000-01-01T00:00:00.000Z', job!.id)
+        .run();
+      await worker.scheduled();
+      expect(atprotoRevocations).toBe(3);
+      expect(
+        await db.prepare('SELECT id FROM account_deletion_jobs WHERE id = ?').bind(job!.id).first(),
+      ).toBeNull();
+      expect(
+        await db
+          .prepare('SELECT encrypted_session FROM atproto_oauth_sessions WHERE did = ?')
+          .bind(did)
+          .first('encrypted_session'),
+      ).toBe(replacementSession);
+    } finally {
+      failAtprotoRevocation = false;
+      await db.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(did).run();
+      await db.prepare('DELETE FROM account_deletion_jobs WHERE actor_id = ?').bind(did).run();
+      await db.prepare("DELETE FROM account_deletion_jobs WHERE id = 'newer-job'").run();
+    }
+  });
+
+  it('discards credentials and records unsupported OAuth revocation', async () => {
+    const did = 'did:plc:7sagqfh4v4t6zl7bdwbikdc7';
+    const session = 'atproto-unsupported-revocation-session';
+    omitAtprotoRevocationEndpoint = true;
+    await db.batch([
+      db
+        .prepare('INSERT INTO atproto_accounts (did, handle, name, updated_at) VALUES (?, ?, ?, ?)')
+        .bind(did, 'unsupported.example', 'Unsupported', new Date().toISOString()),
+      db
+        .prepare('INSERT INTO atproto_sessions (token_hash, did, expires_at) VALUES (?, ?, ?)')
+        .bind(hash(session), did, '2099-01-01T00:00:00.000Z'),
+      db
+        .prepare(
+          'INSERT INTO atproto_oauth_sessions (did, encrypted_session, updated_at) VALUES (?, ?, ?)',
+        )
+        .bind(did, encryptedAtprotoSession(did), new Date().toISOString()),
+    ]);
+    try {
+      expect(
+        (await request('/api/account', 'DELETE', { confirmation: 'DELETE' }, session)).status,
+      ).toBe(204);
+      expect(
+        await db
+          .prepare('SELECT id FROM account_deletion_jobs WHERE actor_id = ?')
+          .bind(did)
+          .first(),
+      ).toBeNull();
+      const failure = await db
+        .prepare('SELECT failure_code FROM account_deletion_failures WHERE actor_id = ?')
+        .bind(did)
+        .first('failure_code');
+      expect(failure).toBe('revocation_unsupported');
+      const audit = await db
+        .prepare('SELECT * FROM account_deletion_failures WHERE actor_id = ?')
+        .bind(did)
+        .first();
+      expect(JSON.stringify(audit)).not.toContain('encrypted');
+    } finally {
+      omitAtprotoRevocationEndpoint = false;
+      await db.prepare('DELETE FROM account_deletion_jobs WHERE actor_id = ?').bind(did).run();
+      await db.prepare('DELETE FROM account_deletion_failures WHERE actor_id = ?').bind(did).run();
+    }
   });
 
   it('serves all public AT Protocol activities and resolves duplicate handles deterministically', async () => {

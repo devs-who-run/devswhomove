@@ -181,6 +181,7 @@
             <app-profile-badges [activities]="profileActivities()" />
             @if (!remoteProfile() && !preview()) {
               @if (viewer(); as ownProfile) {
+                <app-account-settings [profile]="ownProfile" (deleted)="accountDeleted()" />
                 <app-developer-insights [profile]="ownProfile" />
               }
             }

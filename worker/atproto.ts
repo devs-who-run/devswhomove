@@ -228,7 +228,10 @@ export function installEdgeRequest(): void {
 }
 
 /** Create the AT Protocol OAuth client with encrypted D1 stores and Worker WebCrypto. */
-export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
+export async function oauthClient(
+  env: AtprotoEnv,
+  oauthFetch: typeof edgeFetch = edgeFetch,
+): Promise<OAuthClient> {
   installEdgeRequest();
   const origin = oauthOrigin(env);
   const key = await privateKey(env);
@@ -320,7 +323,7 @@ export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
           jwks_uri: `${origin}/oauth/jwks.json`,
         }) as OAuthClientMetadataInput,
     keyset: [key],
-    fetch: edgeFetch,
+    fetch: oauthFetch,
     handleResolver: new AtprotoDohHandleResolver({
       dohEndpoint: 'https://cloudflare-dns.com/dns-query',
       fetch: edgeFetch,
@@ -338,7 +341,67 @@ export async function oauthClient(env: AtprotoEnv): Promise<OAuthClient> {
   });
 }
 
+/** Revoke the saved grant without touching the live OAuth session for the same DID. */
+export class AtprotoRevocationUnsupportedError extends Error {
+  constructor() {
+    super('The OAuth issuer does not support token revocation.');
+    this.name = 'AtprotoRevocationUnsupportedError';
+  }
+}
+
+export async function revokeSavedAtprotoSession(
+  env: AtprotoEnv,
+  did: string,
+  encryptedSession: string,
+): Promise<void> {
+  const session = await deserializeDpopValue<Session>(env, `session:${did}`, encryptedSession);
+  const client = await oauthClient(env, async (input, init) => {
+    const response = await edgeFetch(input, init);
+    const method = input instanceof Request ? input.method : init?.method;
+    if (method === 'POST' && response.ok) {
+      await response.body?.cancel();
+      const headers = new Headers(response.headers);
+      headers.set('Content-Type', 'application/json');
+      headers.delete('Content-Length');
+      return Response.json({}, { headers });
+    }
+    return response;
+  });
+  const server = await client.serverFactory.fromIssuer(
+    session.tokenSet.iss,
+    session.authMethod,
+    session.dpopKey,
+  );
+  if (!server.serverMetadata.revocation_endpoint) throw new AtprotoRevocationUnsupportedError();
+  await server.request('revocation', {
+    token: session.tokenSet.refresh_token ?? session.tokenSet.access_token,
+  });
+}
+
 /** Create an AT Protocol API agent backed by the restored OAuth session. */
 export function atprotoAgent(session: Awaited<ReturnType<OAuthClient['restore']>>): Agent {
   return new Agent(session);
+}
+
+/** Rebuild an agent whose requests stop when the account mutation reservation is lost. */
+export function guardAtprotoAgent(
+  agent: Agent,
+  assertActive: () => Promise<void>,
+  signal: AbortSignal,
+): Agent {
+  const sessionManager = agent.sessionManager;
+  const fetchHandler = sessionManager.fetchHandler;
+  return new Agent({
+    did: sessionManager.did,
+    fetchHandler: async (url, init) => {
+      await assertActive();
+      const signals = [signal, init?.signal].filter(
+        (value): value is AbortSignal => value !== undefined,
+      );
+      return fetchHandler.call(sessionManager, url, {
+        ...init,
+        signal: AbortSignal.any(signals),
+      });
+    },
+  });
 }

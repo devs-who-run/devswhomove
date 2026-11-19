@@ -24,6 +24,7 @@ import { EventActions } from './event-actions';
 import { ClubActions } from './club-actions';
 import { ProfileActivities } from './profile-activities';
 import { ProfileHeader } from './profile-header';
+import { AccountSettings } from './account-settings';
 import { AppSidebar, type Page } from './app-sidebar';
 import { AppTopbar } from './app-topbar';
 import { AuthState } from './auth-state';
@@ -55,6 +56,7 @@ import {
     ClubsPage,
     ProfileActivities,
     ProfileHeader,
+    AccountSettings,
     AppSidebar,
     AppTopbar,
     ProfileBadges,
@@ -363,6 +365,15 @@ export class App {
       this.notice.set('');
       this.error.set(`Could not copy the profile link. Copy it manually: ${url}`);
     }
+  }
+
+  async accountDeleted(): Promise<void> {
+    this.viewer.set(null);
+    this.agent.clear();
+    this.remoteProfile.set(null);
+    this.feed.clear();
+    await this.load();
+    this.navigate('feed');
   }
 
   private async action(work: () => Promise<void>): Promise<void> {

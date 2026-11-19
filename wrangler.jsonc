@@ -11,6 +11,7 @@
   },
   // Share-card fonts are bundled as binary modules; the resvg WASM uses the default CompiledWasm rule.
   "rules": [{ "type": "Data", "globs": ["**/*.ttf"], "fallthrough": true }],
+  "triggers": { "crons": ["*/15 * * * *"] },
   "d1_databases": [
     {
       "binding": "DB",
