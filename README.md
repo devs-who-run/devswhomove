@@ -175,7 +175,9 @@ Every public activity on a public profile has a **Share** button next to kudos a
 - Mastodon: enter your server (for example `mastodon.social`). It is saved in this browser only.
 - **Copy link**, **Download image**, and the device share sheet where the browser supports it.
 
-The shared link is `/activities/:id`. The Worker adds OpenGraph and `summary_large_image` Twitter tags to that page so networks show a large preview. The image comes from `GET /api/activities/:id/card.png`, a 1200×630 PNG rendered in the Worker. It is drawn as SVG and rasterised with `@resvg/resvg-wasm`. DM Sans and Manrope are bundled in `worker/fonts` under the SIL Open Font License.
+The home and app pages, including shared profiles, use the default branded social image. The shared activity link is `/activities/:id`. The Worker adds OpenGraph and `summary_large_image` Twitter tags to that page so networks show a large preview. The image comes from `GET /api/activities/:id/card.png`, a 1200×630 PNG rendered in the Worker. It is drawn as SVG and rasterised with `@resvg/resvg-wasm`. DM Sans and Manrope are bundled in `worker/fonts` under the SIL Open Font License.
+
+An agent-readable site guide is available at `/llms.txt`; `/llm.txt` redirects to it.
 
 Cards only exist for public activities on public profiles. Private activities, and public activities on private profiles, return 404 and their pages get no preview tags. Cards show the name, handle, title, sport, date and metrics. They never include notes or photos. Cards are cached for 10 minutes and the cache key changes when the card's content changes. Networks keep their own copy, so a preview that was already posted may stay visible after the activity is made private.
 

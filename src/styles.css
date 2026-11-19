@@ -21,6 +21,18 @@
   --surface-soft: #edf1e4;
   --accent-text: #bdd99b;
 }
+.brand-lockups .brand-lockup-light {
+  display: block;
+}
+.brand-lockups .brand-lockup-dark {
+  display: none;
+}
+html:root[data-theme='dark'] .brand-lockups .brand-lockup-light {
+  display: none;
+}
+html:root[data-theme='dark'] .brand-lockups .brand-lockup-dark {
+  display: block;
+}
 html:root[data-theme='dark'] {
   color-scheme: dark;
   /* Grayscale antialiasing renders light-on-dark text noticeably thinner on macOS. */

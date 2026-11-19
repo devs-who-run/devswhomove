@@ -163,11 +163,15 @@ describe('Worker with real D1 storage', () => {
         d1Databases: ['DB'],
         r2Buckets: ['PHOTOS'],
         serviceBindings: {
-          ASSETS: async () =>
-            new WorkerResponse(
-              '<!doctype html><html><head><title>Devs Who Move</title><meta name="description" content="Default" /></head><body><app-root></app-root></body></html>',
-              { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
-            ),
+          ASSETS: async (request) =>
+            new URL(request.url).pathname === '/asset.js'
+              ? new WorkerResponse('const asset = true;', {
+                  headers: { 'Content-Type': 'application/javascript' },
+                })
+              : new WorkerResponse(
+                  '<!doctype html><html><head><title>Devs Who Move</title><meta name="description" content="Default" /></head><body><app-root></app-root></body></html>',
+                  { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+                ),
         },
         bindings: {
           APP_URL: origin,
@@ -576,6 +580,13 @@ describe('Worker with real D1 storage', () => {
     expect((await request('/api/profiles/alice', 'GET', undefined, alice)).status).toBe(200);
   });
 
+  it('uses the brand social image on app pages without changing other assets', async () => {
+    const page = await (await request('/feed')).text();
+    expect(page).toContain(`<meta property="og:image" content="${origin}/og-image.png" />`);
+    expect(page).toContain(`<meta name="twitter:image" content="${origin}/og-image.png" />`);
+    expect(await (await request('/asset.js')).text()).toBe('const asset = true;');
+  });
+
   it('shares public activities as PNG cards with OpenGraph pages and hides private ones', async () => {
     const created = await request(
       '/api/activities',
@@ -614,6 +625,7 @@ describe('Worker with real D1 storage', () => {
     expect(html).toContain(
       `<meta property="og:image" content="${origin}/api/activities/${id}/card.png?v=`,
     );
+    expect(html).not.toContain('/og-image.png');
     expect(html).toContain('<meta name="twitter:card" content="summary_large_image" />');
     expect(html).toContain(`<link rel="canonical" href="${origin}/activities/${id}" />`);
     expect(html).toContain('Lunch &lt;run&gt; &amp; &quot;tempo&quot;');

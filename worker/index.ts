@@ -27,7 +27,7 @@ import {
 import type { Agent } from '@atproto/api';
 import { MAX_PHOTO_BYTES, sanitizeImage } from './images';
 import { handleMcp } from './mcp';
-import { cardSvg, cardVersion, shareMeta } from './share-card';
+import { cardSvg, cardVersion, shareMeta, websiteShareTags } from './share-card';
 import { renderPng } from './share-render';
 import { getWeeklyRecap, getGithubInsights } from './insights';
 import { deleteAccountRateLimits, enforceRateLimit } from './rate-limit';
@@ -432,6 +432,20 @@ async function visibleActivity(env: Env, id: string, viewerId: string): Promise<
 async function publicActivity(env: Env, id: string): Promise<Activity | null> {
   const activity = await visibleActivity(env, id, '');
   return activity?.visibility === 'public' ? activity : null;
+}
+
+/** Add the default brand image to SPA pages without affecting activity-specific previews. */
+async function appPage(request: Request, env: Env): Promise<Response> {
+  const page = await env.ASSETS.fetch(request);
+  if (!page.ok || !page.headers.get('Content-Type')?.includes('text/html')) return page;
+  const tags = websiteShareTags(new URL(env.APP_URL).origin, new URL(request.url).pathname);
+  return new HTMLRewriter()
+    .on('head', {
+      element(element) {
+        element.append(tags, { html: true });
+      },
+    })
+    .transform(page);
 }
 
 /** Serve the SPA for a shared activity, with OpenGraph tags when the activity is public. */
@@ -2119,7 +2133,7 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
   const sharedActivity = /^\/activities\/([^/]+)\/?$/.exec(url.pathname);
   if (sharedActivity && (method === 'GET' || method === 'HEAD'))
     return activityPage(request, env, sharedActivity[1]);
-  if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+  if (!url.pathname.startsWith('/api/')) return appPage(request, env);
 
   await enforceRateLimit(request, env.DB);
 

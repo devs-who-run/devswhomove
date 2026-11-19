@@ -189,6 +189,39 @@ export async function cardVersion(activity: CardActivity): Promise<string> {
 
 const escapeHtml = escapeXml;
 
+type MetaTag = [attribute: 'property' | 'name', key: string, value: string];
+
+const renderMetaTags = (tags: MetaTag[]) =>
+  tags.map(
+    ([attribute, key, value]) => `<meta ${attribute}="${key}" content="${escapeHtml(value)}" />`,
+  );
+
+/** OpenGraph and Twitter meta tags for the website and profile pages. */
+export function websiteShareTags(origin: string, path: string): string {
+  const image = `${origin}/og-image.png`;
+  const alt = 'Devs Who Move logo with the words Your people. Your pace.';
+  const title = 'Devs Who Move - Your people. Your pace.';
+  const description =
+    'A community for developers and their agents to share movement, find events, and connect.';
+  return renderMetaTags([
+    ['property', 'og:type', 'website'],
+    ['property', 'og:site_name', 'Devs Who Move'],
+    ['property', 'og:title', title],
+    ['property', 'og:description', description],
+    ['property', 'og:url', `${origin}${path}`],
+    ['property', 'og:image', image],
+    ['property', 'og:image:type', 'image/png'],
+    ['property', 'og:image:width', '1200'],
+    ['property', 'og:image:height', '630'],
+    ['property', 'og:image:alt', alt],
+    ['name', 'twitter:card', 'summary_large_image'],
+    ['name', 'twitter:title', title],
+    ['name', 'twitter:description', description],
+    ['name', 'twitter:image', image],
+    ['name', 'twitter:image:alt', alt],
+  ]).join('\n    ');
+}
+
 /** OpenGraph and Twitter meta tags for a public activity page. */
 export function shareMeta(
   activity: CardActivity,
@@ -216,7 +249,7 @@ export function shareMeta(
         `${metric.label.toLowerCase()} ${metric.value}${metric.unit ? ` ${metric.unit}` : ''}`,
     )
     .join(', ')}.`;
-  const meta: [string, string, string][] = [
+  const meta: MetaTag[] = [
     ['property', 'og:type', 'article'],
     ['property', 'og:site_name', 'Devs Who Move'],
     ['property', 'og:title', title],
@@ -236,9 +269,7 @@ export function shareMeta(
   ];
   const tags = [
     `<link rel="canonical" href="${escapeHtml(pageUrl)}" />`,
-    ...meta.map(
-      ([attribute, key, value]) => `<meta ${attribute}="${key}" content="${escapeHtml(value)}" />`,
-    ),
+    ...renderMetaTags(meta),
   ].join('\n    ');
   return { title, description, tags };
 }

@@ -7,16 +7,8 @@
   min-height: 100vh;
 }
 .brand-mark {
-  background: var(--green);
-  color: var(--lime);
   width: 35px;
   height: 35px;
-  border-radius: 11px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transform: rotate(-5deg);
-  font-size: 23px;
 }
 .status-dot {
   width: 6px;
@@ -89,12 +81,16 @@ main {
   letter-spacing: 1px;
 }
 .footer-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font: 750 13px var(--heading);
   letter-spacing: -0.6px;
   color: #6b7a5a;
 }
-.footer-wordmark > span {
-  color: #8eac60;
+.footer-wordmark img {
+  width: 24px;
+  height: 24px;
 }
 
 .profile-filters {
@@ -205,7 +201,6 @@ select {
   .brand-mark {
     width: 28px;
     height: 28px;
-    font-size: 20px;
   }
   .main-shell {
     margin-left: 190px;
@@ -232,7 +227,6 @@ select {
   .brand-mark {
     width: 37px;
     height: 37px;
-    font-size: 25px;
   }
   .main-shell {
     margin-left: 78px;

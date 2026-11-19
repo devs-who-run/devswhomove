@@ -17,31 +17,23 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font: 800 21px var(--heading);
-  letter-spacing: -1.1px;
-  white-space: nowrap;
+  width: 100%;
 }
 
-.brand-light {
-  font-weight: 500;
+.brand-lockups {
+  display: block;
+  width: 100%;
 }
 
-.brand-dot {
-  color: #649a4c;
+.brand-lockups img {
+  width: 100%;
+  height: auto;
 }
 
 .brand-mark {
-  background: var(--green);
-  color: var(--lime);
-  width: 35px;
-  height: 35px;
-  border-radius: 11px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transform: rotate(-5deg);
-  font-size: 23px;
+  display: none;
+  width: 37px;
+  height: 37px;
 }
 
 .workspace-label {
@@ -142,31 +134,11 @@ nav app-icon {
     padding-left: 17px;
     padding-right: 17px;
   }
-
-  .brand {
-    font-size: 19px;
-  }
-
-  .brand-mark {
-    width: 30px;
-    height: 30px;
-  }
 }
 @media (max-width: 1050px) {
   .sidebar {
     width: 190px;
     padding: 28px 13px 20px;
-  }
-
-  .brand {
-    font-size: 17px;
-    gap: 6px;
-  }
-
-  .brand-mark {
-    width: 28px;
-    height: 28px;
-    font-size: 20px;
   }
 
   .workspace-label {
@@ -200,7 +172,7 @@ nav app-icon {
     align-items: center;
   }
 
-  .brand > span:last-child,
+  .brand-lockups,
   .workspace-label,
   .sidebar-manifesto,
   .sidebar-bottom,
@@ -209,13 +181,12 @@ nav app-icon {
   }
 
   .brand-mark {
-    width: 37px;
-    height: 37px;
-    font-size: 25px;
+    display: block;
   }
 
   .brand {
     margin-bottom: 35px;
+    justify-content: center;
   }
 
   nav {
