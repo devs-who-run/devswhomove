@@ -63,6 +63,7 @@
 }
 @media (max-width: 700px) {
   .event-grid {
+    grid-template-columns: 1fr;
     gap: 14px;
   }
   .event-body {

@@ -115,6 +115,25 @@ describe('App', () => {
     expect(link.querySelector('.brand-mark')?.getAttribute('src')).toBe('/brand/icon.svg');
   });
 
+  it('keeps descriptive navigation names alongside compact mobile labels', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const links = fixture.nativeElement.querySelectorAll(
+      '.sidebar nav a',
+    ) as NodeListOf<HTMLAnchorElement>;
+    expect(Array.from(links, (link) => link.getAttribute('aria-label'))).toEqual([
+      'The community',
+      'Move together',
+      'Clubs',
+      'Your profile',
+      'Your agents',
+    ]);
+    expect(
+      Array.from(links, (link) => link.querySelector('.mobile-label')?.textContent?.trim()),
+    ).toEqual(['Feed', 'Events', 'Clubs', 'Profile', 'Agents']);
+  });
+
   it('routes sign-in actions from each app entry point to the existing auth handlers', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();

@@ -4,6 +4,7 @@
 }
 .share-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 .share-preview {
@@ -62,4 +63,19 @@
   color: #a43c2f;
   font-size: 12px;
   margin: 0;
+}
+@media (max-width: 520px) {
+  .mastodon-form {
+    flex-wrap: wrap;
+  }
+  .mastodon-form label {
+    flex-basis: 100%;
+  }
+  .share-target,
+  .share-action {
+    min-height: 44px;
+  }
+  .mastodon-form input {
+    font-size: 16px;
+  }
 }

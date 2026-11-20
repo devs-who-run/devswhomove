@@ -15,7 +15,8 @@
         [attr.aria-label]="item.label"
         [attr.aria-current]="page() === item.page ? 'page' : null"
       >
-        <app-icon [name]="item.icon" /><span>{{ item.label }}</span>
+        <app-icon [name]="item.icon" /><span class="desktop-label">{{ item.label }}</span
+        ><span class="mobile-label">{{ item.mobileLabel }}</span>
       </a>
     }
   </nav>

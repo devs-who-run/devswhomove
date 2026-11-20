@@ -13,7 +13,8 @@ export type Page = 'feed' | 'events' | 'clubs' | 'profile' | 'agents' | 'activit
   styleUrl: './app-sidebar.css',
 })
 export class AppSidebar {
-  readonly nav = input.required<{ page: Page; label: string; icon: string }[]>();
+  readonly nav =
+    input.required<{ page: Page; label: string; mobileLabel: string; icon: string }[]>();
   readonly page = input.required<Page>();
   readonly viewer = input<Profile | null>(null);
   readonly saving = input(false);
