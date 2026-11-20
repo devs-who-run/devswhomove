@@ -67,12 +67,12 @@ import {
 })
 export class App {
   private readonly router = inject(Router);
-  readonly nav: { page: Page; label: string; icon: string }[] = [
-    { page: 'feed', label: 'The community', icon: 'grid' },
-    { page: 'events', label: 'Move together', icon: 'calendar' },
-    { page: 'clubs', label: 'Clubs', icon: 'people' },
-    { page: 'profile', label: 'Your profile', icon: 'user' },
-    { page: 'agents', label: 'Your agents', icon: 'terminal' },
+  readonly nav: { page: Page; label: string; mobileLabel: string; icon: string }[] = [
+    { page: 'feed', label: 'The community', mobileLabel: 'Feed', icon: 'grid' },
+    { page: 'events', label: 'Move together', mobileLabel: 'Events', icon: 'calendar' },
+    { page: 'clubs', label: 'Clubs', mobileLabel: 'Clubs', icon: 'people' },
+    { page: 'profile', label: 'Your profile', mobileLabel: 'Profile', icon: 'user' },
+    { page: 'agents', label: 'Your agents', mobileLabel: 'Agents', icon: 'terminal' },
   ];
   readonly page = signal<Page>('feed');
   readonly loading = signal(true);

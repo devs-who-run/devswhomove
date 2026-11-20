@@ -74,6 +74,10 @@ nav app-icon {
   font-size: 16px;
 }
 
+nav a > .mobile-label {
+  display: none;
+}
+
 .sidebar-manifesto {
   border-top: 1px solid var(--border);
   margin: 38px 12px 0;
@@ -235,7 +239,7 @@ nav app-icon {
     border-radius: 6px;
   }
 
-  nav a > span {
+  nav a > .mobile-label {
     display: block;
     font-size: 12px;
   }

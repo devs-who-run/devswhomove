@@ -40,6 +40,7 @@ app-icon {
 }
 @media (max-width: 520px) {
   button {
+    min-height: 44px;
     padding: 6px 8px;
   }
 }

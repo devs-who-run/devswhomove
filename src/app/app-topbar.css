@@ -142,11 +142,12 @@ select {
     display: inline-flex;
   }
 }
-@media (max-width: 520px) {
+@media (max-width: 700px) {
   .topbar .breadcrumb {
     display: none;
   }
-
+}
+@media (max-width: 520px) {
   .topbar-actions {
     width: 100%;
     justify-content: space-between;

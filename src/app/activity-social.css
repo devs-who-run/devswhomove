@@ -5,6 +5,7 @@
 }
 .social-bar {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .social-button {
@@ -100,4 +101,13 @@
 .post-button:disabled {
   opacity: 0.6;
   cursor: default;
+}
+@media (max-width: 520px) {
+  .social-button,
+  .post-button {
+    min-height: 44px;
+  }
+  .comment-form input {
+    font-size: 16px;
+  }
 }

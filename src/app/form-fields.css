@@ -98,6 +98,9 @@ textarea {
   .form-row {
     gap: 12px;
   }
+  .form-row:has(input[type='datetime-local']) {
+    grid-template-columns: 1fr;
+  }
   label {
     font-size: 12px;
   }
