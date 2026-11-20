@@ -434,9 +434,22 @@ async function publicActivity(env: Env, id: string): Promise<Activity | null> {
   return activity?.visibility === 'public' ? activity : null;
 }
 
+/** Refresh cached HTML rather than pairing a new CSP nonce with old injected scripts. */
+async function assetResponse(request: Request, env: Env): Promise<Response> {
+  const response = await env.ASSETS.fetch(request);
+  if (response.status !== 304) return response;
+  const headers = new Headers(request.headers);
+  headers.delete('If-None-Match');
+  headers.delete('If-Modified-Since');
+  const fresh = await env.ASSETS.fetch(new Request(request, { headers }));
+  if (!fresh.ok || fresh.headers.get('Content-Type')?.includes('text/html')) return fresh;
+  await fresh.body?.cancel();
+  return response;
+}
+
 /** Add the default brand image to SPA pages without affecting activity-specific previews. */
 async function appPage(request: Request, env: Env): Promise<Response> {
-  const page = await env.ASSETS.fetch(request);
+  const page = await assetResponse(request, env);
   if (!page.ok || !page.headers.get('Content-Type')?.includes('text/html')) return page;
   const tags = websiteShareTags(new URL(env.APP_URL).origin, new URL(request.url).pathname);
   return new HTMLRewriter()
@@ -450,7 +463,7 @@ async function appPage(request: Request, env: Env): Promise<Response> {
 
 /** Serve the SPA for a shared activity, with OpenGraph tags when the activity is public. */
 async function activityPage(request: Request, env: Env, rawId: string): Promise<Response> {
-  const page = await env.ASSETS.fetch(request);
+  const page = await assetResponse(request, env);
   let id: string;
   try {
     id = decodeURIComponent(rawId);
@@ -2133,7 +2146,13 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
   const sharedActivity = /^\/activities\/([^/]+)\/?$/.exec(url.pathname);
   if (sharedActivity && (method === 'GET' || method === 'HEAD'))
     return activityPage(request, env, sharedActivity[1]);
-  if (!url.pathname.startsWith('/api/')) return appPage(request, env);
+  if (!url.pathname.startsWith('/api/')) {
+    const appRoute =
+      url.pathname === '/' ||
+      /^\/(?:feed|events|agents)\/?$/.test(url.pathname) ||
+      /^\/(?:clubs|profile)(?:\/|$)/.test(url.pathname);
+    return appRoute ? appPage(request, env) : assetResponse(request, env);
+  }
 
   await enforceRateLimit(request, env.DB);
 
@@ -3089,6 +3108,21 @@ export default {
       secured.headers.set('Referrer-Policy', 'same-origin');
       secured.headers.set('X-Frame-Options', 'DENY');
       secured.headers.set('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+      const nonce = secured.headers.get('Content-Type')?.includes('text/html')
+        ? secret()
+        : undefined;
+      if (nonce || !secured.headers.has('Content-Security-Policy')) {
+        secured.headers.set(
+          'Content-Security-Policy',
+          `default-src 'self'; script-src 'self' https://static.cloudflareinsights.com${nonce ? ` 'nonce-${nonce}'` : ''}; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://avatars.githubusercontent.com data: blob:; connect-src 'self' https://cloudflareinsights.com; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'`,
+        );
+      }
+      if (nonce) {
+        // Cloudflare reads this nonce to authorize its request-specific bot-detection scripts.
+        secured.headers.set('Cache-Control', 'no-store');
+        secured.headers.delete('ETag');
+        secured.headers.delete('Last-Modified');
+      }
       if (new URL(request.url).pathname.startsWith('/auth/'))
         secured.headers.set('Cache-Control', 'no-store');
       return secured;

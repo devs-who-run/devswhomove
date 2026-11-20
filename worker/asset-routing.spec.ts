@@ -165,6 +165,8 @@ describe('deployed asset routing', () => {
     const head = await runtime.dispatchFetch(`${origin}/`, { method: 'HEAD' });
     expect(head.status).toBe(200);
     expect(head.headers.get('content-type')).toContain('text/html');
+    expect(head.headers.get('Content-Security-Policy')).toContain("'nonce-");
+    expect(head.headers.get('Cache-Control')).toBe('no-store');
     expect(await head.text()).toBe('');
 
     const index = await runtime.dispatchFetch(`${origin}/index.html`, { redirect: 'manual' });
@@ -174,10 +176,77 @@ describe('deployed asset routing', () => {
 
   it('leaves unrelated static assets unmodified', async () => {
     expect(await (await runtime.dispatchFetch(`${origin}/static.html`)).text()).toBe(staticHtml);
+    expect(await (await runtime.dispatchFetch(`${origin}/static`)).text()).toBe(staticHtml);
     expect(await (await runtime.dispatchFetch(`${origin}/asset.js`)).text()).toBe(
       'const asset = true;',
     );
   });
+
+  it.each([
+    '/',
+    '/feed',
+    '/activities/public-run',
+    '/activities/private-run',
+    '/static.html',
+    '/future-route',
+  ])('issues a fresh CSP nonce for every HTML response at %s', async (path) => {
+    const nonces: (string | undefined)[] = [];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await runtime.dispatchFetch(`${origin}${path}`);
+      expect(response.status).toBe(200);
+      const policy = response.headers.get('Content-Security-Policy') ?? '';
+      const scriptPolicy = policy
+        .split(';')
+        .find((directive) => directive.trim().startsWith('script-src '));
+      expect(scriptPolicy).toContain("'self' https://static.cloudflareinsights.com");
+      expect(scriptPolicy).not.toContain("'unsafe-inline'");
+      expect(scriptPolicy).not.toContain('sha256-');
+      const nonce = scriptPolicy?.match(/'nonce-([a-f0-9]{64})'/)?.[1];
+      expect(nonce).toBeDefined();
+      nonces.push(nonce);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(response.headers.has('ETag')).toBe(false);
+      expect(response.headers.has('Last-Modified')).toBe(false);
+      await response.text();
+    }
+    expect(nonces[0]).not.toBe(nonces[1]);
+  });
+
+  it('preserves caching and the strict policy for non-HTML assets', async () => {
+    const response = await runtime.dispatchFetch(`${origin}/asset.js`);
+    expect(response.headers.get('Content-Security-Policy')).toContain(
+      "script-src 'self' https://static.cloudflareinsights.com;",
+    );
+    expect(response.headers.get('Content-Security-Policy')).not.toContain('nonce-');
+    expect(response.headers.get('Cache-Control')).not.toBe('no-store');
+    expect(response.headers.has('ETag')).toBe(true);
+    const etag = response.headers.get('ETag');
+    if (!etag) throw new Error('The JavaScript asset fixture must have an ETag');
+    expect(await response.text()).toBe('const asset = true;');
+    const cached = await runtime.dispatchFetch(`${origin}/asset.js`, {
+      headers: { 'If-None-Match': etag },
+    });
+    expect(cached.status).toBe(304);
+    expect(await cached.text()).toBe('');
+  });
+
+  it.each(['/', '/activities/public-run', '/static'])(
+    'replaces previously cached HTML at %s instead of revalidating an old nonce',
+    async (path) => {
+      const { ASSETS } = await runtime.getBindings<{ ASSETS: Fetcher }>();
+      const cachedPage = await ASSETS.fetch(`${origin}${path}`);
+      const etag = cachedPage.headers.get('ETag');
+      if (!etag) throw new Error('The HTML asset fixture must have an ETag');
+      await cachedPage.text();
+      const response = await runtime.dispatchFetch(`${origin}${path}`, {
+        headers: { 'If-None-Match': etag },
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('Content-Security-Policy')).toContain("'nonce-");
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(await response.text()).toContain('<html');
+    },
+  );
 
   it('continues routing API requests to the Worker', async () => {
     const response = await runtime.dispatchFetch(`${origin}/api/not-a-route`);
