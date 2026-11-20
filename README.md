@@ -17,6 +17,8 @@ Commit dependency changes with `pnpm-lock.yaml`. Native dependency build scripts
 
 Open http://127.0.0.1:8787. `pnpm start` configures `APP_URL` for this loopback origin. An empty anonymous community shows **explicitly labelled sample content**, never inserted into the database. After sign-in, the app uses only persisted data. API failures display errors rather than falling back to samples.
 
+All asset requests pass through the Worker so every HTML response receives a fresh CSP nonce. Cloudflare JavaScript Detections reads the nonce from the response header and applies it to its injected bot-protection scripts; fixed script hashes cannot work because those scripts vary per request. HTML responses use `Cache-Control: no-store` to prevent nonce reuse. Non-HTML asset bodies and caching remain unchanged. The Worker owns the Content Security Policy; do not add a second CSP to `public/_headers` or enable `unsafe-inline` for scripts.
+
 For frontend hot reload, run `pnpm run dev:api` and `pnpm run dev:ui` in separate terminals. `dev:api` configures `APP_URL` as `http://127.0.0.1:4200` for the proxy; open http://127.0.0.1:4200. Use the same `127.0.0.1` host for the app and OAuth callback so the state cookie is sent on the loopback redirect.
 
 ## GitHub sign-in
