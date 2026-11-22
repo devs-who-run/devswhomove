@@ -11,6 +11,7 @@ import { Icon } from './icon';
 import { DEMO_ACTIVITIES, DEMO_EVENTS } from './demo';
 import { ProfileBadges } from './badges';
 import { DeveloperInsights } from './developer-insights';
+import { PeriodRecaps } from './period-recaps';
 import { FeedPage } from './feed-page';
 import { FeedState } from './feed-state';
 import { Login } from './login';
@@ -45,6 +46,7 @@ import {
     ActivityCard,
     ActivityCalendar,
     CodeMovementChallenge,
+    PeriodRecaps,
     FormsModule,
     Icon,
     RouterLink,

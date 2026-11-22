@@ -1,0 +1,115 @@
+<section class="recaps" aria-label="Monthly digest and Wrapped">
+  @for (kind of kinds; track kind) {
+    <article
+      class="recap-card"
+      [class.wrapped]="kind === 'wrapped'"
+      [attr.aria-busy]="state[kind]().loading"
+    >
+      <header>
+        <span class="eyebrow">{{
+          kind === 'wrapped' ? 'Available December 25 – January 31' : 'Monthly digest'
+        }}</span>
+        <h2>{{ label(kind) }}</h2>
+        @if (kind === 'monthly') {
+          <label>
+            Month
+            <select [ngModel]="month" (ngModelChange)="selectMonth($event)" name="recap-month">
+              @for (option of months; track option) {
+                <option [value]="option">{{ monthName(option) }}</option>
+              }
+            </select>
+          </label>
+        } @else if (wrapped?.partial) {
+          <p>Your year to date. In January, Wrapped shows your full year.</p>
+        }
+      </header>
+      @if (state[kind]().loading) {
+        <p role="status">Loading…</p>
+      } @else if (state[kind]().error) {
+        <p role="alert">{{ state[kind]().error }}</p>
+        <button type="button" (click)="load(kind)">Retry</button>
+      } @else if (state[kind]().data; as recap) {
+        <p class="period">{{ recap.period.start }} – {{ recap.period.end }} (UTC)</p>
+        <dl class="metrics">
+          <div>
+            <dt>Public commits</dt>
+            <dd>
+              @if (recap.commits === null) {
+                <span class="unavailable">Unavailable</span>
+              } @else {
+                {{ recap.commits | number }}
+              }
+            </dd>
+          </div>
+          <div>
+            <dt>Distance</dt>
+            <dd>{{ recap.totals.distanceKm | number: '1.0-1' }} <small>km</small></dd>
+          </div>
+          <div>
+            <dt>Sessions</dt>
+            <dd>{{ recap.totals.sessions | number }}</dd>
+          </div>
+          <div>
+            <dt>Active days</dt>
+            <dd>{{ recap.totals.activeDays | number }}</dd>
+          </div>
+          <div>
+            <dt>Longest streak</dt>
+            <dd>{{ recap.longestStreak | number }} <small>days</small></dd>
+          </div>
+        </dl>
+        @if (!state[kind]().showCard) {
+          <button type="button" (click)="showCard(kind)">Create share card</button>
+        } @else {
+          <img
+            class="recap-preview"
+            [src]="cardUrl(kind)"
+            [alt]="label(kind) + ' share card'"
+            width="1200"
+            height="630"
+          />
+          <p class="privacy-note">
+            Totals include your private activities. The card is only shown to you; nothing is posted
+            until you share it.
+          </p>
+          <div class="share-row">
+            <a class="share-action" [href]="cardUrl(kind)" [download]="fileName(kind)"
+              >Download card</a
+            >
+            @if (canNativeShare) {
+              <button
+                type="button"
+                class="share-action"
+                [disabled]="!state[kind]().shareData"
+                (click)="nativeShare(kind)"
+              >
+                Share…
+              </button>
+            }
+            @if (state[kind]().prepareFailed) {
+              <button type="button" class="share-action" (click)="showCard(kind)">
+                Retry sharing
+              </button>
+            }
+            <button type="button" class="share-action" (click)="copySummary(kind, recap)">
+              {{ copied() === kind ? 'Copied' : 'Copy summary' }}
+            </button>
+            @for (target of targets(kind, recap); track target.name) {
+              <a
+                class="share-action"
+                [href]="target.href"
+                target="_blank"
+                rel="noopener noreferrer"
+                >{{ target.name }}</a
+              >
+            }
+          </div>
+        }
+        <p class="coverage">{{ recap.coverage }} {{ recap.commitCoverage }}</p>
+      }
+    </article>
+  }
+  @if (shareError()) {
+    <p role="alert">{{ shareError() }}</p>
+  }
+</section>

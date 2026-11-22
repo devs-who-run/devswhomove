@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import {
   getCodeMovementChallenge,
   getGithubInsights,
+  getPeriodRecap,
   getWeeklyRecap,
   insightsPeriods,
 } from './insights';
@@ -232,17 +233,148 @@ describe('Weekly insights with real D1', () => {
     expect(JSON.stringify(result)).not.toMatch(/Sensitive|bob/);
   });
 
-  it('marks capped and incomplete GitHub searches and surfaces errors', async () => {
-    const item = { commit: { author: { date: '2026-11-14T12:00:00Z' } } };
+  it('opens Wrapped from December 25 through January 31 with year-to-date and full-year totals', async () => {
+    await db.batch([
+      activity('before-year', '2025-12-31T23:59:59.000Z'),
+      activity('jan', '2026-01-01T00:00:00.000Z'),
+      activity('streak-1', '2026-06-01T08:00:00.000Z'),
+      activity('streak-2', '2026-06-02T08:00:00.000Z', 'alice', 'Cycling', 20),
+      activity('streak-3', '2026-06-03T08:00:00.000Z'),
+      activity('dec-later', '2026-12-28T08:00:00.000Z'),
+      activity('bob', '2026-06-01T08:00:00.000Z', 'bob'),
+    ]);
     const fetch = vi
       .fn<typeof globalThis.fetch>()
       .mockImplementation(async () =>
-        Response.json({
-          total_count: 400,
-          incomplete_results: false,
-          items: Array(100).fill(item),
-        }),
+        Response.json({ total_count: 1200, incomplete_results: false, items: [] }),
       );
+    for (const outside of ['2026-12-24T23:59:59.000Z', '2027-02-01T00:00:00.000Z']) {
+      await expect(
+        getPeriodRecap(db, github, 'wrapped', null, { now: new Date(outside), fetch }),
+      ).rejects.toMatchObject({ status: 404 });
+    }
+    const december = await getPeriodRecap(db, github, 'wrapped', null, {
+      now: new Date('2026-12-25T00:00:00.000Z'),
+      fetch,
+    });
+    expect(december).toMatchObject({
+      kind: 'wrapped',
+      period: { start: '2026-01-01', end: '2026-12-25' },
+      partial: true,
+      commits: 1200,
+      longestStreak: 3,
+      totals: { sessions: 4, distanceKm: 23.6, activeDays: 4 },
+    });
+    expect(String(fetch.mock.calls[0][0])).toContain(
+      encodeURIComponent('author-date:2026-01-01T00:00:00Z..2026-12-25T00:00:00Z'),
+    );
+    const january = await getPeriodRecap(db, github, 'wrapped', null, {
+      now: new Date('2027-01-31T23:59:59.000Z'),
+      fetch,
+    });
+    expect(january).toMatchObject({
+      period: { start: '2026-01-01', end: '2026-12-31' },
+      partial: false,
+      totals: { sessions: 5 },
+    });
+    expect(JSON.stringify(january)).not.toMatch(/Sensitive|bob/);
+  });
+
+  it.each([
+    [
+      'wrapped',
+      null,
+      '2026-12-25T12:34:56.789Z',
+      '2026-01-01T00:00:00Z',
+      '2026-12-25T12:34:56Z',
+      2,
+    ],
+    [
+      'wrapped',
+      null,
+      '2027-01-15T12:34:56.789Z',
+      '2026-01-01T00:00:00Z',
+      '2026-12-31T23:59:59Z',
+      3,
+    ],
+    [
+      'monthly',
+      '2026-12',
+      '2027-01-15T12:34:56.789Z',
+      '2026-12-01T00:00:00Z',
+      '2026-12-31T23:59:59Z',
+      3,
+    ],
+  ])(
+    'caps %s commit counts at the earlier of now (%s, %s) and the period end',
+    async (kind, month, currentTime, lowerBound, upperBound, expectedCommits) => {
+      const commitDates = [
+        '2026-12-25T12:34:55Z',
+        '2026-12-25T12:34:56Z',
+        '2026-12-25T12:34:57Z',
+        '2027-01-01T00:00:00Z',
+      ];
+      const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
+        const query = new URL(String(input)).searchParams.get('q');
+        expect(query).toBe(`author:alice/name author-date:${lowerBound}..${upperBound} is:public`);
+        const range = query?.match(/author-date:(\S+)\.\.(\S+) /);
+        if (!range) throw new Error('Missing author-date range');
+        const totalCount = commitDates.filter(
+          (date) =>
+            Date.parse(date) >= Date.parse(range[1]) && Date.parse(date) <= Date.parse(range[2]),
+        ).length;
+        return Response.json({ total_count: totalCount, incomplete_results: false });
+      });
+      const result = await getPeriodRecap(db, github, kind, month, {
+        now: new Date(currentTime),
+        fetch,
+      });
+      expect(result.commits).toBe(expectedCommits);
+    },
+  );
+
+  it('builds monthly digests for completed UTC months only', async () => {
+    await db.batch([
+      activity('oct-first', '2026-10-01T00:00:00.000Z'),
+      activity('oct-last', '2026-10-31T23:59:59.999Z'),
+      activity('nov', '2026-11-01T00:00:00.000Z'),
+    ]);
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response('down', { status: 503 }));
+    const digest = await getPeriodRecap(db, github, 'monthly', null, { now, fetch });
+    expect(digest).toMatchObject({
+      kind: 'monthly',
+      period: { start: '2026-10-01', end: '2026-10-31' },
+      totals: { sessions: 2, activeDays: 2 },
+      commits: null,
+    });
+    expect(digest.commitCoverage).toContain('unavailable');
+    expect((await getPeriodRecap(db, github, 'monthly', '2026-02', { now, fetch })).period).toEqual(
+      { start: '2026-02-01', end: '2026-02-28' },
+    );
+    for (const month of ['2026-11', '2026-13', 'bad']) {
+      await expect(
+        getPeriodRecap(db, github, 'monthly', month, { now, fetch }),
+      ).rejects.toMatchObject({ status: 400 });
+    }
+    await expect(getPeriodRecap(db, github, 'yearly', null, { now, fetch })).rejects.toBeInstanceOf(
+      HttpError,
+    );
+    const viaAtproto = await getPeriodRecap(db, atproto, 'monthly', null, { now, fetch });
+    expect(viaAtproto.commits).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('marks capped and incomplete GitHub searches and surfaces errors', async () => {
+    const item = { commit: { author: { date: '2026-11-14T12:00:00Z' } } };
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () =>
+      Response.json({
+        total_count: 400,
+        incomplete_results: false,
+        items: Array(100).fill(item),
+      }),
+    );
     expect((await getCodeMovementChallenge(db, github, { now, fetch })).truncated).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(3);
     fetch.mockResolvedValueOnce(

@@ -22,6 +22,7 @@ describe('Developer insights API authorization', () => {
         bindings: { APP_URL: origin },
         d1Databases: ['DB'],
         r2Buckets: ['PHOTOS'],
+        outboundService: () => new Response('GitHub unavailable in tests', { status: 503 }),
       }),
     );
     const db = await runtime.getD1Database('DB');
@@ -74,6 +75,8 @@ describe('Developer insights API authorization', () => {
       '/api/insights/weekly',
       '/api/insights/github',
       '/api/insights/code-movement',
+      '/api/insights/recap?type=monthly',
+      '/api/insights/recap/card.png?type=monthly',
     ]) {
       expect((await request(path)).status).toBe(401);
     }
@@ -106,7 +109,12 @@ describe('Developer insights API authorization', () => {
   });
 
   it('keeps GitHub comparison and challenge browser-only', async () => {
-    for (const path of ['/api/insights/github', '/api/insights/code-movement']) {
+    for (const path of [
+      '/api/insights/github',
+      '/api/insights/code-movement',
+      '/api/insights/recap?type=monthly',
+      '/api/insights/recap/card.png?type=monthly',
+    ]) {
       expect(
         (
           await request(path, {
@@ -115,6 +123,19 @@ describe('Developer insights API authorization', () => {
         ).status,
       ).toBe(403);
     }
+  });
+
+  it('renders a private monthly digest card for the owner even when GitHub is unavailable', async () => {
+    const cookie = { Cookie: `dwm_session=${session}` };
+    const digest = await request('/api/insights/recap?type=monthly', cookie);
+    expect(digest.status).toBe(200);
+    expect(await digest.json()).toMatchObject({ kind: 'monthly', commits: null });
+    const card = await request('/api/insights/recap/card.png?type=monthly', cookie);
+    expect(card.status).toBe(200);
+    expect(card.headers.get('Content-Type')).toBe('image/png');
+    expect(card.headers.get('Cache-Control')).toBe('private, no-store');
+    expect([...new Uint8Array(await card.arrayBuffer()).slice(1, 4)]).toEqual([80, 78, 71]);
+    expect((await request('/api/insights/recap?type=monthly&month=bad', cookie)).status).toBe(400);
   });
 
   it('never falls back from an invalid bearer token to a valid browser cookie', async () => {

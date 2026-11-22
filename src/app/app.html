@@ -183,6 +183,7 @@
               @if (viewer(); as ownProfile) {
                 <app-account-settings [profile]="ownProfile" (deleted)="accountDeleted()" />
                 <app-developer-insights [profile]="ownProfile" />
+                <app-period-recaps [profile]="ownProfile" />
               }
             }
             <app-activity-calendar

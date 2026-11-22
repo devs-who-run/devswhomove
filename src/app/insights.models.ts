@@ -39,6 +39,19 @@ export interface GithubInsights {
   username: string;
 }
 
+export interface PeriodRecap {
+  kind: 'monthly' | 'wrapped';
+  /** Inclusive UTC dates. A December Wrapped ends today (year to date). */
+  period: InsightsPeriod;
+  partial: boolean;
+  totals: ActivityTotals;
+  longestStreak: number;
+  /** Public default-branch commits from GitHub search; null if unavailable. */
+  commits: number | null;
+  coverage: string;
+  commitCoverage: string;
+}
+
 export interface CodeMovementChallenge {
   period: InsightsPeriod;
   days: { date: string; moved: boolean; commitFound: boolean }[];
