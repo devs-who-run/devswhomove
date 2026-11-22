@@ -11,7 +11,7 @@
         }}</span>
         <h2>{{ label(kind) }}</h2>
         @if (kind === 'monthly') {
-          <label>
+          <label class="month-picker">
             Month
             <select [ngModel]="month" (ngModelChange)="selectMonth($event)" name="recap-month">
               @for (option of months; track option) {
@@ -27,7 +27,7 @@
         <p role="status">Loading…</p>
       } @else if (state[kind]().error) {
         <p role="alert">{{ state[kind]().error }}</p>
-        <button type="button" (click)="load(kind)">Retry</button>
+        <button type="button" class="share-action" (click)="load(kind)">Retry</button>
       } @else if (state[kind]().data; as recap) {
         <p class="period">{{ recap.period.start }} – {{ recap.period.end }} (UTC)</p>
         <dl class="metrics">
@@ -59,7 +59,9 @@
           </div>
         </dl>
         @if (!state[kind]().showCard) {
-          <button type="button" (click)="showCard(kind)">Create share card</button>
+          <button type="button" class="share-action" (click)="showCard(kind)">
+            Create share card
+          </button>
         } @else {
           <img
             class="recap-preview"

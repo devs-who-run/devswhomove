@@ -1,9 +1,15 @@
+:host {
+  display: block;
+  min-width: 0;
+}
 .recaps {
   display: grid;
   gap: 16px;
   margin-top: 22px;
 }
 .recap-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -24,6 +30,41 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+}
+.month-picker {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  max-width: 260px;
+  margin: 12px 0;
+  font-weight: 600;
+  color: var(--muted);
+}
+.month-picker select {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 36px 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+.month-picker::after {
+  content: '';
+  position: absolute;
+  right: 16px;
+  bottom: 19px;
+  width: 7px;
+  height: 7px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+.period {
+  margin-top: 12px;
 }
 .metrics {
   display: grid;
@@ -51,12 +92,23 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.recap-card button,
 .share-action {
   min-height: 44px;
+  max-width: 100%;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: 600 12px var(--heading);
+  text-decoration: none;
+}
+.share-action:hover:not(:disabled) {
+  border-color: var(--border-hover);
 }
 .coverage,
 .privacy-note,
