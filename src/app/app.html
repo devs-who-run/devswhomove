@@ -190,6 +190,11 @@
               [(sport)]="profileSport"
               [(year)]="heatmapYear"
             />
+            @if (!remoteProfile() && !preview()) {
+              @if (viewer(); as ownProfile) {
+                <app-code-movement-challenge [profile]="ownProfile" />
+              }
+            }
             <div class="profile-filters">
               <label>
                 Recent movement month

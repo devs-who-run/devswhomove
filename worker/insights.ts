@@ -1,6 +1,7 @@
 import { SPORTS, type Sport } from '../src/app/models';
 import type {
   ActivityTotals,
+  CodeMovementChallenge,
   GithubInsights,
   InsightsPeriod,
   WeeklyRecap,
@@ -194,6 +195,90 @@ async function githubJson(url: string, source: string, fetcher: typeof fetch): P
     if (error instanceof HttpError) throw error;
     throw new HttpError(502, `GitHub ${source} API could not be reached or returned invalid JSON.`);
   }
+}
+
+export async function getCodeMovementChallenge(
+  db: D1Database,
+  identity: InsightsIdentity,
+  options: InsightsOptions = {},
+): Promise<CodeMovementChallenge> {
+  if (identity.provider !== 'github')
+    throw new HttpError(400, 'This challenge requires a GitHub account.');
+  const now = options.now ?? new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const period = {
+    start: isoDate(new Date(today - 29 * DAY)),
+    end: isoDate(new Date(today)),
+  };
+  const rows = await db
+    .prepare(
+      `SELECT sport, occurred_at AS occurredAt, duration, distance FROM activities
+       WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?`,
+    )
+    .bind(identity.user.id, `${period.start}T00:00:00.000Z`, endExclusive(period))
+    .all();
+  const moved = new Set<string>();
+  for (const row of rows.results) {
+    const activity = projection(row);
+    if (activity && Date.parse(activity.occurredAt) <= now.getTime())
+      moved.add(activity.occurredAt.slice(0, 10));
+  }
+
+  const commits = new Set<string>();
+  let truncated = false;
+  const search = new URL('https://api.github.com/search/commits');
+  search.searchParams.set(
+    'q',
+    `author:${identity.user.username} author-date:${period.start}T00:00:00Z..${period.end}T23:59:59Z is:public`,
+  );
+  search.searchParams.set('per_page', '100');
+  for (let page = 1; page <= 3; page++) {
+    search.searchParams.set('page', String(page));
+    const result = await githubJson(
+      search.toString(),
+      'public commit search',
+      options.fetch ?? fetch,
+    );
+    if (
+      !isRecord(result) ||
+      typeof result['total_count'] !== 'number' ||
+      !Number.isSafeInteger(result['total_count']) ||
+      result['total_count'] < 0 ||
+      typeof result['incomplete_results'] !== 'boolean' ||
+      !Array.isArray(result['items']) ||
+      result['items'].length > 100
+    )
+      throw new HttpError(502, 'GitHub public commit search API returned invalid search data.');
+    truncated ||= result['incomplete_results'];
+    for (const item of result['items']) {
+      if (
+        !isRecord(item) ||
+        !isRecord(item['commit']) ||
+        !isRecord(item['commit']['author']) ||
+        typeof item['commit']['author']['date'] !== 'string'
+      )
+        throw new HttpError(502, 'GitHub public commit search API returned invalid commit data.');
+      const timestamp = Date.parse(item['commit']['author']['date']);
+      if (!Number.isFinite(timestamp))
+        throw new HttpError(502, 'GitHub public commit search API returned invalid commit data.');
+      if (timestamp >= today - 29 * DAY && timestamp <= now.getTime())
+        commits.add(isoDate(new Date(timestamp)));
+    }
+    if (result['items'].length < 100) {
+      if ((page - 1) * 100 + result['items'].length < result['total_count']) truncated = true;
+      break;
+    }
+    if (page * 100 >= result['total_count']) break;
+    if (page === 3) truncated = true;
+  }
+  return {
+    period,
+    days: Array.from({ length: 30 }, (_, index) => {
+      const date = isoDate(new Date(today - (29 - index) * DAY));
+      return { date, moved: moved.has(date), commitFound: commits.has(date) };
+    }),
+    truncated,
+  };
 }
 
 export async function getGithubInsights(

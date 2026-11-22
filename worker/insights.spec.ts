@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import { readFile } from 'node:fs/promises';
-import { getGithubInsights, getWeeklyRecap, insightsPeriods } from './insights';
+import {
+  getCodeMovementChallenge,
+  getGithubInsights,
+  getWeeklyRecap,
+  insightsPeriods,
+} from './insights';
 import { HttpError } from './validation';
 
 const now = new Date('2026-11-15T12:00:00.000Z');
@@ -192,6 +197,63 @@ describe('Weekly insights with real D1', () => {
     expect(recap.previous).toEqual(recap.current);
     expect(recap.summary).toContain('0 sessions');
     expect(recap.summary).not.toMatch(/NaN|Infinity/);
+  });
+
+  it('confirms only matching own activity and public authored commit UTC days', async () => {
+    await db.batch([
+      activity('utc', '2026-11-14T23:30:00.000Z'),
+      activity('today', '2026-11-15T08:00:00.000Z'),
+      activity('future', '2026-11-15T13:00:00.000Z'),
+      activity('bob', '2026-11-13T10:00:00.000Z', 'bob'),
+      activity('outside', '2026-10-16T23:59:59.000Z'),
+    ]);
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      Response.json({
+        total_count: 3,
+        incomplete_results: false,
+        items: [
+          { commit: { author: { date: '2026-11-15T00:30:00+01:00' } } },
+          { commit: { author: { date: '2026-11-13T12:00:00Z' } } },
+          { commit: { author: { date: '2026-11-15T14:00:00Z' } } },
+        ],
+      }),
+    );
+    const result = await getCodeMovementChallenge(db, github, { now, fetch });
+    expect(result.period).toEqual({ start: '2026-10-17', end: '2026-11-15' });
+    expect(result.days).toHaveLength(30);
+    expect(result.days.slice(-3)).toEqual([
+      { date: '2026-11-13', moved: false, commitFound: true },
+      { date: '2026-11-14', moved: true, commitFound: true },
+      { date: '2026-11-15', moved: true, commitFound: false },
+    ]);
+    expect(result.truncated).toBe(false);
+    expect(String(fetch.mock.calls[0][0])).toContain('search/commits');
+    expect(fetch.mock.calls[0][1]?.headers).not.toHaveProperty('Authorization');
+    expect(JSON.stringify(result)).not.toMatch(/Sensitive|bob/);
+  });
+
+  it('marks capped and incomplete GitHub searches and surfaces errors', async () => {
+    const item = { commit: { author: { date: '2026-11-14T12:00:00Z' } } };
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockImplementation(async () =>
+        Response.json({
+          total_count: 400,
+          incomplete_results: false,
+          items: Array(100).fill(item),
+        }),
+      );
+    expect((await getCodeMovementChallenge(db, github, { now, fetch })).truncated).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    fetch.mockResolvedValueOnce(
+      Response.json({ total_count: 1, incomplete_results: true, items: [item] }),
+    );
+    expect((await getCodeMovementChallenge(db, github, { now, fetch })).truncated).toBe(true);
+    fetch.mockResolvedValueOnce(new Response('error', { status: 403 }));
+    await expect(getCodeMovementChallenge(db, github, { now, fetch })).rejects.toThrow('GitHub');
+    await expect(getCodeMovementChallenge(db, atproto, { now, fetch })).rejects.toThrow(
+      'requires a GitHub account',
+    );
   });
 });
 

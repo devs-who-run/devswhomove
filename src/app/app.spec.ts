@@ -565,7 +565,7 @@ describe('App', () => {
     );
   });
 
-  it('mounts developer insights only for the signed-in own profile, never remote, anonymous or preview profiles', async () => {
+  it('mounts private insights and challenge only for the signed-in own profile', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (path: string) => {
@@ -582,20 +582,24 @@ describe('App', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.nativeElement.querySelector('app-developer-insights')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('app-code-movement-challenge')).toBeTruthy();
 
     app.remoteProfile.set({ ...DEMO_PROFILE, id: 'someone-else', username: 'someone-else' });
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('app-developer-insights')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-code-movement-challenge')).toBeNull();
 
     app.remoteProfile.set(null);
     app.preview.set(true);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('app-developer-insights')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-code-movement-challenge')).toBeNull();
 
     app.preview.set(false);
     app.viewer.set(null);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('app-developer-insights')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-code-movement-challenge')).toBeNull();
   });
 
   it('loads all profile activities and filters the calendar by year independently of the list month', async () => {
