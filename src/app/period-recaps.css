@@ -116,3 +116,9 @@
   color: var(--muted);
   font-size: 12px;
 }
+.coverage {
+  margin-top: 12px;
+}
+.privacy-note {
+  margin-bottom: 8px;
+}
