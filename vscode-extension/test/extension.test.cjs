@@ -56,6 +56,38 @@ test('reminders never upload and a completed walk requires explicit public confi
     confirmation = 'Log public walk';
     await commands['devsWhoMove.logWalk']();
     assert.equal(uploads, 1);
+
+    const pending = [];
+    vscode.window.showInformationMessage = () => new Promise((resolve) => pending.push(resolve));
+    now = 120_000;
+    await edit();
+    now = 150_000;
+    await edit();
+    now = 180_000;
+    const firstReminder = edit();
+    assert.equal(pending.length, 1);
+
+    now = 210_000;
+    await edit();
+    now = 240_000;
+    await edit();
+    now = 270_000;
+    const secondReminder = edit();
+    assert.equal(pending.length, 2);
+
+    now = 300_000;
+    await edit();
+    now = 330_000;
+    await edit();
+    pending[0]('Not now');
+    await firstReminder;
+    now = 360_000;
+    const thirdReminder = edit();
+    assert.equal(pending.length, 3);
+    assert.equal(uploads, 1);
+    pending[1]('Not now');
+    pending[2]('Not now');
+    await Promise.all([secondReminder, thirdReminder]);
   } finally {
     Module._load = originalLoad;
     global.fetch = originalFetch;

@@ -7,7 +7,6 @@ const TOKEN_KEY = 'devsWhoMove.agentToken';
 
 function activate(context) {
   const session = new CodingSession();
-  let prompting = false;
   let logging = false;
   const config = () => vscode.workspace.getConfiguration('devsWhoMove');
 
@@ -72,25 +71,19 @@ function activate(context) {
       if (event.affectsConfiguration('devsWhoMove')) session.reset();
     }),
     vscode.workspace.onDidChangeTextDocument(async (event) => {
-      if (!event.contentChanges.length || !vscode.window.state.focused || !config().get('enabled') || prompting) return;
+      if (!event.contentChanges.length || !vscode.window.state.focused || !config().get('enabled')) return;
       if (!vscode.window.visibleTextEditors.some((editor) => editor.document === event.document)) return;
       const reminder = config().get('reminderMinutes');
       const idle = config().get('idleMinutes');
       if (!Number.isFinite(reminder) || reminder < 1 || reminder > 480 ||
           !Number.isFinite(idle) || idle < 1 || idle > 60) return;
       if (!session.recordEdit(Date.now(), reminder * 60_000, idle * 60_000)) return;
-      prompting = true;
-      try {
-        const action = await vscode.window.showInformationMessage(
-          'You have been coding for a while. How about a walk?',
-          'Log a completed walk',
-          'Not now',
-        );
-        if (action === 'Log a completed walk') await logWalk();
-      } finally {
-        session.reset();
-        prompting = false;
-      }
+      const action = await vscode.window.showInformationMessage(
+        'You have been coding for a while. How about a walk?',
+        'Log a completed walk',
+        'Not now',
+      );
+      if (action === 'Log a completed walk') await logWalk();
     }),
   );
 }
