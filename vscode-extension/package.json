@@ -1,0 +1,65 @@
+{
+  "name": "devs-who-move-nudges",
+  "displayName": "Devs Who Move: Coding Movement Nudges",
+  "description": "Take a movement break during sustained coding and log completed walks.",
+  "version": "0.1.0",
+  "publisher": "devs-who-move",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "main": "./extension.cjs",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "devsWhoMove.setToken",
+        "title": "Devs Who Move: Set Agent Token"
+      },
+      {
+        "command": "devsWhoMove.clearToken",
+        "title": "Devs Who Move: Remove Agent Token"
+      },
+      {
+        "command": "devsWhoMove.logWalk",
+        "title": "Devs Who Move: Log a Completed Walk"
+      }
+    ],
+    "configuration": {
+      "title": "Devs Who Move",
+      "properties": {
+        "devsWhoMove.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Suggest a walk after sustained text editing in a focused VS Code window."
+        },
+        "devsWhoMove.reminderMinutes": {
+          "type": "number",
+          "default": 60,
+          "minimum": 1,
+          "maximum": 480,
+          "scope": "application",
+          "description": "Minutes of sustained editing before a movement suggestion."
+        },
+        "devsWhoMove.idleMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "scope": "application",
+          "description": "Minutes without edits that reset the coding session."
+        },
+        "devsWhoMove.serverUrl": {
+          "type": "string",
+          "default": "https://devswhorun.dev",
+          "scope": "application",
+          "description": "Devs Who Move server origin. HTTPS is required except for localhost."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.cjs"
+  }
+}
