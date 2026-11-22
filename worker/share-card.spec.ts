@@ -5,6 +5,8 @@ import {
   cardMetrics,
   cardSvg,
   cardVersion,
+  recapCardSvg,
+  recapMetrics,
   shareMeta,
   websiteShareTags,
   wrapText,
@@ -129,5 +131,38 @@ describe('share card', () => {
     expect(tags).toContain(
       '<meta property="og:url" content="https://devswhorun.dev/profile/a&amp;b" />',
     );
+  });
+
+  it('builds a valid, escaped Wrapped card with commits and kilometres', async () => {
+    const recap = {
+      kind: 'wrapped' as const,
+      period: { start: '2026-01-01', end: '2026-12-31' },
+      partial: false,
+      totals: {
+        sessions: 140,
+        minutes: 9000,
+        distanceKm: 800,
+        activeDays: 120,
+        bySport: [{ sport: 'Running' as const, sessions: 140, minutes: 9000, distanceKm: 800 }],
+      },
+      longestStreak: 12,
+      commits: 1200,
+      coverage: '',
+      commitCoverage: '',
+    };
+    expect(recapMetrics(recap).map((metric) => metric.value)).toEqual([
+      '1,200',
+      '800',
+      '140',
+      '12',
+    ]);
+    expect(recapMetrics({ ...recap, commits: null })[0].label).toBe('DISTANCE');
+    const svg = recapCardSvg(recap, { name: 'Ada <Dev>', username: 'ada&co' }, 'devswhorun.dev');
+    expect(svg).toContain('2026 Wrapped');
+    expect(svg).toContain('Ada &lt;Dev&gt;');
+    expect(svg).toContain('@ada&amp;co');
+    expect(svg).toContain('Top sport: Running');
+    await initWasm(await readFile('node_modules/@resvg/resvg-wasm/index_bg.wasm')).catch(() => {});
+    expect(() => new Resvg(svg, {}).render().free()).not.toThrow();
   });
 });

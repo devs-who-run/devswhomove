@@ -1,4 +1,5 @@
 import type { Activity } from '../src/app/models';
+import type { PeriodRecap } from '../src/app/insights.models';
 import { SHARE_CARD_DESIGN_VERSION } from '../src/app/share-card-version';
 import { SPORT_ICON_PATHS } from '../src/app/sport-icons';
 import brandIcon from '../public/brand/icon.svg?raw';
@@ -274,4 +275,72 @@ export function shareMeta(
     ...renderMetaTags(meta),
   ].join('\n    ');
   return { title, description, tags };
+}
+
+/** Headline metrics for a monthly digest or Wrapped card, in display order. */
+export function recapMetrics(recap: PeriodRecap): { label: string; value: string; unit: string }[] {
+  const metrics: { label: string; value: string; unit: string }[] = [];
+  if (recap.commits !== null)
+    metrics.push({ label: 'PUBLIC COMMITS', value: format(recap.commits, 0), unit: '' });
+  metrics.push({ label: 'DISTANCE', value: format(recap.totals.distanceKm, 1), unit: 'km' });
+  metrics.push({ label: 'SESSIONS', value: format(recap.totals.sessions, 0), unit: '' });
+  metrics.push(
+    recap.kind === 'wrapped'
+      ? {
+          label: 'LONGEST STREAK',
+          value: format(recap.longestStreak, 0),
+          unit: recap.longestStreak === 1 ? 'day' : 'days',
+        }
+      : { label: 'ACTIVE DAYS', value: format(recap.totals.activeDays, 0), unit: '' },
+  );
+  return metrics;
+}
+
+export function recapTitle(recap: PeriodRecap): string {
+  const start = new Date(`${recap.period.start}T00:00:00Z`);
+  if (recap.kind === 'wrapped')
+    return `${start.getUTCFullYear()} Wrapped${recap.partial ? ' (so far)' : ''}`;
+  return `${start.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })} digest`;
+}
+
+/** Build a 1200×630 recap card. Only totals are shown; no titles, notes, places or photos. */
+export function recapCardSvg(
+  recap: PeriodRecap,
+  person: { name: string; username: string },
+  host: string,
+): string {
+  const metrics = recapMetrics(recap);
+  const metricWidth = (CARD_WIDTH - 144) / metrics.length;
+  const topSport = [...recap.totals.bySport].sort((a, b) => b.sessions - a.sessions)[0]?.sport;
+  const subtitle = `${cardDate(`${recap.period.start}T00:00:00Z`)} – ${cardDate(`${recap.period.end}T00:00:00Z`)}${topSport ? ` · Top sport: ${topSport}` : ''}`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.05"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b3f31"/>
+      <stop offset="1" stop-color="#234d3c"/>
+    </linearGradient>
+  </defs>
+  <rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="url(#fade)"/>
+  <rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="url(#grid)"/>
+  <g transform="translate(72 64)">
+    <image width="52" height="52" href="${brandIconUri}"/>
+    <text x="70" y="36" font-family="Manrope" font-weight="800" font-size="28" fill="#ffffff">Devs Who Move</text>
+  </g>
+  <text x="72" y="250" font-family="Manrope" font-weight="800" font-size="72" fill="#ffffff">${escapeXml(recapTitle(recap))}</text>
+  <text x="72" y="300" font-family="DM Sans" font-weight="400" font-size="26" fill="#bdd99b">${escapeXml(subtitle)}</text>
+  ${metrics
+    .map(
+      (metric, index) => `<g transform="translate(${72 + index * metricWidth} 392)">
+    <text font-family="DM Sans" font-weight="600" font-size="20" letter-spacing="2" fill="#bdd99b">${metric.label}</text>
+    <text y="66" font-family="Manrope" font-weight="800" font-size="56" fill="#ffffff">${escapeXml(metric.value)}${metric.unit ? `<tspan dx="8" font-family="DM Sans" font-weight="400" font-size="26" fill="#cde6ad">${escapeXml(metric.unit)}</tspan>` : ''}</text>
+  </g>`,
+    )
+    .join('\n  ')}
+  <line x1="72" y1="516" x2="${CARD_WIDTH - 72}" y2="516" stroke="#ffffff" stroke-opacity="0.14"/>
+  <text x="72" y="568" font-family="DM Sans" font-weight="600" font-size="28" fill="#ffffff">${escapeXml(shorten(clean(person.name), 32))}<tspan dx="12" font-weight="400" fill="#bdd99b">@${escapeXml(shorten(clean(person.username), 40))}</tspan></text>
+  <text x="${CARD_WIDTH - 72}" y="568" text-anchor="end" font-family="DM Sans" font-weight="600" font-size="26" fill="#d8f294">${escapeXml(host)}</text>
+</svg>`;
 }

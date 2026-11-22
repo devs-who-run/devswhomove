@@ -4,8 +4,10 @@ import type {
   CodeMovementChallenge,
   GithubInsights,
   InsightsPeriod,
+  PeriodRecap,
   WeeklyRecap,
 } from '../src/app/insights.models';
+import { completedMonths, monthlyPeriod, wrappedPeriod } from '../src/app/recap-period';
 import { HttpError } from './validation';
 
 export interface InsightsIdentity {
@@ -125,12 +127,13 @@ function aggregate(activities: Projection[], period: InsightsPeriod): ActivityTo
   return totals;
 }
 
-export async function getWeeklyRecap(
+/** Load the owner's validated activities; GitHub rows are limited to [start, end). */
+async function loadActivities(
   db: D1Database,
   identity: InsightsIdentity,
-  options: InsightsOptions = {},
-): Promise<WeeklyRecap> {
-  const { period, previousPeriod } = insightsPeriods(options.now);
+  start: string,
+  end: string,
+): Promise<{ activities: Projection[]; excluded: number }> {
   const activities: Projection[] = [];
   let excluded = 0;
   if (identity.provider === 'github') {
@@ -139,7 +142,7 @@ export async function getWeeklyRecap(
         `SELECT sport, occurred_at AS occurredAt, duration, distance FROM activities
          WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?`,
       )
-      .bind(identity.user.id, `${previousPeriod.start}T00:00:00.000Z`, endExclusive(period))
+      .bind(identity.user.id, start, end)
       .all();
     for (const row of rows.results) {
       const activity = projection(row);
@@ -162,13 +165,30 @@ export async function getWeeklyRecap(
       }
     }
   }
+  return { activities, excluded };
+}
+
+const activityCoverage = (identity: InsightsIdentity, excluded: number) =>
+  (identity.provider === 'github'
+    ? 'Own recorded activities in D1, including private activities; no feed limit. Not a complete record of all exercise.'
+    : 'Own validated AT Protocol activity projections currently indexed in D1 only; not a live or complete PDS history. No feed limit.') +
+  ` Missing distances contribute no distance; totals include known distance only.${excluded ? ` Excluded ${excluded} malformed activity record(s).` : ''}`;
+
+export async function getWeeklyRecap(
+  db: D1Database,
+  identity: InsightsIdentity,
+  options: InsightsOptions = {},
+): Promise<WeeklyRecap> {
+  const { period, previousPeriod } = insightsPeriods(options.now);
+  const { activities, excluded } = await loadActivities(
+    db,
+    identity,
+    `${previousPeriod.start}T00:00:00.000Z`,
+    endExclusive(period),
+  );
   const current = aggregate(activities, period);
   const previous = aggregate(activities, previousPeriod);
-  const coverage =
-    (identity.provider === 'github'
-      ? 'Own recorded activities in D1, including private activities; no feed limit. Not a complete record of all exercise.'
-      : 'Own validated AT Protocol activity projections currently indexed in D1 only; not a live or complete PDS history. No feed limit.') +
-    ` Missing distances contribute no distance; totals include known distance only.${excluded ? ` Excluded ${excluded} malformed activity record(s).` : ''}`;
+  const coverage = activityCoverage(identity, excluded);
   return {
     period,
     previousPeriod,
@@ -347,5 +367,100 @@ export async function getGithubInsights(
     username: identity.user.username,
     complete: false,
     coverage: `Public pushes exclude private repositories and are limited to 300 events / 90 days.${boundaryCovered ? ' Available history boundary reached.' : ' 300-event cap reached before the week boundary; weekly push totals may be partial.'} Public commits are GitHub search results for commits authored during the week on default branches of public repositories; search indexing may be incomplete.${commitSearch['incomplete_results'] ? ' GitHub reported incomplete search results, so the commit count may be partial.' : ''} No OAuth token or expanded permissions used.`,
+  };
+}
+
+function longestStreak(activities: Projection[]): number {
+  const days = [...new Set(activities.map((activity) => activity.occurredAt.slice(0, 10)))]
+    .map((day) => Date.parse(`${day}T00:00:00Z`))
+    .sort((a, b) => a - b);
+  let longest = 0;
+  let current = 0;
+  for (let index = 0; index < days.length; index++) {
+    current = index > 0 && days[index] - days[index - 1] === DAY ? current + 1 : 1;
+    longest = Math.max(longest, current);
+  }
+  return longest;
+}
+
+/** Monthly digest for a completed UTC month, or the yearly Wrapped during its seasonal window. */
+export async function getPeriodRecap(
+  db: D1Database,
+  identity: InsightsIdentity,
+  kind: string | null,
+  month: string | null,
+  options: InsightsOptions = {},
+): Promise<PeriodRecap> {
+  const now = options.now ?? new Date();
+  let period: InsightsPeriod;
+  let partial = false;
+  if (kind === 'wrapped') {
+    const wrapped = wrappedPeriod(now);
+    if (!wrapped)
+      throw new HttpError(404, 'Wrapped is available from December 25 through January 31 (UTC).');
+    ({ period, partial } = wrapped);
+  } else if (kind === 'monthly') {
+    const selected = monthlyPeriod(month ?? completedMonths(now, 1)[0], now);
+    if (!selected) throw new HttpError(400, 'Choose a completed UTC calendar month (YYYY-MM).');
+    period = selected;
+  } else {
+    throw new HttpError(400, 'Recap type must be monthly or wrapped.');
+  }
+
+  const loaded = await loadActivities(
+    db,
+    identity,
+    `${period.start}T00:00:00.000Z`,
+    endExclusive(period),
+  );
+  const start = `${period.start}T00:00:00.000Z`;
+  const end = endExclusive(period);
+  const activities = loaded.activities.filter(
+    (activity) =>
+      activity.occurredAt >= start &&
+      activity.occurredAt < end &&
+      Date.parse(activity.occurredAt) <= now.getTime(),
+  );
+
+  let commits: number | null = null;
+  let commitCoverage = 'GitHub commit counts need a GitHub account.';
+  if (identity.provider === 'github') {
+    const search = new URL('https://api.github.com/search/commits');
+    search.searchParams.set(
+      'q',
+      `author:${identity.user.username} author-date:${period.start}T00:00:00Z..${period.end}T23:59:59Z is:public`,
+    );
+    search.searchParams.set('per_page', '1');
+    try {
+      const result = await githubJson(
+        search.toString(),
+        'public commit search',
+        options.fetch ?? fetch,
+      );
+      if (
+        !isRecord(result) ||
+        typeof result['total_count'] !== 'number' ||
+        !Number.isSafeInteger(result['total_count']) ||
+        result['total_count'] < 0 ||
+        typeof result['incomplete_results'] !== 'boolean'
+      )
+        throw new HttpError(502, 'GitHub public commit search API returned invalid search data.');
+      commits = result['total_count'];
+      commitCoverage = `Public commits authored on default branches of public repositories, from GitHub search; private repositories are excluded and indexing may be incomplete.${result['incomplete_results'] ? ' GitHub reported incomplete results, so this count may be partial.' : ''} No extra OAuth permissions are used.`;
+    } catch (error) {
+      if (!(error instanceof HttpError)) throw error;
+      commitCoverage = `Public commit count unavailable. ${error.message}`;
+    }
+  }
+
+  return {
+    kind,
+    period,
+    partial,
+    totals: aggregate(activities, period),
+    longestStreak: longestStreak(activities),
+    commits,
+    coverage: activityCoverage(identity, loaded.excluded),
+    commitCoverage,
   };
 }

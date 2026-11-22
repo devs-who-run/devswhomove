@@ -27,9 +27,14 @@ import {
 import type { Agent } from '@atproto/api';
 import { MAX_PHOTO_BYTES, sanitizeImage } from './images';
 import { handleMcp } from './mcp';
-import { cardSvg, cardVersion, shareMeta, websiteShareTags } from './share-card';
+import { cardSvg, cardVersion, recapCardSvg, shareMeta, websiteShareTags } from './share-card';
 import { renderPng } from './share-render';
-import { getWeeklyRecap, getGithubInsights, getCodeMovementChallenge } from './insights';
+import {
+  getWeeklyRecap,
+  getGithubInsights,
+  getCodeMovementChallenge,
+  getPeriodRecap,
+} from './insights';
 import { deleteAccountRateLimits, enforceRateLimit } from './rate-limit';
 import { date, HttpError, number, sport, text, visibility } from './validation';
 import {
@@ -2201,6 +2206,37 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
     if (url.pathname === '/api/insights/github' && method === 'GET') {
       const who = requireIdentity(auth, undefined, true);
       return json(await getGithubInsights(env.DB, who));
+    }
+    if (url.pathname === '/api/insights/recap' && method === 'GET') {
+      const who = requireIdentity(auth, undefined, true);
+      return json(
+        await getPeriodRecap(
+          env.DB,
+          who,
+          url.searchParams.get('type'),
+          url.searchParams.get('month'),
+        ),
+      );
+    }
+    if (url.pathname === '/api/insights/recap/card.png' && method === 'GET') {
+      const who = requireIdentity(auth, undefined, true);
+      const recap = await getPeriodRecap(
+        env.DB,
+        who,
+        url.searchParams.get('type'),
+        url.searchParams.get('month'),
+      );
+      const png = await renderPng(recapCardSvg(recap, who.user, new URL(env.APP_URL).host));
+      return new Response(png, {
+        headers: {
+          'Content-Type': 'image/png',
+          'Content-Length': String(png.byteLength),
+          // Totals can include private activities, so the card is only for its owner to download.
+          'Cache-Control': 'private, no-store',
+          'Content-Disposition': `inline; filename="devs-who-move-${recap.kind}-${recap.period.start.slice(0, recap.kind === 'wrapped' ? 4 : 7)}.png"`,
+          'Content-Security-Policy': "default-src 'none'; sandbox",
+        },
+      });
     }
     if (url.pathname === '/api/insights/code-movement' && method === 'GET') {
       const who = requireIdentity(auth, undefined, true);
