@@ -1,5 +1,6 @@
 .challenge {
-  background: #fff;
+  background: var(--surface);
+  color: var(--text);
   border: 1px solid var(--border);
   border-radius: 10px;
   margin-top: 22px;
@@ -15,7 +16,15 @@
 }
 .challenge button {
   min-height: 44px;
+  padding: 8px 12px;
+  background: var(--surface-soft);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
   cursor: pointer;
+}
+.challenge button:hover:not(:disabled) {
+  border-color: var(--border-hover);
 }
 .challenge-grid {
   display: grid;
@@ -31,6 +40,12 @@
 }
 .challenge-grid .earned {
   background: #527d3d;
+}
+:host-context([data-theme='dark']) .challenge-grid span {
+  background: #2b392d;
+}
+:host-context([data-theme='dark']) .challenge-grid .earned {
+  background: #82a65f;
 }
 .challenge summary {
   cursor: pointer;
