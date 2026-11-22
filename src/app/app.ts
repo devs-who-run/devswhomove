@@ -41,6 +41,8 @@ import {
   type SportEvent,
 } from './models';
 
+type ProfileTab = 'activity' | 'progress' | 'account';
+
 @Component({
   imports: [
     ActivityCard,
@@ -94,6 +96,7 @@ export class App {
   readonly remoteActivities = signal<Activity[]>([]);
   readonly ownProfileActivities = signal<Activity[]>([]);
   readonly profileMonth = signal('All');
+  readonly activeProfileTab = signal<ProfileTab>('activity');
   readonly profileSport = signal<Sport | 'All'>('All');
   readonly heatmapYear = signal('last-12-months');
   readonly profileLoading = signal(false);
@@ -131,6 +134,12 @@ export class App {
     sport: () => this.profileSport(),
     month: () => this.profileMonth(),
   });
+  readonly profileTab = computed(() =>
+    this.activeProfileTab() === 'account' &&
+    (!this.viewer() || this.remoteProfile() || this.preview())
+      ? 'activity'
+      : this.activeProfileTab(),
+  );
   readonly feed = new FeedState({
     activities: () => this.activities(),
     viewer: () => this.viewer(),
@@ -171,6 +180,27 @@ export class App {
     error: this.error,
     notice: this.notice,
   });
+
+  selectProfileTab(tab: ProfileTab): void {
+    this.activeProfileTab.set(tab);
+  }
+
+  onProfileTabKeydown(event: KeyboardEvent, current: ProfileTab): void {
+    const tabs: ProfileTab[] = ['activity', 'progress'];
+    if (this.viewer() && !this.remoteProfile() && !this.preview()) tabs.push('account');
+    let index = tabs.indexOf(current);
+    if (event.key === 'ArrowRight') index = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') index = (index + tabs.length - 1) % tabs.length;
+    else if (event.key === 'Home') index = 0;
+    else if (event.key === 'End') index = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    const next = tabs[index];
+    this.selectProfileTab(next);
+    (event.currentTarget as HTMLElement).parentElement
+      ?.querySelector<HTMLButtonElement>(`[data-profile-tab="${next}"]`)
+      ?.focus();
+  }
 
   readonly editor = new DialogState({
     viewer: () => this.viewer(),

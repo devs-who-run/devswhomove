@@ -93,6 +93,30 @@ main {
   height: 24px;
 }
 
+.profile-tabs {
+  display: flex;
+  gap: 27px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  margin: 30px 0 24px;
+}
+.profile-tab {
+  flex: 0 0 auto;
+  padding: 0 2px 13px;
+  color: var(--muted);
+  background: transparent;
+  border-bottom: 2px solid transparent;
+}
+.profile-tab[aria-selected='true'] {
+  color: var(--green);
+  border-bottom-color: var(--green);
+  font-weight: 650;
+}
+.profile-tab:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: -2px;
+}
+
 .profile-filters {
   display: flex;
   flex-wrap: wrap;

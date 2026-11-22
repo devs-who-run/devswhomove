@@ -602,6 +602,59 @@ describe('App', () => {
     expect(fixture.nativeElement.querySelector('app-code-movement-challenge')).toBeNull();
   });
 
+  it('keeps the profile focused on activity and separates progress and account tabs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string) => {
+        const insights = insightsResponse(path);
+        if (insights) return insights;
+        if (path === '/api/activities') return Response.json({ activities: [] });
+        return Response.json({ ...bootstrap, viewer: DEMO_PROFILE });
+      }),
+    );
+    await TestBed.inject(Router).navigateByUrl('/profile');
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const activityTab = fixture.nativeElement.querySelector(
+      '[data-profile-tab="activity"]',
+    ) as HTMLButtonElement;
+    const progressTab = fixture.nativeElement.querySelector(
+      '[data-profile-tab="progress"]',
+    ) as HTMLButtonElement;
+    const activityPanel = fixture.nativeElement.querySelector(
+      '#profile-activity-panel',
+    ) as HTMLElement;
+    const progressPanel = fixture.nativeElement.querySelector(
+      '#profile-progress-panel',
+    ) as HTMLElement;
+    expect(activityTab.getAttribute('aria-selected')).toBe('true');
+    expect(activityPanel.hidden).toBe(false);
+    expect(progressPanel.hidden).toBe(true);
+
+    activityTab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    fixture.detectChanges();
+    expect(progressTab.getAttribute('aria-selected')).toBe('true');
+    expect(progressPanel.hidden).toBe(false);
+
+    const accountTab = fixture.nativeElement.querySelector(
+      '[data-profile-tab="account"]',
+    ) as HTMLButtonElement;
+    accountTab.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('#profile-account-panel').hidden).toBe(false);
+
+    fixture.componentInstance.remoteProfile.set({
+      ...DEMO_PROFILE,
+      id: 'someone-else',
+      username: 'someone-else',
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-profile-tab="account"]')).toBeNull();
+    expect(activityPanel.hidden).toBe(false);
+  });
+
   it('loads all profile activities and filters the calendar by year independently of the list month', async () => {
     const viewer = { ...DEMO_PROFILE, id: 'me', username: 'me' };
     const activities = Array.from({ length: 102 }, (_, index) => ({
