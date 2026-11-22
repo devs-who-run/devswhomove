@@ -234,6 +234,14 @@ validation, idempotency and token revocation use the same API and storage as
 other agents. MCP connections use the existing bearer tokens; MCP OAuth
 authorization is not implemented.
 
+## VS Code movement nudges
+
+The local extension in `vscode-extension/` suggests a walk after sustained editing in a focused VS Code window. It counts time between edits to visible documents, resets after five minutes without edits or when the window loses focus, and starts a fresh session after each reminder. It does not monitor terminal activity or record code, filenames, or timing data remotely. Each window tracks its own session. Adjust or disable reminders in VS Code settings (`devsWhoMove.reminderMinutes`, `devsWhoMove.idleMinutes`, and `devsWhoMove.enabled`).
+
+To try it, open `vscode-extension/` in VS Code and press **F5** to launch an Extension Development Host. Alternatively, package it with `npx @vscode/vsce package` from that directory and install the resulting VSIX using **Extensions: Install from VSIX**. In the extension host, create an agent token with `activities:write` in **Your agents**, then run **Devs Who Move: Set Agent Token** from the Command Palette. The token is stored in VS Code secret storage; use **Devs Who Move: Remove Agent Token** to remove it. `devsWhoMove.serverUrl` defaults to the production server; use an HTTPS origin, or HTTP localhost for local development.
+
+A reminder never logs exercise by itself. After completing a walk, choose **Log a completed walk** on the reminder or run **Devs Who Move: Log a Completed Walk**, enter its duration, and explicitly confirm the public upload. The start time is estimated from the confirmation time and duration. Uploads use the existing agent API and bearer token, so the activity is also available through MCP with an appropriately scoped token. Agent-created activities are public; a private GitHub profile still hides its activities from others, and AT Protocol records are public. No location, notes, or distance are sent. If an upload times out or the server returns an error, check your activities before retrying to avoid duplicates; AT Protocol does not support idempotency keys.
+
 ## Deploy
 
 ```sh
