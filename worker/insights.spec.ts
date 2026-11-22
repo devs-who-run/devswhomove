@@ -266,7 +266,7 @@ describe('Weekly insights with real D1', () => {
       totals: { sessions: 4, distanceKm: 23.6, activeDays: 4 },
     });
     expect(String(fetch.mock.calls[0][0])).toContain(
-      encodeURIComponent('author-date:2026-01-01T00:00:00Z..2026-12-25T23:59:59Z'),
+      encodeURIComponent('author-date:2026-01-01T00:00:00Z..2026-12-25T00:00:00Z'),
     );
     const january = await getPeriodRecap(db, github, 'wrapped', null, {
       now: new Date('2027-01-31T23:59:59.000Z'),
@@ -279,6 +279,59 @@ describe('Weekly insights with real D1', () => {
     });
     expect(JSON.stringify(january)).not.toMatch(/Sensitive|bob/);
   });
+
+  it.each([
+    [
+      'wrapped',
+      null,
+      '2026-12-25T12:34:56.789Z',
+      '2026-01-01T00:00:00Z',
+      '2026-12-25T12:34:56Z',
+      2,
+    ],
+    [
+      'wrapped',
+      null,
+      '2027-01-15T12:34:56.789Z',
+      '2026-01-01T00:00:00Z',
+      '2026-12-31T23:59:59Z',
+      3,
+    ],
+    [
+      'monthly',
+      '2026-12',
+      '2027-01-15T12:34:56.789Z',
+      '2026-12-01T00:00:00Z',
+      '2026-12-31T23:59:59Z',
+      3,
+    ],
+  ])(
+    'caps %s commit counts at the earlier of now (%s, %s) and the period end',
+    async (kind, month, currentTime, lowerBound, upperBound, expectedCommits) => {
+      const commitDates = [
+        '2026-12-25T12:34:55Z',
+        '2026-12-25T12:34:56Z',
+        '2026-12-25T12:34:57Z',
+        '2027-01-01T00:00:00Z',
+      ];
+      const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
+        const query = new URL(String(input)).searchParams.get('q');
+        expect(query).toBe(`author:alice/name author-date:${lowerBound}..${upperBound} is:public`);
+        const range = query?.match(/author-date:(\S+)\.\.(\S+) /);
+        if (!range) throw new Error('Missing author-date range');
+        const totalCount = commitDates.filter(
+          (date) =>
+            Date.parse(date) >= Date.parse(range[1]) && Date.parse(date) <= Date.parse(range[2]),
+        ).length;
+        return Response.json({ total_count: totalCount, incomplete_results: false });
+      });
+      const result = await getPeriodRecap(db, github, kind, month, {
+        now: new Date(currentTime),
+        fetch,
+      });
+      expect(result.commits).toBe(expectedCommits);
+    },
+  );
 
   it('builds monthly digests for completed UTC months only', async () => {
     await db.batch([

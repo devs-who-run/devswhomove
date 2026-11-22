@@ -77,7 +77,12 @@
               >Download card</a
             >
             @if (canNativeShare) {
-              <button type="button" class="share-action" (click)="nativeShare(kind, recap)">
+              <button
+                type="button"
+                class="share-action"
+                [disabled]="!state[kind]().shareData"
+                (click)="nativeShare(kind)"
+              >
                 Share…
               </button>
             }

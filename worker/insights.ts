@@ -426,9 +426,12 @@ export async function getPeriodRecap(
   let commitCoverage = 'GitHub commit counts need a GitHub account.';
   if (identity.provider === 'github') {
     const search = new URL('https://api.github.com/search/commits');
+    const periodEnd = `${period.end}T23:59:59Z`;
+    const commitEnd =
+      now.getTime() < Date.parse(periodEnd) ? `${now.toISOString().slice(0, 19)}Z` : periodEnd;
     search.searchParams.set(
       'q',
-      `author:${identity.user.username} author-date:${period.start}T00:00:00Z..${period.end}T23:59:59Z is:public`,
+      `author:${identity.user.username} author-date:${period.start}T00:00:00Z..${commitEnd} is:public`,
     );
     search.searchParams.set('per_page', '1');
     try {

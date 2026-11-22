@@ -13,6 +13,7 @@ interface RecapState {
   loading: boolean;
   error: string;
   showCard: boolean;
+  shareData: ShareData | null;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -52,7 +53,13 @@ export function recapSummary(recap: PeriodRecap, label: string): string {
   return `My ${label} on Devs Who Move: ${parts.join(', ')}.`;
 }
 
-const empty = (): RecapState => ({ data: null, loading: false, error: '', showCard: false });
+const empty = (): RecapState => ({
+  data: null,
+  loading: false,
+  error: '',
+  showCard: false,
+  shareData: null,
+});
 
 @Component({
   selector: 'app-period-recaps',
@@ -81,6 +88,7 @@ export class PeriodRecaps {
     effect((onCleanup) => {
       this.profile();
       this.month = this.months[0];
+      this.monthlyLabel.set(monthLabel(this.month));
       void this.load('monthly');
       if (this.wrapped) void this.load('wrapped');
       onCleanup(() => Object.values(this.controllers).forEach((controller) => controller?.abort()));
@@ -115,8 +123,38 @@ export class PeriodRecaps {
     void this.load('monthly');
   }
 
-  showCard(kind: Kind): void {
+  async showCard(kind: Kind): Promise<void> {
+    const recap = this.state[kind]().data;
     this.state[kind].update((state) => ({ ...state, showCard: true }));
+    if (!this.canNativeShare || !recap) return;
+    this.controllers[kind]?.abort();
+    const controller = new AbortController();
+    this.controllers[kind] = controller;
+    this.shareError.set('');
+    const data: ShareData = {
+      title: this.label(kind),
+      text: recapSummary(recap, this.label(kind)),
+      url: location.origin,
+    };
+    const fileName = this.fileName(kind);
+    try {
+      const response = await fetch(this.cardUrl(kind), {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error('Could not load the card.');
+      const file = new File([await response.blob()], fileName, { type: 'image/png' });
+      const withFile = { ...data, files: [file] };
+      if (!controller.signal.aborted)
+        this.state[kind].update((state) => ({
+          ...state,
+          shareData: navigator.canShare?.(withFile) ? withFile : data,
+        }));
+    } catch {
+      if (!controller.signal.aborted)
+        this.shareError.set('Could not prepare sharing. Download the card instead.');
+    }
   }
 
   async copySummary(kind: Kind, recap: PeriodRecap): Promise<void> {
@@ -132,19 +170,14 @@ export class PeriodRecaps {
     }
   }
 
-  async nativeShare(kind: Kind, recap: PeriodRecap): Promise<void> {
-    const text = recapSummary(recap, this.label(kind));
+  async nativeShare(kind: Kind): Promise<void> {
+    const data = this.state[kind]().shareData;
+    if (!data) {
+      this.shareError.set('The card is not ready to share. Download the card instead.');
+      return;
+    }
     try {
-      const response = await fetch(this.cardUrl(kind), {
-        credentials: 'same-origin',
-        cache: 'no-store',
-      });
-      if (!response.ok) throw new Error('card');
-      const file = new File([await response.blob()], this.fileName(kind), { type: 'image/png' });
-      const data: ShareData = { title: this.label(kind), text, url: location.origin };
-      await navigator.share(
-        navigator.canShare?.({ ...data, files: [file] }) ? { ...data, files: [file] } : data,
-      );
+      await navigator.share(data);
       this.shareError.set('');
     } catch (error) {
       if ((error as Error)?.name !== 'AbortError')
