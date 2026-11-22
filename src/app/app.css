@@ -108,13 +108,35 @@ main {
   border-bottom: 2px solid transparent;
 }
 .profile-tab[aria-selected='true'] {
-  color: var(--green);
-  border-bottom-color: var(--green);
+  color: var(--tab-accent);
+  background: var(--surface-soft);
+  border-bottom-color: currentColor;
   font-weight: 650;
 }
 .profile-tab:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--tab-accent);
   outline-offset: -2px;
+}
+
+.progress-detail {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 12px;
+  background: var(--surface);
+}
+.progress-detail > summary {
+  padding: 16px;
+  color: var(--text);
+  font-weight: 650;
+  cursor: pointer;
+}
+.progress-detail > summary:focus-visible {
+  outline: 2px solid var(--tab-accent);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+.progress-detail > .progress-detail-content {
+  padding: 0 16px 16px;
 }
 
 .profile-filters {

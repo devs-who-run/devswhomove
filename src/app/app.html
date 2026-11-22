@@ -258,17 +258,37 @@
               aria-labelledby="profile-progress-tab"
               [hidden]="profileTab() !== 'progress'"
             >
-              <app-profile-badges [activities]="profileActivities()" />
               <app-activity-calendar
                 [activities]="profileActivities()"
                 [(sport)]="profileSport"
                 [(year)]="heatmapYear"
               />
+              <details class="progress-detail">
+                <summary>Badges and milestones</summary>
+                <div class="progress-detail-content">
+                  <app-profile-badges [activities]="profileActivities()" />
+                </div>
+              </details>
               @if (!remoteProfile() && !preview()) {
                 @if (viewer(); as ownProfile) {
-                  <app-developer-insights [profile]="ownProfile" />
-                  <app-period-recaps [profile]="ownProfile" />
-                  <app-code-movement-challenge [profile]="ownProfile" />
+                  <details class="progress-detail">
+                    <summary>Weekly recap and GitHub comparison</summary>
+                    <div class="progress-detail-content">
+                      <app-developer-insights [profile]="ownProfile" />
+                    </div>
+                  </details>
+                  <details class="progress-detail">
+                    <summary>Monthly digest and Wrapped</summary>
+                    <div class="progress-detail-content">
+                      <app-period-recaps [profile]="ownProfile" />
+                    </div>
+                  </details>
+                  <details class="progress-detail">
+                    <summary>Code and movement challenge</summary>
+                    <div class="progress-detail-content">
+                      <app-code-movement-challenge [profile]="ownProfile" />
+                    </div>
+                  </details>
                 }
               }
             </section>

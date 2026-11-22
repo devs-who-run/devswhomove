@@ -638,6 +638,24 @@ describe('App', () => {
     expect(progressTab.getAttribute('aria-selected')).toBe('true');
     expect(progressPanel.hidden).toBe(false);
 
+    expect(progressPanel.firstElementChild?.tagName).toBe('APP-ACTIVITY-CALENDAR');
+    const details = Array.from(
+      progressPanel.querySelectorAll<HTMLDetailsElement>(':scope > .progress-detail'),
+    );
+    expect(details.map((detail) => detail.querySelector('summary')?.textContent?.trim())).toEqual([
+      'Badges and milestones',
+      'Weekly recap and GitHub comparison',
+      'Monthly digest and Wrapped',
+      'Code and movement challenge',
+    ]);
+    expect(details.every((detail) => !detail.open)).toBe(true);
+    const badgesToggle = details[0].querySelector('summary')!;
+    badgesToggle.click();
+    expect(details[0].open).toBe(true);
+    expect(details[0].querySelector('app-profile-badges')).not.toBeNull();
+    badgesToggle.click();
+    expect(details[0].open).toBe(false);
+
     fixture.componentInstance.profileSport.set('Cycling');
     activityTab.click();
     fixture.detectChanges();
@@ -658,6 +676,7 @@ describe('App', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-profile-tab="account"]')).toBeNull();
     expect(activityPanel.hidden).toBe(false);
+    expect(progressPanel.querySelectorAll(':scope > .progress-detail')).toHaveLength(1);
   });
 
   it('loads all profile activities and filters the calendar by year independently of the list month', async () => {
