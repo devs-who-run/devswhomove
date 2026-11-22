@@ -86,6 +86,11 @@
                 Share…
               </button>
             }
+            @if (state[kind]().prepareFailed) {
+              <button type="button" class="share-action" (click)="showCard(kind)">
+                Retry sharing
+              </button>
+            }
             <button type="button" class="share-action" (click)="copySummary(kind, recap)">
               {{ copied() === kind ? 'Copied' : 'Copy summary' }}
             </button>

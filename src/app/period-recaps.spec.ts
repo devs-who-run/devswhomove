@@ -183,6 +183,25 @@ describe('PeriodRecaps', () => {
       'Could not prepare sharing',
     );
     expect(share).not.toHaveBeenCalled();
+    expect(element.querySelector('a[download]')).not.toBeNull();
+
+    vi.mocked(fetch).mockImplementation((input) =>
+      Promise.resolve(
+        String(input).includes('card.png') ? new Response('png') : Response.json(recap('monthly')),
+      ),
+    );
+    const retry = [...element.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Retry sharing',
+    );
+    expect(retry).toBeDefined();
+    retry?.click();
+    await vi.waitFor(() =>
+      expect(fixture.componentInstance.state.monthly().shareData).not.toBeNull(),
+    );
+    fixture.detectChanges();
+    expect((element.querySelector('.share-row button') as HTMLButtonElement).disabled).toBe(false);
+    expect(element.textContent).not.toContain('Retry sharing');
+    expect(element.querySelector('[role="alert"]')).toBeNull();
   });
 
   it('resets the monthly label and summary with the selected month on profile refresh', async () => {

@@ -14,6 +14,7 @@ interface RecapState {
   error: string;
   showCard: boolean;
   shareData: ShareData | null;
+  prepareFailed: boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -59,6 +60,7 @@ const empty = (): RecapState => ({
   error: '',
   showCard: false,
   shareData: null,
+  prepareFailed: false,
 });
 
 @Component({
@@ -125,7 +127,7 @@ export class PeriodRecaps {
 
   async showCard(kind: Kind): Promise<void> {
     const recap = this.state[kind]().data;
-    this.state[kind].update((state) => ({ ...state, showCard: true }));
+    this.state[kind].update((state) => ({ ...state, showCard: true, prepareFailed: false }));
     if (!this.canNativeShare || !recap) return;
     this.controllers[kind]?.abort();
     const controller = new AbortController();
@@ -152,8 +154,10 @@ export class PeriodRecaps {
           shareData: navigator.canShare?.(withFile) ? withFile : data,
         }));
     } catch {
-      if (!controller.signal.aborted)
-        this.shareError.set('Could not prepare sharing. Download the card instead.');
+      if (!controller.signal.aborted) {
+        this.state[kind].update((state) => ({ ...state, prepareFailed: true }));
+        this.shareError.set('Could not prepare sharing. Retry or download the card instead.');
+      }
     }
   }
 
