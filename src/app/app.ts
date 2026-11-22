@@ -182,6 +182,8 @@ export class App {
   });
 
   selectProfileTab(tab: ProfileTab): void {
+    // The sport filter lives on the Progress tab; don't let it silently filter the Activity list.
+    if (this.profileTab() === 'progress' && tab !== 'progress') this.profileSport.set('All');
     this.activeProfileTab.set(tab);
   }
 

@@ -638,6 +638,11 @@ describe('App', () => {
     expect(progressTab.getAttribute('aria-selected')).toBe('true');
     expect(progressPanel.hidden).toBe(false);
 
+    fixture.componentInstance.profileSport.set('Cycling');
+    activityTab.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.profileSport()).toBe('All');
+
     const accountTab = fixture.nativeElement.querySelector(
       '[data-profile-tab="account"]',
     ) as HTMLButtonElement;
