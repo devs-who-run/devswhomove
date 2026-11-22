@@ -95,14 +95,17 @@ main {
 
 .profile-tabs {
   display: flex;
-  gap: 27px;
+  gap: 8px;
   overflow-x: auto;
   border-bottom: 1px solid var(--border);
   margin: 30px 0 24px;
 }
 .profile-tab {
   flex: 0 0 auto;
-  padding: 0 2px 13px;
+  min-height: 44px;
+  padding: 12px 18px;
+  border-radius: 8px 8px 0 0;
+  font-weight: 650;
   color: var(--muted);
   background: transparent;
   border-bottom: 2px solid transparent;
@@ -111,7 +114,6 @@ main {
   color: var(--tab-accent);
   background: var(--surface-soft);
   border-bottom-color: currentColor;
-  font-weight: 650;
 }
 .profile-tab:focus-visible {
   outline: 2px solid var(--tab-accent);
