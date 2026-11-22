@@ -70,7 +70,11 @@ describe('Developer insights API authorization', () => {
     runtime.dispatchFetch(`${origin}${path}`, { headers });
 
   it('requires authentication for both insight endpoints', async () => {
-    for (const path of ['/api/insights/weekly', '/api/insights/github']) {
+    for (const path of [
+      '/api/insights/weekly',
+      '/api/insights/github',
+      '/api/insights/code-movement',
+    ]) {
       expect((await request(path)).status).toBe(401);
     }
   });
@@ -101,14 +105,16 @@ describe('Developer insights API authorization', () => {
     ).toBe(403);
   });
 
-  it('keeps GitHub comparison browser-only', async () => {
-    expect(
-      (
-        await request('/api/insights/github', {
-          Authorization: `Bearer ${readToken}`,
-        })
-      ).status,
-    ).toBe(403);
+  it('keeps GitHub comparison and challenge browser-only', async () => {
+    for (const path of ['/api/insights/github', '/api/insights/code-movement']) {
+      expect(
+        (
+          await request(path, {
+            Authorization: `Bearer ${readToken}`,
+          })
+        ).status,
+      ).toBe(403);
+    }
   });
 
   it('never falls back from an invalid bearer token to a valid browser cookie', async () => {

@@ -4,6 +4,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivityCard } from './activity-card';
 import { ActivityCalendar } from './activity-calendar';
+import { CodeMovementChallenge } from './code-movement-challenge';
 import type { Participation } from './activity-social';
 import { errorMessage, request } from './api';
 import { Icon } from './icon';
@@ -43,6 +44,7 @@ import {
   imports: [
     ActivityCard,
     ActivityCalendar,
+    CodeMovementChallenge,
     FormsModule,
     Icon,
     RouterLink,

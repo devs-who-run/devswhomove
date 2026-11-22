@@ -1,0 +1,41 @@
+.challenge {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-top: 22px;
+  padding: 25px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.challenge h2 {
+  font: 700 14px var(--heading);
+}
+.challenge p {
+  margin: 10px 0;
+}
+.challenge button {
+  min-height: 44px;
+  cursor: pointer;
+}
+.challenge-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 16px);
+  gap: 4px;
+  margin: 12px 0;
+}
+.challenge-grid span {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  background: #f0f3ea;
+}
+.challenge-grid .earned {
+  background: #527d3d;
+}
+.challenge summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  text-decoration: underline;
+}

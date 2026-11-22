@@ -1,0 +1,70 @@
+<section class="challenge" aria-labelledby="challenge-title">
+  <h2 id="challenge-title">Commit streaks with movement</h2>
+  @if (profile().provider === 'atproto') {
+    <p>This private challenge requires a GitHub account.</p>
+  } @else {
+    <p>
+      Earn a day with at least one logged activity and one public authored commit on the same UTC
+      day. Any sport or duration counts.
+    </p>
+    <p>
+      Only you can see this challenge. It is separate from the local-time activity calendar above.
+    </p>
+    <button type="button" (click)="load()" [disabled]="loading()">
+      {{ data() || error() ? 'Refresh challenge' : 'Load challenge' }}
+    </button>
+    @if (loading()) {
+      <p role="status">Loading your challenge…</p>
+    } @else if (error()) {
+      <p role="alert">{{ error() }}</p>
+    } @else if (data(); as challenge) {
+      <p>
+        {{ challenge.period.start }} – {{ challenge.period.end }} (UTC), last 30 days including
+        today.
+      </p>
+      @if (confirmedStreak()) {
+        <p>
+          {{ confirmedStreak() }} confirmed consecutive
+          {{ confirmedStreak() === 1 ? 'day' : 'days' }} ending today or yesterday, within this
+          window.
+        </p>
+      } @else {
+        <p>No confirmed streak ending today or yesterday in this window.</p>
+      }
+      <div
+        class="challenge-grid"
+        role="img"
+        aria-label="Challenge calendar, oldest to newest. Green squares are confirmed days; details follow."
+      >
+        @for (day of challenge.days; track day.date) {
+          <span
+            [class.earned]="day.moved && day.commitFound"
+            [title]="day.date + (day.moved && day.commitFound ? ': confirmed' : ': not confirmed')"
+          ></span>
+        }
+      </div>
+      <details>
+        <summary>View daily challenge details</summary>
+        <ul>
+          @for (day of challenge.days; track day.date) {
+            <li>
+              {{ day.date }}: {{ day.moved && day.commitFound ? 'Confirmed' : 'Not confirmed' }} ·
+              {{ day.moved ? 'Activity logged' : 'No activity logged' }} ·
+              {{ day.commitFound ? 'Public commit found' : 'Public commit not found' }}
+            </li>
+          }
+        </ul>
+      </details>
+      <p>
+        GitHub search covers public commits authored on default branches only; private commits and
+        unindexed commits are not included. A missing result does not mean you did not commit. No
+        additional GitHub permissions are requested.
+      </p>
+      @if (challenge.truncated) {
+        <p>
+          GitHub results were incomplete or exceeded the 300-commit limit, so more days may qualify.
+        </p>
+      }
+    }
+  }
+</section>

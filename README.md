@@ -64,6 +64,7 @@ The PDS is canonical for AT Protocol profiles, activities, and hosted events. Cl
 - Public events with local-time display, capacity, host RSVP, joining/leaving, host editing and host cancellation. Hosts cannot lower capacity below the number of people already going. Capacity is enforced in one database statement.
 - Optional conference names and HTTPS links on events, including conference runs. These details are public, and AT Protocol events publish them to the host's PDS.
 - Private developer insights on your own profile: a last-completed-week training recap and, for GitHub accounts, a public commit/push comparison with kilometres. Both use Monday-to-Monday UTC windows, not a rolling seven days.
+- Private **Commit streaks with movement** challenge beside your profile calendar. On demand it checks the last 30 UTC days (including today): any logged activity and a public authored commit on the same day earn a confirmed square. It includes your private activities, independent of calendar filters; the existing activity calendar still uses local days. GitHub search covers public commits on default branches only, can omit unindexed results, and is capped at 300 results. An unconfirmed day is not evidence that you did not commit. The displayed consecutive streak is a confirmed lower bound within this window, ending today or yesterday; refresh after logging. No extra GitHub permissions are requested. AT Protocol accounts cannot use the GitHub challenge.
 - GitHub OAuth sign-in, D1-backed sessions and origin checks for cookie-authenticated mutations.
 - AT Protocol OAuth sign-in with PDS-backed public profiles, activities and hosted events; private RSVP identities and agent tokens remain in Cloudflare.
 - Scoped, hashed, expiring and revocable agent bearer tokens, with idempotent private uploads.
@@ -147,6 +148,7 @@ reject the request before any activities are saved.
 | `GET /api/events`                  | `events:read` — upcoming public events            |
 | `GET /api/insights/weekly`         | `activities:read` — own weekly aggregate totals   |
 | `GET /api/insights/github`         | GitHub browser session — public GitHub comparison |
+| `GET /api/insights/code-movement`  | GitHub browser session — private challenge dates  |
 
 ## Social features
 

@@ -29,7 +29,7 @@ import { MAX_PHOTO_BYTES, sanitizeImage } from './images';
 import { handleMcp } from './mcp';
 import { cardSvg, cardVersion, shareMeta, websiteShareTags } from './share-card';
 import { renderPng } from './share-render';
-import { getWeeklyRecap, getGithubInsights } from './insights';
+import { getWeeklyRecap, getGithubInsights, getCodeMovementChallenge } from './insights';
 import { deleteAccountRateLimits, enforceRateLimit } from './rate-limit';
 import { date, HttpError, number, sport, text, visibility } from './validation';
 import {
@@ -2201,6 +2201,10 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
     if (url.pathname === '/api/insights/github' && method === 'GET') {
       const who = requireIdentity(auth, undefined, true);
       return json(await getGithubInsights(env.DB, who));
+    }
+    if (url.pathname === '/api/insights/code-movement' && method === 'GET') {
+      const who = requireIdentity(auth, undefined, true);
+      return json(await getCodeMovementChallenge(env.DB, who));
     }
     if (url.pathname === '/api/bootstrap' && method === 'GET') {
       if (auth?.agent)

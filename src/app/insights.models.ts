@@ -38,3 +38,9 @@ export interface GithubInsights {
   complete: boolean;
   username: string;
 }
+
+export interface CodeMovementChallenge {
+  period: InsightsPeriod;
+  days: { date: string; moved: boolean; commitFound: boolean }[];
+  truncated: boolean;
+}
