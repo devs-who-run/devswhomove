@@ -4,7 +4,7 @@ import { Icon } from './icon';
 import { Login } from './login';
 import type { Profile } from './models';
 
-export type Page = 'feed' | 'events' | 'clubs' | 'profile' | 'agents' | 'activity';
+export type Page = 'feed' | 'events' | 'clubs' | 'profile' | 'agents' | 'activity' | 'advent';
 
 @Component({
   selector: 'app-sidebar',

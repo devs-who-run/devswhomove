@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivityCard } from './activity-card';
 import { ActivityCalendar } from './activity-calendar';
 import { CodeMovementChallenge } from './code-movement-challenge';
+import { AdventCalendar } from './advent-calendar';
 import type { Participation } from './activity-social';
 import { errorMessage, request } from './api';
 import { Icon } from './icon';
@@ -30,6 +31,7 @@ import { AccountSettings } from './account-settings';
 import { AppSidebar, type Page } from './app-sidebar';
 import { AppTopbar } from './app-topbar';
 import { AuthState } from './auth-state';
+import { localDate } from './date';
 import { ProfileSummary } from './profile-summary';
 import {
   type Activity,
@@ -46,6 +48,7 @@ import {
     ActivityCard,
     ActivityCalendar,
     CodeMovementChallenge,
+    AdventCalendar,
     PeriodRecaps,
     FormsModule,
     Icon,
@@ -77,6 +80,7 @@ export class App {
     { page: 'clubs', label: 'Clubs', mobileLabel: 'Clubs', icon: 'people' },
     { page: 'profile', label: 'Your profile', mobileLabel: 'Profile', icon: 'user' },
     { page: 'agents', label: 'Your agents', mobileLabel: 'Agents', icon: 'terminal' },
+    { page: 'advent', label: 'Advent calendar', mobileLabel: 'Advent', icon: 'calendar' },
   ];
   readonly page = signal<Page>('feed');
   readonly loading = signal(true);
@@ -229,7 +233,11 @@ export class App {
       this.auth.githubConfigured.set(data.githubConfigured);
       this.auth.atprotoConfigured.set(data.atprotoConfigured ?? false);
       this.preview.set(!data.viewer && data.activities.length === 0 && data.events.length === 0);
-      if (this.page() === 'profile' && data.viewer && !this.remoteProfile()) {
+      if (
+        (this.page() === 'profile' || this.page() === 'advent') &&
+        data.viewer &&
+        !this.remoteProfile()
+      ) {
         await this.loadOwnProfileActivities(this.routeRequest, data.viewer);
       }
     } catch (error) {
@@ -241,6 +249,14 @@ export class App {
 
   navigate(page: Page): void {
     void this.router.navigateByUrl(`/${page}`);
+  }
+
+  logAdventActivity(date: string): void {
+    this.editor.openModal('activity');
+    if (this.editor.modal() === 'activity') {
+      const now = localDate(new Date());
+      this.editor.activityForm.occurredAt = date === now.slice(0, 10) ? now : `${date}T12:00`;
+    }
   }
 
   async route(): Promise<void> {
@@ -295,7 +311,7 @@ export class App {
       } finally {
         if (request === this.routeRequest) this.profileLoading.set(false);
       }
-    } else if (page === 'profile') {
+    } else if (page === 'profile' || page === 'advent') {
       const viewer = this.viewer();
       if (viewer) await this.loadOwnProfileActivities(request, viewer);
     }
