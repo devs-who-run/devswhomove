@@ -1,9 +1,16 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, input, output } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ActivitySocial, type Participation } from './activity-social';
 import { Icon } from './icon';
 import type { Activity } from './models';
+
+const IMPORT_LABELS: Record<string, string> = {
+  strava: 'Strava',
+  garmin: 'Garmin',
+  'apple-health': 'Apple Health',
+  file: 'a file',
+};
 
 @Component({
   imports: [ActivitySocial, DatePipe, DecimalPipe, Icon, RouterLink],
@@ -100,7 +107,14 @@ import type { Activity } from './models';
         @if (activity().source === 'agent') {
           <span class="agent-label"><app-icon name="terminal" /> Logged by an agent</span>
         }
-        @if (canChangeVisibility() && activity().userId === viewerId()) {
+        @if (importLabel(); as label) {
+          <span class="agent-label"><app-icon name="download" /> Imported from {{ label }}</span>
+        }
+        @if (
+          canChangeVisibility() &&
+          activity().userId === viewerId() &&
+          !(activity().importSource === 'strava' && activity().visibility === 'private')
+        ) {
           <button
             class="text-button"
             (click)="visibilityChange.emit(activity())"
@@ -126,6 +140,10 @@ import type { Activity } from './models';
 })
 export class ActivityCard {
   readonly activity = input.required<Activity>();
+  readonly importLabel = computed(() => {
+    const source = this.activity().importSource;
+    return source ? IMPORT_LABELS[source] : '';
+  });
   readonly viewerId = input<string | null>(null);
   readonly profileHidden = input(false);
   readonly canChangeVisibility = input(false);

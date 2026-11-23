@@ -15,6 +15,8 @@ const POLICIES: Record<string, RatePolicy> = {
   mcp: { name: 'mcp', windowSeconds: HOUR, ipLimit: 1_200 },
   read: { name: 'read', windowSeconds: HOUR, accountLimit: 600, ipLimit: 1_200 },
   bulk: { name: 'bulk', windowSeconds: HOUR, accountLimit: 10, ipLimit: 30 },
+  // Large exports (Apple Health, years of Strava history) arrive in many 200-activity batches.
+  import: { name: 'import', windowSeconds: HOUR, accountLimit: 120, ipLimit: 240 },
   photo: { name: 'photo', windowSeconds: HOUR, accountLimit: 10, ipLimit: 30 },
   comment: { name: 'comment', windowSeconds: HOUR, accountLimit: 30, ipLimit: 120 },
   social: { name: 'social', windowSeconds: HOUR, accountLimit: 120, ipLimit: 300 },
@@ -30,7 +32,9 @@ function policyFor(request: Request): RatePolicy | undefined {
 
   if (
     method === 'GET' &&
-    (pathname.startsWith('/auth/github') || pathname.startsWith('/auth/atproto'))
+    (pathname.startsWith('/auth/github') ||
+      pathname.startsWith('/auth/atproto') ||
+      pathname.startsWith('/auth/strava'))
   )
     return POLICIES['auth'];
   if (pathname === '/mcp' && method === 'POST') return POLICIES['mcp'];
@@ -38,6 +42,7 @@ function policyFor(request: Request): RatePolicy | undefined {
   if (['GET', 'HEAD'].includes(method)) return POLICIES['read'];
 
   if (pathname === '/api/activities/bulk') return POLICIES['bulk'];
+  if (pathname === '/api/imports' || pathname === '/api/strava/sync') return POLICIES['import'];
   if (/^\/api\/activities\/[^/]+\/photo$/.test(pathname)) return POLICIES['photo'];
   if (/^\/api\/activities\/[^/]+\/comments$/.test(pathname) && method === 'POST')
     return POLICIES['comment'];

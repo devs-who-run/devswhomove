@@ -27,6 +27,7 @@ import { ClubActions } from './club-actions';
 import { ProfileActivities } from './profile-activities';
 import { ProfileHeader } from './profile-header';
 import { AccountSettings } from './account-settings';
+import { ActivityImports } from './activity-imports';
 import { AppSidebar, type Page } from './app-sidebar';
 import { AppTopbar } from './app-topbar';
 import { AuthState } from './auth-state';
@@ -63,6 +64,7 @@ type ProfileTab = 'activity' | 'progress' | 'account';
     ProfileActivities,
     ProfileHeader,
     AccountSettings,
+    ActivityImports,
     AppSidebar,
     AppTopbar,
     ProfileBadges,
@@ -96,7 +98,12 @@ export class App {
   readonly remoteActivities = signal<Activity[]>([]);
   readonly ownProfileActivities = signal<Activity[]>([]);
   readonly profileMonth = signal('All');
-  readonly activeProfileTab = signal<ProfileTab>('activity');
+  // Returning from Strava OAuth lands on the Account tab, where the import status is shown.
+  readonly activeProfileTab = signal<ProfileTab>(
+    typeof location !== 'undefined' && new URLSearchParams(location.search).has('strava')
+      ? 'account'
+      : 'activity',
+  );
   readonly profileSport = signal<Sport | 'All'>('All');
   readonly heatmapYear = signal('last-12-months');
   readonly profileLoading = signal(false);
@@ -370,9 +377,36 @@ export class App {
     }
   }
 
-  private async loadOwnProfileActivities(request: number, viewer: Profile): Promise<void> {
-    this.profileLoading.set(true);
-    this.profileError.set('');
+  /** Refresh activity lists after an import without unmounting the profile page. */
+  async activitiesImported(): Promise<void> {
+    // Any navigation while the bootstrap request is in flight bumps routeRequest, which makes the
+    // profile refresh below discard its result instead of writing into another page.
+    const request = this.routeRequest;
+    try {
+      this.liveActivities.set((await this.api<Bootstrap>('/api/bootstrap')).activities);
+      const viewer = this.viewer();
+      if (
+        request === this.routeRequest &&
+        this.page() === 'profile' &&
+        viewer &&
+        !this.remoteProfile()
+      )
+        await this.loadOwnProfileActivities(request, viewer, true);
+    } catch (error) {
+      this.error.set(this.message(error));
+    }
+  }
+
+  private async loadOwnProfileActivities(
+    request: number,
+    viewer: Profile,
+    quiet = false,
+  ): Promise<void> {
+    // A quiet refresh keeps the page mounted so in-progress UI such as import status survives.
+    if (!quiet) {
+      this.profileLoading.set(true);
+      this.profileError.set('');
+    }
     try {
       const identifier = viewer.provider === 'atproto' ? viewer.id : viewer.username;
       const data = await this.api<{ activities: Activity[]; social?: ProfileSocial }>(
@@ -383,9 +417,12 @@ export class App {
         this.socialCounts.set(data.social ?? null);
       }
     } catch (error) {
-      if (request === this.routeRequest) this.profileError.set(this.message(error));
+      if (request !== this.routeRequest) return;
+      // A failed background refresh keeps the profile on screen and reports in the banner.
+      if (quiet) this.error.set(this.message(error));
+      else this.profileError.set(this.message(error));
     } finally {
-      if (request === this.routeRequest) this.profileLoading.set(false);
+      if (request === this.routeRequest && !quiet) this.profileLoading.set(false);
     }
   }
 

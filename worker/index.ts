@@ -38,6 +38,28 @@ import {
 import { deleteAccountRateLimits, enforceRateLimit } from './rate-limit';
 import { date, HttpError, number, sport, text, visibility } from './validation';
 import {
+  FILE_IMPORT_SOURCES,
+  importActivities,
+  importSummary,
+  MAX_IMPORT_BATCH,
+  type ImportSource,
+} from './imports';
+import {
+  applyStravaWebhook,
+  connectStrava,
+  disconnectStrava,
+  stravaAuthorizeUrl,
+  stravaConfigured,
+  stravaStatus,
+  purgeExpiredStravaImports,
+  refreshStravaHistory,
+  stravaRefreshesDue,
+  syncStrava,
+  webhookOwner,
+  type StravaEnv,
+  type StravaWebhookEvent,
+} from './strava';
+import {
   addComment,
   clubMembers,
   createClub,
@@ -55,7 +77,8 @@ import {
   withSocial,
 } from './social';
 
-interface Env {
+interface Env extends StravaEnv {
+  STRAVA_SUBSCRIPTION_ID?: string;
   DB: D1Database;
   ASSETS: Fetcher;
   PHOTOS: R2Bucket;
@@ -82,7 +105,7 @@ const ALL_SCOPES: AgentScope[] = ['activities:read', 'activities:write', 'events
 const ATPROTO_SYNC_INTERVAL_MS = 5 * 60_000;
 const ACTIVITY_SELECT = `SELECT a.id, a.user_id AS userId, u.username, u.name, u.avatar,
   a.title, a.sport, a.occurred_at AS occurredAt, a.duration, a.distance, a.notes,
-  a.visibility, a.source,
+  a.visibility, a.source, a.import_source AS importSource,
   CASE WHEN a.photo_key IS NULL THEN NULL
     ELSE '/api/activities/' || a.id || '/photo?v=' || substr(a.photo_key, -12) END AS photo
   FROM activities a JOIN users u ON u.id = a.user_id`;
@@ -95,7 +118,7 @@ const ATPROTO_ACTIVITY_SELECT = `SELECT a.uri AS id, a.did AS userId, u.handle A
   json_extract(a.record_json, '$.distance') AS distance,
   json_extract(a.record_json, '$.notes') AS notes,
   'public' AS visibility, json_extract(a.record_json, '$.source') AS source,
-  NULL AS photo
+  NULL AS importSource, NULL AS photo
   FROM atproto_activities a JOIN atproto_accounts u ON u.did = a.did`;
 
 const json = (body: unknown, status = 200) =>
@@ -737,6 +760,65 @@ async function saveActivity(
   return { id, status: 201 };
 }
 
+const STRAVA_PRIVATE_MESSAGE =
+  'Strava’s API terms only allow showing Strava data to the athlete who owns it, so activities imported from Strava stay private.';
+
+/** Reject publishing activities that were imported through the Strava API. */
+async function assertNotStravaPublish(
+  env: Env,
+  userId: string,
+  ids: string[],
+  nextVisibility: string,
+): Promise<void> {
+  if (nextVisibility !== 'public' || !ids.length) return;
+  const placeholders = ids.map(() => '?').join(', ');
+  const strava = await env.DB.prepare(
+    `SELECT 1 AS found FROM activities WHERE user_id = ? AND import_source = 'strava'
+    AND id IN (${placeholders}) LIMIT 1`,
+  )
+    .bind(userId, ...ids)
+    .first();
+  if (strava) throw new HttpError(400, STRAVA_PRIVATE_MESSAGE);
+}
+
+/** Delete a GitHub account's activity with its social data, queueing its photo for removal. */
+async function deleteGithubActivity(
+  env: Env,
+  userId: string,
+  activityId: string,
+): Promise<boolean> {
+  try {
+    const owned = await env.DB.prepare(
+      'SELECT 1 AS found FROM activities WHERE id = ? AND user_id = ?',
+    )
+      .bind(activityId, userId)
+      .first();
+    if (!owned) return false;
+    // The photo key is queued in the same transaction as the delete, so it survives R2 failures.
+    const [, , deleted] = await env.DB.batch([
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO photo_deletions (key, queued_at, actor_id)
+      SELECT photo_key, ?, ? FROM activities
+      WHERE id = ? AND user_id = ? AND photo_key IS NOT NULL`,
+      ).bind(new Date().toISOString(), `github:${userId}`, activityId, userId),
+      // Remember deleted Strava imports so the periodic re-fetch does not bring them back.
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO strava_deleted_activities (user_id, external_id, deleted_at)
+        SELECT user_id, external_id, ? FROM activities
+        WHERE id = ? AND user_id = ? AND import_source = 'strava' AND external_id IS NOT NULL`,
+      ).bind(new Date().toISOString(), activityId, userId),
+      env.DB.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(
+        activityId,
+        userId,
+      ),
+      ...deleteActivitySocial(env.DB, activityId),
+    ]);
+    return Boolean(deleted?.meta.changes);
+  } finally {
+    await purgeDeletedPhotos(env);
+  }
+}
+
 /** Publish a hosted event to the host's PDS and index it for community discovery. */
 async function saveAtprotoEvent(
   env: Env,
@@ -1202,6 +1284,16 @@ async function exportAccount(
       where: github ? 'user_id = ?' : 'did = ?',
       args: [actorId],
     },
+    ...(github
+      ? {
+          stravaConnection: {
+            table: 'strava_connections',
+            columns: 'athlete_id, scope, history_complete, last_synced_at, created_at',
+            where: 'user_id = ?',
+            args: [actorId],
+          },
+        }
+      : {}),
   };
   const photoRows: { activityId: unknown; photoKey: string; contentType: unknown }[] = [];
   const atprotoRecords: Record<string, { uri: string; value: unknown }[]> = {};
@@ -1259,6 +1351,7 @@ async function exportAccount(
       ['comments', data.comments],
       ['kudos', data.kudos],
       ['agentTokens', data.agentTokens],
+      ...(github ? ([['stravaConnection', []]] as [string, unknown][]) : []),
       ['photos', []],
       ['atprotoRecords', data.atprotoRecords],
     ];
@@ -1706,6 +1799,13 @@ async function deleteAccount(env: Env, identity: Identity, request: Request): Pr
       throw error;
     }
   }
+  if (identity.provider === 'github') {
+    try {
+      await disconnectStrava(env, env.DB, actorId);
+    } catch (error) {
+      console.error('Strava could not be disconnected; the account is deleted anyway.', error);
+    }
+  }
   const rateLimitCleanup = await deleteAccountRateLimits(env.DB, actorId);
   const oauthDeletionJob =
     identity.provider === 'atproto'
@@ -2120,6 +2220,235 @@ async function atprotoAuth(request: Request, env: Env, url: URL): Promise<Respon
   return new Response(null, { status: 302, headers });
 }
 
+const IMPORT_ACCOUNT_MESSAGE =
+  'Importing is available for GitHub accounts. AT Protocol activities are public records, so health and workout imports are not written to your PDS.';
+
+/** Imports write private health data, so they need a GitHub browser session. */
+function githubImporter(auth: Identity | null): Identity {
+  const actor = requireIdentity(auth, undefined, true);
+  if (actor.provider !== 'github') throw new HttpError(400, IMPORT_ACCOUNT_MESSAGE);
+  return actor;
+}
+
+/** Start Strava OAuth for the signed-in GitHub user, or store the connection on callback. */
+async function stravaAuth(request: Request, env: Env, url: URL): Promise<Response> {
+  const origin = new URL(env.APP_URL).origin;
+  const back = (params: Record<string, string>) => {
+    const headers = new Headers({
+      Location: `${origin}/profile?${new URLSearchParams(params).toString()}`,
+    });
+    headers.append('Set-Cookie', setCookie(env, 'dwm_strava_state', '', 0));
+    return new Response(null, { status: 302, headers });
+  };
+  if (!stravaConfigured(env))
+    throw new HttpError(
+      503,
+      'Strava import is not configured. Add STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET and STRAVA_TOKEN_KEY to the Worker.',
+    );
+  const viewer = await identity(request, env);
+  if (!viewer || viewer.agent)
+    return back({ strava: 'error', reason: 'Sign in to connect Strava.' });
+  if (viewer.provider !== 'github')
+    return back({ strava: 'error', reason: IMPORT_ACCOUNT_MESSAGE });
+  const callback = `${origin}/auth/strava/callback`;
+  // The state cookie also records who started the connection, so a callback completed after a
+  // different user signs in on the same browser is rejected.
+  const owner = await hash(`strava-state:${viewer.user.id}`);
+  if (url.pathname === '/auth/strava') {
+    const state = secret();
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: stravaAuthorizeUrl(env, callback, state),
+        'Set-Cookie': setCookie(env, 'dwm_strava_state', `${state}.${owner}`, 600),
+      },
+    });
+  }
+  if (url.pathname !== '/auth/strava/callback') throw new HttpError(404, 'Not found.');
+  const state = url.searchParams.get('state');
+  if (!state || `${state}.${owner}` !== cookie(request, 'dwm_strava_state'))
+    return back({ strava: 'error', reason: 'Strava connection expired. Please try again.' });
+  const code = url.searchParams.get('code');
+  if (!code || url.searchParams.has('error')) return back({ strava: 'denied' });
+  const reservation = await beginAccountMutation(env, env.DB, viewer);
+  try {
+    await connectStrava(
+      env,
+      guardMutationDatabase(env.DB, reservation.assertNotLost),
+      viewer.user.id,
+      code,
+      url.searchParams.get('scope') ?? '',
+    );
+  } catch (error) {
+    if (error instanceof HttpError && error.status < 500)
+      return back({ strava: 'error', reason: error.message });
+    throw error;
+  } finally {
+    await reservation.release();
+  }
+  return back({ strava: 'connected' });
+}
+
+/** Verify Strava's webhook subscription, or acknowledge an event and process it afterwards. */
+async function stravaWebhook(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  url: URL,
+): Promise<Response> {
+  if (request.method === 'GET') {
+    if (
+      !env.STRAVA_WEBHOOK_VERIFY_TOKEN ||
+      url.searchParams.get('hub.mode') !== 'subscribe' ||
+      url.searchParams.get('hub.verify_token') !== env.STRAVA_WEBHOOK_VERIFY_TOKEN
+    )
+      throw new HttpError(403, 'Webhook verification failed.');
+    return json({ 'hub.challenge': url.searchParams.get('hub.challenge') ?? '' });
+  }
+  if (request.method !== 'POST') throw new HttpError(405, 'Method not allowed.');
+  if (!stravaConfigured(env)) return json({ ok: true });
+  const event = (await body(request)) as StravaWebhookEvent & { subscription_id?: unknown };
+  if (env.STRAVA_SUBSCRIPTION_ID && String(event.subscription_id) !== env.STRAVA_SUBSCRIPTION_ID)
+    throw new HttpError(403, 'Unknown webhook subscription.');
+  // Events for athletes without a connection are acknowledged and dropped, so forged events
+  // cannot fill the queue.
+  if (!(await webhookOwner(env.DB, event))) return json({ ok: true });
+  // Store the event before acknowledging it; if this write fails, Strava retries the delivery.
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `INSERT INTO strava_webhook_events (id, payload, next_attempt_at, created_at)
+    VALUES (?, ?, ?, ?)`,
+  )
+    .bind(id, JSON.stringify(event), now, now)
+    .run();
+  // Strava expects an acknowledgement within two seconds, so the work continues after responding.
+  ctx.waitUntil(runStravaWebhookEvent(env, { id, payload: JSON.stringify(event), attempts: 0 }));
+  return json({ ok: true });
+}
+
+const STRAVA_WEBHOOK_MAX_ATTEMPTS = 10;
+
+/** Process one stored webhook event; on failure, schedule a retry with exponential backoff. */
+async function runStravaWebhookEvent(
+  env: Env,
+  row: { id: string; payload: string; attempts: number },
+): Promise<void> {
+  try {
+    await processStravaWebhook(env, JSON.parse(row.payload) as StravaWebhookEvent);
+    await env.DB.prepare('DELETE FROM strava_webhook_events WHERE id = ?').bind(row.id).run();
+  } catch (error) {
+    const attempts = row.attempts + 1;
+    console.error(
+      'Strava webhook event failed',
+      attempts,
+      error instanceof Error ? error.message : error,
+    );
+    try {
+      if (attempts >= STRAVA_WEBHOOK_MAX_ATTEMPTS) {
+        console.error('Strava webhook event abandoned after retries', row.id);
+        await env.DB.prepare('DELETE FROM strava_webhook_events WHERE id = ?').bind(row.id).run();
+      } else {
+        const delayMinutes = Math.min(2 ** attempts, 360);
+        await env.DB.prepare(
+          'UPDATE strava_webhook_events SET attempts = ?, next_attempt_at = ? WHERE id = ?',
+        )
+          .bind(attempts, new Date(Date.now() + delayMinutes * 60_000).toISOString(), row.id)
+          .run();
+      }
+    } catch (scheduleError) {
+      // The row is still due, so the next cron run picks it up again.
+      console.error('Could not reschedule Strava webhook event', scheduleError);
+    }
+  }
+}
+
+/**
+ * Per-cron-run bounds. D1 allows 1,000 queries per invocation on Workers Paid and a batch counts
+ * as one query. A re-fetch costs about a dozen queries per connection (reservation, token, two
+ * pages of one batch each, cursor write), so 10 connections use ~100; the purge uses two per
+ * chunk of 200, so 25 chunks use 50 and remove up to 5,000 rows per run. Together with the
+ * webhook retries and the other jobs this stays well below the limit. Rows become purgeable half
+ * a day before the 7-day deadline, so 48 runs (240,000 rows) can drain a backlog in time; a run
+ * that hits the cap logs it and the next run continues.
+ */
+const STRAVA_REFRESHES_PER_RUN = 10;
+const STRAVA_PURGE_CHUNKS_PER_RUN = 25;
+
+/**
+ * Keep Strava data within its retention window: advance due re-fetch passes, then delete
+ * imports that Strava has not re-confirmed for seven days. Runs from the Worker's cron trigger.
+ */
+async function runStravaLifecycle(env: Env): Promise<void> {
+  let due: string[] = [];
+  if (stravaConfigured(env)) {
+    try {
+      due = await stravaRefreshesDue(env.DB, STRAVA_REFRESHES_PER_RUN);
+    } catch (error) {
+      // A failed lookup must not skip the purge below.
+      console.error('Could not list due Strava re-fetches', error);
+    }
+  }
+  for (const userId of due) {
+    try {
+      const actor = {
+        user: { id: userId } as Profile,
+        agent: false,
+        scopes: [],
+        provider: 'github',
+      } as Identity;
+      const reservation = await beginAccountMutation(env, env.DB, actor);
+      try {
+        await refreshStravaHistory(
+          env,
+          guardMutationDatabase(env.DB, reservation.assertNotLost),
+          userId,
+        );
+      } finally {
+        await reservation.release();
+      }
+    } catch (error) {
+      console.error('Strava re-fetch failed', error instanceof Error ? error.message : error);
+    }
+  }
+  // Purge even when Strava is not configured, so data never outlives the retention window.
+  const purged = await purgeExpiredStravaImports(env.DB, STRAVA_PURGE_CHUNKS_PER_RUN);
+  if (purged >= STRAVA_PURGE_CHUNKS_PER_RUN * 200)
+    console.warn('Strava purge hit its per-run cap; the next cron run continues the backlog.');
+  if (purged) await purgeDeletedPhotos(env, true);
+}
+
+/** Retry stored webhook events that are due. Runs from the Worker's cron trigger. */
+async function retryStravaWebhookEvents(env: Env): Promise<void> {
+  const due = await env.DB.prepare(
+    `SELECT id, payload, attempts FROM strava_webhook_events
+    WHERE next_attempt_at <= ? ORDER BY next_attempt_at LIMIT 50`,
+  )
+    .bind(new Date().toISOString())
+    .all<{ id: string; payload: string; attempts: number }>();
+  for (const row of due.results) await runStravaWebhookEvent(env, row);
+}
+
+async function processStravaWebhook(env: Env, event: StravaWebhookEvent): Promise<void> {
+  const userId = await webhookOwner(env.DB, event);
+  if (!userId) return;
+  const actor = {
+    user: { id: userId } as Profile,
+    agent: false,
+    scopes: [],
+    provider: 'github',
+  } as Identity;
+  const reservation = await beginAccountMutation(env, env.DB, actor);
+  try {
+    const guarded = { ...env, DB: guardMutationDatabase(env.DB, reservation.assertNotLost) };
+    await applyStravaWebhook(guarded, guarded.DB, userId, event, async (activityId) => {
+      await deleteGithubActivity(guarded, userId, activityId);
+    });
+  } finally {
+    await reservation.release();
+  }
+}
+
 /** Route Worker requests to authentication, API, MCP, or static asset handlers. */
 async function handle(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
@@ -2139,6 +2468,9 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
   }
   if (url.pathname.startsWith('/auth/atproto') && method === 'GET')
     return atprotoAuth(request, env, url);
+  if (url.pathname.startsWith('/auth/strava') && method === 'GET')
+    return stravaAuth(request, env, url);
+  if (url.pathname === '/webhooks/strava') return stravaWebhook(request, env, ctx, url);
   if (url.pathname === '/mcp') {
     await enforceRateLimit(request, env.DB);
     return handleMcp(
@@ -2391,6 +2723,35 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
       }
       return json({ results });
     }
+    if (url.pathname === '/api/imports' && method === 'POST') {
+      const actor = githubImporter(auth);
+      const data = await body(request, 1_048_576);
+      const source = data['source'] as ImportSource;
+      if (!FILE_IMPORT_SOURCES.includes(source))
+        throw new HttpError(400, 'Choose garmin, apple-health or file as the import source.');
+      const items = data['activities'];
+      if (!Array.isArray(items) || items.length < 1 || items.length > MAX_IMPORT_BATCH)
+        throw new HttpError(400, `Provide between 1 and ${MAX_IMPORT_BATCH} activities.`);
+      const results = await importActivities(env.DB, actor.user.id, source, items);
+      return json({ ...importSummary(results), results });
+    }
+    if (url.pathname === '/api/strava' && method === 'GET') {
+      const actor = requireIdentity(auth, undefined, true);
+      if (actor.provider !== 'github')
+        return json({ configured: stravaConfigured(env), connected: false });
+      return json(await stravaStatus(env, env.DB, actor.user.id));
+    }
+    if (url.pathname === '/api/strava/sync' && method === 'POST') {
+      const actor = githubImporter(auth);
+      if (!stravaConfigured(env)) throw new HttpError(503, 'Strava import is not configured.');
+      return json(await syncStrava(env, env.DB, actor.user.id));
+    }
+    if (url.pathname === '/api/strava' && method === 'DELETE') {
+      const actor = githubImporter(auth);
+      const removed = await disconnectStrava(env, env.DB, actor.user.id);
+      await purgeDeletedPhotos(env);
+      return json({ ok: true, removed });
+    }
     const cardMatch = /^\/api\/activities\/([^/]+)\/card\.png$/.exec(url.pathname);
     if (cardMatch && (method === 'GET' || method === 'HEAD'))
       return activityCard(env, decodedPathPart(cardMatch[1]));
@@ -2463,6 +2824,7 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
         throw new HttpError(400, 'Select between 1 and 100 activities.');
       const ids = [...new Set(rawIds.map((id) => text(id, 'Activity ID', 128)))];
       const nextVisibility = visibility(data['visibility']);
+      await assertNotStravaPublish(env, user.id, ids, nextVisibility);
       const placeholders = ids.map(() => '?').join(', ');
       const result = await env.DB.prepare(
         `UPDATE activities SET visibility = ? WHERE user_id = ? AND id IN (${placeholders})
@@ -2522,41 +2884,16 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
         return json({ ok: true });
       }
       if (method === 'DELETE') {
-        try {
-          const owned = await env.DB.prepare(
-            'SELECT 1 AS found FROM activities WHERE id = ? AND user_id = ?',
-          )
-            .bind(activityId, identity.user.id)
-            .first();
-          if (!owned) throw new HttpError(404, 'Activity not found.');
-          // The photo key is queued in the same transaction as the delete, so it survives R2 failures.
-          const [, deleted] = await env.DB.batch([
-            env.DB.prepare(
-              `INSERT OR IGNORE INTO photo_deletions (key, queued_at, actor_id)
-            SELECT photo_key, ?, ? FROM activities
-            WHERE id = ? AND user_id = ? AND photo_key IS NOT NULL`,
-            ).bind(
-              new Date().toISOString(),
-              `github:${identity.user.id}`,
-              activityId,
-              identity.user.id,
-            ),
-            env.DB.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(
-              activityId,
-              identity.user.id,
-            ),
-            ...deleteActivitySocial(env.DB, activityId),
-          ]);
-          if (!deleted?.meta.changes) throw new HttpError(404, 'Activity not found.');
-        } finally {
-          await purgeDeletedPhotos(env);
-        }
+        if (!(await deleteGithubActivity(env, identity.user.id, activityId)))
+          throw new HttpError(404, 'Activity not found.');
       } else {
         const data = await body(request);
+        const nextVisibility = visibility(data['visibility']);
+        await assertNotStravaPublish(env, identity.user.id, [activityId], nextVisibility);
         const result = await env.DB.prepare(
           'UPDATE activities SET visibility = ? WHERE id = ? AND user_id = ?',
         )
-          .bind(visibility(data['visibility']), activityId, identity.user.id)
+          .bind(nextVisibility, activityId, identity.user.id)
           .run();
         if (!result.meta.changes) throw new HttpError(404, 'Activity not found.');
       }
@@ -3191,6 +3528,8 @@ export default {
       purgeDeletedPhotos(env, true),
       purgeExpiredAccountExports(env),
       retryAtprotoDeletion(env),
+      retryStravaWebhookEvents(env),
+      runStravaLifecycle(env),
     ]);
   },
 } satisfies ExportedHandler<Env>;

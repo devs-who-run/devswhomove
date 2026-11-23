@@ -249,6 +249,35 @@ To try it, open `vscode-extension/` in VS Code and press **F5** to launch an Ext
 
 A reminder never logs exercise by itself. After completing a walk, choose **Log a completed walk** on the reminder or run **Devs Who Move: Log a Completed Walk**, enter its duration, and explicitly confirm the public upload. The start time is estimated from the confirmation time and duration. Uploads use the existing agent API and bearer token, so the activity is also available through MCP with an appropriately scoped token. Agent-created activities are public; a private GitHub profile still hides its activities from others, and AT Protocol records are public. No location, notes, or distance are sent. If an upload times out or the server returns an error, check your activities before retrying to avoid duplicates; AT Protocol does not support idempotency keys.
 
+## Importing activities
+
+Signed-in GitHub accounts can import workouts on the **Profile → Account** tab. Every import is **private**, keeps only the sport, start time, duration and distance, and is de-duplicated: the same workout from a watch, the phone and Strava is stored once (same sport, starting within two minutes). Imported activities are labelled with their source. AT Protocol accounts cannot import, because their activities are public PDS records.
+
+**Garmin and Apple Health files** are read in the browser; GPS routes, heart rate and other health samples never leave the device. Accepted uploads are `.fit`, `.gpx` and `.tcx` files (optionally `.gz`), Apple Health's `export.zip` or `export.xml`, and ZIP archives of workout files such as a Garmin Connect or Strava account export. Summaries are sent to `POST /api/imports` in batches of up to 200. Garmin's [Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api/) is for an individual's own data and is not intended for multi-user apps; live Garmin sync would need approval for the Garmin Connect Developer Program. Apple Health has no web API.
+
+**Strava** uses OAuth with the `activity:read_all` scope. Connecting imports your history in pages of 200 (the browser continues until it is complete), and a webhook imports new activities and removes ones you delete on Strava. Strava's API agreement only allows showing an athlete's Strava data to that athlete while they stay connected, so Strava imports cannot be made public and are not kept indefinitely: every Strava import records when Strava last returned it (`fetched_at`), the cron trigger re-fetches each athlete's history every four days (ten athletes and two pages each per run), and imports not re-confirmed are deleted with their kudos, comments and photos before they are seven days old (the purge starts at six and a half days, up to 5,000 rows per cron run). This also removes activities deleted on Strava. Disconnecting or deleting your account deletes every Strava import here immediately and asks Strava to revoke the app's access; that revocation is best effort, and local deletion does not depend on it. When Strava confirms that access was revoked (a webhook verified against Strava, or a rejected refresh token), the imports are deleted too, and reconnecting a different Strava athlete deletes the previous athlete's imports. A Strava import you delete here is not brought back by the re-fetch; disconnecting and reconnecting Strava clears that list and re-imports it. Refresh tokens are AES-GCM encrypted in D1 with `STRAVA_TOKEN_KEY`, and the data export includes the connection without tokens.
+
+To enable Strava, create an API application at https://www.strava.com/settings/api with the authorization callback domain of `APP_URL` (`127.0.0.1` locally), then add to `.dev.vars` or as Worker secrets:
+
+```sh
+STRAVA_CLIENT_ID=...
+STRAVA_CLIENT_SECRET=...
+STRAVA_TOKEN_KEY=$(openssl rand -base64 32)
+STRAVA_WEBHOOK_VERIFY_TOKEN=$(openssl rand -hex 16)
+```
+
+Register the webhook once per deployment. It must be reachable from Strava over HTTPS:
+
+```sh
+curl -X POST https://www.strava.com/api/v3/push_subscriptions \
+  -F client_id=$STRAVA_CLIENT_ID -F client_secret=$STRAVA_CLIENT_SECRET \
+  -F callback_url=https://YOUR_ORIGIN/webhooks/strava -F verify_token=$STRAVA_WEBHOOK_VERIFY_TOKEN
+```
+
+Strava does not sign webhook events, so the Worker treats them as hints and checks them with the athlete's own token: new activities are re-read from Strava, an imported activity is deleted only once Strava no longer returns it, and a connection is dropped only once Strava rejects the token. Events for connected athletes are stored in D1 before they are acknowledged and retried with backoff from the existing cron trigger, so a transient failure does not drop a deletion. Optionally set `STRAVA_SUBSCRIPTION_ID` to the returned subscription ID to reject events for any other subscription. Apply all pending D1 migrations before deploying (`pnpm run db:remote`); Strava needs `0013_activity_imports.sql` through `0016_strava_tombstones_and_retry.sql`.
+
+For local testing without a Strava app, set `STRAVA_API_ORIGIN` to a mock server that implements `/oauth/authorize`, `/oauth/token`, `/oauth/deauthorize`, `/api/v3/athlete/activities` and `/api/v3/activities/:id`. Leave it unset in production.
+
 ## Deploy
 
 ```sh
@@ -289,18 +318,19 @@ SHA-256 bucket identifiers rather than raw account IDs or IP addresses, and
 reuses each bucket row across windows. A rejected request returns HTTP 429 with
 `Retry-After` seconds.
 
-| Request class                                      | Per account | Per client IP | Window     |
-| -------------------------------------------------- | ----------- | ------------- | ---------- |
-| OAuth start and callback                           | —           | 10            | 10 minutes |
-| Activity writes, profile edits, visibility changes | 60          | 120           | 1 hour     |
-| Bulk activity imports                              | 10          | 30            | 1 hour     |
-| Photo uploads and deletes                          | 10          | 30            | 1 hour     |
-| Comments                                           | 30          | 120           | 1 hour     |
-| Other social actions                               | 120         | 300           | 1 hour     |
-| Event and RSVP mutations                           | 60          | 180           | 1 hour     |
-| Other API mutations, including token management    | 120         | 300           | 1 hour     |
-| API reads                                          | 600         | 1,200         | 1 hour     |
-| MCP requests                                       | —           | 1,200         | 1 hour     |
+| Request class                                       | Per account | Per client IP | Window     |
+| --------------------------------------------------- | ----------- | ------------- | ---------- |
+| OAuth start and callback (GitHub, AT Proto, Strava) | —           | 10            | 10 minutes |
+| Activity writes, profile edits, visibility changes  | 60          | 120           | 1 hour     |
+| Bulk activity imports                               | 10          | 30            | 1 hour     |
+| File imports and Strava sync (200 per request)      | 120         | 240           | 1 hour     |
+| Photo uploads and deletes                           | 10          | 30            | 1 hour     |
+| Comments                                            | 30          | 120           | 1 hour     |
+| Other social actions                                | 120         | 300           | 1 hour     |
+| Event and RSVP mutations                            | 60          | 180           | 1 hour     |
+| Other API mutations, including token management     | 120         | 300           | 1 hour     |
+| API reads                                           | 600         | 1,200         | 1 hour     |
+| MCP requests                                        | —           | 1,200         | 1 hour     |
 
 The account limit also applies to agent-token writes and MCP tool calls that
 create or update records. Bulk import requests count once toward the limit;
@@ -315,6 +345,6 @@ commands before running or deploying the updated Worker.
 
 ## Deliberately not yet included
 
-Follow approvals, private clubs, notifications, multiple photos or video, GPS/routes, wearable imports, event waitlists/recurrence, configurable goals, and agent OAuth. Public/private means **everyone or only you**, not followers-only. Before a public launch, add account deletion/export and operational retention policies.
+Follow approvals, private clubs, notifications, multiple photos or video, GPS/routes, live Garmin sync, event waitlists/recurrence, configurable goals, and agent OAuth. Public/private means **everyone or only you**, not followers-only. Before a public launch, add account deletion/export and operational retention policies.
 
 Cloudflare C3's Angular template currently assumes SSR during its final configuration. This app deliberately uses static Angular assets and a dedicated API Worker; its Wrangler entry point and output directory are configured explicitly.
