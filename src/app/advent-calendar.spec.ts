@@ -81,6 +81,37 @@ describe('AdventCalendar', () => {
     expect(calendar.completedDays()).toBe(3);
   });
 
+  it('keeps recovery check-ins saved in other tabs', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 11, 21, 12));
+    const key = 'devs-who-move:advent:2026:advent-test-user';
+    const fixture = TestBed.createComponent(AdventCalendar);
+    fixture.componentRef.setInput('activities', []);
+    fixture.componentRef.setInput('viewer', viewer);
+    fixture.detectChanges();
+    const calendar = fixture.componentInstance;
+    const [day7, day14, day21] = [6, 13, 20].map((index) => calendar.days()[index]);
+
+    // Another tab saves day 7 without a storage event reaching this one.
+    localStorage.setItem(key, JSON.stringify([day7.date]));
+    calendar.toggleRestDay(day14);
+    expect(JSON.parse(localStorage.getItem(key)!)).toEqual([day7.date, day14.date]);
+    expect(calendar.completedDays()).toBe(2);
+
+    // Another tab adds day 21 and the storage event updates this calendar.
+    const stored = JSON.stringify([day7.date, day14.date, day21.date]);
+    localStorage.setItem(key, stored);
+    window.dispatchEvent(new StorageEvent('storage', { key, newValue: stored }));
+    expect(calendar.completedDays()).toBe(3);
+
+    // Events for other keys are ignored.
+    localStorage.setItem(key, '[]');
+    window.dispatchEvent(new StorageEvent('storage', { key: 'unrelated', newValue: '1' }));
+    expect(calendar.completedDays()).toBe(3);
+    fixture.destroy();
+    localStorage.removeItem(key);
+  });
+
   it('unlocks the next door at local midnight without reloading', () => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     vi.setSystemTime(new Date(2026, 10, 30, 23, 59, 59));

@@ -252,6 +252,18 @@ export class AdventCalendar {
         10,
     );
     this.destroyRef.onDestroy(() => window.clearTimeout(timeout));
+
+    // Keep check-ins in step with other tabs; `key` is null when storage is cleared.
+    const syncRestDays = (event: StorageEvent) => {
+      const viewer = this.viewer();
+      if (!viewer) return;
+      const key = this.storageKey(viewer.id, this.year());
+      if (event.key === null || event.key === key) {
+        this.restDates.set(this.readRestDays(viewer.id, this.year()));
+      }
+    };
+    window.addEventListener('storage', syncRestDays);
+    this.destroyRef.onDestroy(() => window.removeEventListener('storage', syncRestDays));
   }
 
   select(day: AdventDay): void {
@@ -261,7 +273,8 @@ export class AdventCalendar {
   toggleRestDay(day: AdventDay): void {
     const viewer = this.viewer();
     if (!viewer || !day.open || !day.restDay) return;
-    const restDates = this.restDates();
+    // Start from what is stored now so check-ins saved in other tabs are kept.
+    const restDates = this.readRestDays(viewer.id, this.year());
     const next = restDates.includes(day.date)
       ? restDates.filter((date) => date !== day.date)
       : [...restDates, day.date];
