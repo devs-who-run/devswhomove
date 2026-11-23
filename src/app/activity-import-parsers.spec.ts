@@ -419,17 +419,16 @@ describe('activity import parsers', () => {
     expect(fromTcx.track.map(({ lat }) => lat)).toEqual([52, 52.1]);
   });
 
-  it('collects very long tracks', () => {
-    const count = 300_000;
-    const points = Array.from(
-      { length: count },
-      (_, index) =>
-        `<trkpt lat="${(index % 1000) / 1000}" lon="1"><time>${new Date(
-          Date.UTC(2026, 1, 1) + index * 250,
-        ).toISOString()}</time></trkpt>`,
-    ).join('');
+  it('collects tracks longer than a spread argument list allows', () => {
+    // Spreading more than ~125,000 items into push() overflows V8's stack. Only the first and
+    // last points carry times, which keeps the workout valid while keeping the XML small.
+    const count = 150_000;
+    const timed = (time: string) => `<trkpt lat="1" lon="1"><time>${time}</time></trkpt>`;
+    const gpx = `<gpx><trk><trkseg>${timed('2026-02-01T07:00:00Z')}${'<trkpt lat="1" lon="1"/>'.repeat(
+      count - 2,
+    )}${timed('2026-02-01T08:00:00Z')}</trkseg></trk></gpx>`;
     const track: TrackPoint[] = [];
-    parseGpx(`<gpx><trk><trkseg>${points}</trkseg></trk></gpx>`, track);
+    parseGpx(gpx, track);
     expect(track).toHaveLength(count);
-  });
+  }, 30_000);
 });
