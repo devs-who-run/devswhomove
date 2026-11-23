@@ -105,32 +105,48 @@ const xml = (text: string) => {
   return document;
 };
 
-const byTag = (root: Document | Element, name: string) => [...root.getElementsByTagName(name)];
+// Match by local name in any namespace so both `trkpt` and prefixed `gpx:trkpt` elements work.
+const byTag = (root: Document | Element, name: string) => [
+  ...root.getElementsByTagNameNS('*', name),
+];
 const childText = (root: Document | Element, name: string) =>
-  root.getElementsByTagName(name)[0]?.textContent?.trim() ?? '';
+  root.getElementsByTagNameNS('*', name)[0]?.textContent?.trim() ?? '';
+
+/** A track point's position, or null when lat/lon are missing or out of range. */
+function coordinates(point: Element): [number, number] | null {
+  const lat = point.getAttribute('lat');
+  const lon = point.getAttribute('lon');
+  if (lat === null || lon === null || !lat.trim() || !lon.trim()) return null;
+  const position: [number, number] = [Number(lat), Number(lon)];
+  const [latitude, longitude] = position;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  return position;
+}
 
 export function parseGpx(text: string): ParseResult {
   const document = xml(text);
   const garmin = /garmin/i.test(document.documentElement.getAttribute('creator') ?? '');
   const result: ParseResult = { activities: [], skipped: 0, ignoredFiles: 0 };
   for (const track of byTag(document, 'trk')) {
-    let previous: [number, number] | null = null;
     let distance = 0;
     let first = NaN;
     let last = NaN;
-    for (const point of byTag(track, 'trkpt')) {
-      const position: [number, number] = [
-        Number(point.getAttribute('lat')),
-        Number(point.getAttribute('lon')),
-      ];
-      if (position.every(Number.isFinite)) {
-        if (previous) distance += haversineKm(previous, position);
-        previous = position;
-      }
-      const time = Date.parse(childText(point, 'time'));
-      if (Number.isFinite(time)) {
-        if (!Number.isFinite(first)) first = time;
-        last = time;
+    // Segments are separate recordings (e.g. a paused watch); no distance is added between them.
+    const segments = byTag(track, 'trkseg');
+    for (const segment of segments.length ? segments : [track]) {
+      let previous: [number, number] | null = null;
+      for (const point of byTag(segment, 'trkpt')) {
+        const position = coordinates(point);
+        if (position) {
+          if (previous) distance += haversineKm(previous, position);
+          previous = position;
+        }
+        const time = Date.parse(childText(point, 'time'));
+        if (Number.isFinite(time)) {
+          if (!Number.isFinite(first)) first = time;
+          last = time;
+        }
       }
     }
     const activity = Number.isFinite(first)
@@ -497,6 +513,7 @@ async function zipStream(file: Blob, entry: ZipEntry): Promise<ReadableStream<Ui
 const streamBlob = async (stream: ReadableStream<Uint8Array>) => new Response(stream).blob();
 
 const extension = (name: string) => /\.(fit|gpx|tcx|xml)(\.gz)?$/i.exec(name);
+const isZip = (name: string) => /\.zip$/i.test(name);
 
 async function parseWorkoutFile(
   name: string,
@@ -538,19 +555,49 @@ export async function parseImportFile(
     merge(result, await parseWorkoutFile(file.name, file.stream(), progress));
     return result;
   }
-  const entries = (await zipEntries(file)).filter((entry) => !entry.name.endsWith('/'));
+  await parseArchive(file, file.name, result, progress, true);
+  return result;
+}
+
+/**
+ * Read workouts from a ZIP. A Garmin account backup keeps its activities in nested
+ * `UploadedFiles_*.zip` archives, so ZIPs inside the top-level archive are read one level deep.
+ */
+async function parseArchive(
+  archive: Blob,
+  label: string,
+  result: ParseResult,
+  progress: ProgressCallback | undefined,
+  outer: boolean,
+): Promise<void> {
+  const entries = (await zipEntries(archive)).filter((entry) => !entry.name.endsWith('/'));
   const health = entries.find((entry) => /(^|\/)export\.xml$/i.test(entry.name));
   // Apple Health archives also contain route GPX files that duplicate their workouts.
   const workouts = health ? [health] : entries.filter((entry) => extension(entry.name));
-  result.ignoredFiles += entries.length - workouts.length;
+  const nested = health || !outer ? [] : entries.filter((entry) => isZip(entry.name));
+  result.ignoredFiles += entries.length - workouts.length - nested.length;
   for (const [index, entry] of workouts.entries()) {
     if (!health && index % 25 === 0)
-      progress?.(`Reading ${file.name}… ${index} of ${workouts.length} files`);
+      progress?.(`Reading ${label}… ${index} of ${workouts.length} files`);
     try {
-      merge(result, await parseWorkoutFile(entry.name, await zipStream(file, entry), progress));
+      merge(result, await parseWorkoutFile(entry.name, await zipStream(archive, entry), progress));
     } catch {
       result.ignoredFiles++;
     }
   }
-  return result;
+  for (const entry of nested) {
+    const name = entry.name.split('/').at(-1) ?? entry.name;
+    progress?.(`Opening ${name}…`);
+    try {
+      await parseArchive(
+        await streamBlob(await zipStream(archive, entry)),
+        name,
+        result,
+        progress,
+        false,
+      );
+    } catch {
+      result.ignoredFiles++;
+    }
+  }
 }

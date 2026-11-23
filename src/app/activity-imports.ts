@@ -194,12 +194,13 @@ export class ActivityImports implements OnInit {
         this.status.set(`Strava: ${this.summary(totals)}${result.historyComplete ? '' : '…'}`);
         if (result.historyComplete) break;
       }
-      if (totals.imported) this.imported.emit();
     } catch (error) {
       this.error.set(errorMessage(error));
       this.strava.set(await request<StravaStatus>('/api/strava').catch(() => this.strava()));
     } finally {
       this.syncing.set(false);
+      // Refresh lists after a full or partial sync, once.
+      if (totals.imported) this.imported.emit();
     }
   }
 
@@ -238,8 +239,11 @@ export class ActivityImports implements OnInit {
         return;
       }
       const bySource = new Map<FileImportSource, ParsedActivity[]>();
-      for (const activity of found)
-        bySource.set(activity.source, [...(bySource.get(activity.source) ?? []), activity]);
+      for (const activity of found) {
+        const bucket = bySource.get(activity.source);
+        if (bucket) bucket.push(activity);
+        else bySource.set(activity.source, [activity]);
+      }
       let sent = 0;
       for (const [source, activities] of bySource) {
         for (let offset = 0; offset < activities.length; offset += BATCH) {

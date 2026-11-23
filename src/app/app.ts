@@ -379,11 +379,19 @@ export class App {
 
   /** Refresh activity lists after an import without unmounting the profile page. */
   async activitiesImported(): Promise<void> {
+    // Any navigation while the bootstrap request is in flight bumps routeRequest, which makes the
+    // profile refresh below discard its result instead of writing into another page.
+    const request = this.routeRequest;
     try {
       this.liveActivities.set((await this.api<Bootstrap>('/api/bootstrap')).activities);
       const viewer = this.viewer();
-      if (this.page() === 'profile' && viewer && !this.remoteProfile())
-        await this.loadOwnProfileActivities(this.routeRequest, viewer, true);
+      if (
+        request === this.routeRequest &&
+        this.page() === 'profile' &&
+        viewer &&
+        !this.remoteProfile()
+      )
+        await this.loadOwnProfileActivities(request, viewer, true);
     } catch (error) {
       this.error.set(this.message(error));
     }
@@ -395,8 +403,10 @@ export class App {
     quiet = false,
   ): Promise<void> {
     // A quiet refresh keeps the page mounted so in-progress UI such as import status survives.
-    if (!quiet) this.profileLoading.set(true);
-    this.profileError.set('');
+    if (!quiet) {
+      this.profileLoading.set(true);
+      this.profileError.set('');
+    }
     try {
       const identifier = viewer.provider === 'atproto' ? viewer.id : viewer.username;
       const data = await this.api<{ activities: Activity[]; social?: ProfileSocial }>(
@@ -407,9 +417,12 @@ export class App {
         this.socialCounts.set(data.social ?? null);
       }
     } catch (error) {
-      if (request === this.routeRequest) this.profileError.set(this.message(error));
+      if (request !== this.routeRequest) return;
+      // A failed background refresh keeps the profile on screen and reports in the banner.
+      if (quiet) this.error.set(this.message(error));
+      else this.profileError.set(this.message(error));
     } finally {
-      if (request === this.routeRequest) this.profileLoading.set(false);
+      if (request === this.routeRequest && !quiet) this.profileLoading.set(false);
     }
   }
 

@@ -2242,19 +2242,22 @@ async function stravaAuth(request: Request, env: Env, url: URL): Promise<Respons
   if (viewer.provider !== 'github')
     return back({ strava: 'error', reason: IMPORT_ACCOUNT_MESSAGE });
   const callback = `${origin}/auth/strava/callback`;
+  // The state cookie also records who started the connection, so a callback completed after a
+  // different user signs in on the same browser is rejected.
+  const owner = await hash(`strava-state:${viewer.user.id}`);
   if (url.pathname === '/auth/strava') {
     const state = secret();
     return new Response(null, {
       status: 302,
       headers: {
         Location: stravaAuthorizeUrl(env, callback, state),
-        'Set-Cookie': setCookie(env, 'dwm_strava_state', state, 600),
+        'Set-Cookie': setCookie(env, 'dwm_strava_state', `${state}.${owner}`, 600),
       },
     });
   }
   if (url.pathname !== '/auth/strava/callback') throw new HttpError(404, 'Not found.');
   const state = url.searchParams.get('state');
-  if (!state || state !== cookie(request, 'dwm_strava_state'))
+  if (!state || `${state}.${owner}` !== cookie(request, 'dwm_strava_state'))
     return back({ strava: 'error', reason: 'Strava connection expired. Please try again.' });
   const code = url.searchParams.get('code');
   if (!code || url.searchParams.has('error')) return back({ strava: 'denied' });
@@ -2298,13 +2301,68 @@ async function stravaWebhook(
   const event = (await body(request)) as StravaWebhookEvent & { subscription_id?: unknown };
   if (env.STRAVA_SUBSCRIPTION_ID && String(event.subscription_id) !== env.STRAVA_SUBSCRIPTION_ID)
     throw new HttpError(403, 'Unknown webhook subscription.');
+  // Events for athletes without a connection are acknowledged and dropped, so forged events
+  // cannot fill the queue.
+  if (!(await webhookOwner(env.DB, event))) return json({ ok: true });
+  // Store the event before acknowledging it; if this write fails, Strava retries the delivery.
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `INSERT INTO strava_webhook_events (id, payload, next_attempt_at, created_at)
+    VALUES (?, ?, ?, ?)`,
+  )
+    .bind(id, JSON.stringify(event), now, now)
+    .run();
   // Strava expects an acknowledgement within two seconds, so the work continues after responding.
-  ctx.waitUntil(
-    processStravaWebhook(env, event).catch((error) =>
-      console.error('Strava webhook event failed', error instanceof Error ? error.message : error),
-    ),
-  );
+  ctx.waitUntil(runStravaWebhookEvent(env, { id, payload: JSON.stringify(event), attempts: 0 }));
   return json({ ok: true });
+}
+
+const STRAVA_WEBHOOK_MAX_ATTEMPTS = 10;
+
+/** Process one stored webhook event; on failure, schedule a retry with exponential backoff. */
+async function runStravaWebhookEvent(
+  env: Env,
+  row: { id: string; payload: string; attempts: number },
+): Promise<void> {
+  try {
+    await processStravaWebhook(env, JSON.parse(row.payload) as StravaWebhookEvent);
+    await env.DB.prepare('DELETE FROM strava_webhook_events WHERE id = ?').bind(row.id).run();
+  } catch (error) {
+    const attempts = row.attempts + 1;
+    console.error(
+      'Strava webhook event failed',
+      attempts,
+      error instanceof Error ? error.message : error,
+    );
+    try {
+      if (attempts >= STRAVA_WEBHOOK_MAX_ATTEMPTS) {
+        console.error('Strava webhook event abandoned after retries', row.id);
+        await env.DB.prepare('DELETE FROM strava_webhook_events WHERE id = ?').bind(row.id).run();
+      } else {
+        const delayMinutes = Math.min(2 ** attempts, 360);
+        await env.DB.prepare(
+          'UPDATE strava_webhook_events SET attempts = ?, next_attempt_at = ? WHERE id = ?',
+        )
+          .bind(attempts, new Date(Date.now() + delayMinutes * 60_000).toISOString(), row.id)
+          .run();
+      }
+    } catch (scheduleError) {
+      // The row is still due, so the next cron run picks it up again.
+      console.error('Could not reschedule Strava webhook event', scheduleError);
+    }
+  }
+}
+
+/** Retry stored webhook events that are due. Runs from the Worker's cron trigger. */
+async function retryStravaWebhookEvents(env: Env): Promise<void> {
+  const due = await env.DB.prepare(
+    `SELECT id, payload, attempts FROM strava_webhook_events
+    WHERE next_attempt_at <= ? ORDER BY next_attempt_at LIMIT 50`,
+  )
+    .bind(new Date().toISOString())
+    .all<{ id: string; payload: string; attempts: number }>();
+  for (const row of due.results) await runStravaWebhookEvent(env, row);
 }
 
 async function processStravaWebhook(env: Env, event: StravaWebhookEvent): Promise<void> {
@@ -3405,6 +3463,7 @@ export default {
       purgeDeletedPhotos(env, true),
       purgeExpiredAccountExports(env),
       retryAtprotoDeletion(env),
+      retryStravaWebhookEvents(env),
     ]);
   },
 } satisfies ExportedHandler<Env>;

@@ -96,6 +96,7 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
           '0011_account_deletion_failure_audit.sql',
           '0012_atproto_event_edit_tokens.sql',
           '0013_activity_imports.sql',
+          '0014_strava_webhook_events.sql',
         ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
       )
     ).join(';');

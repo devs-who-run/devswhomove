@@ -274,7 +274,7 @@ curl -X POST https://www.strava.com/api/v3/push_subscriptions \
   -F callback_url=https://YOUR_ORIGIN/webhooks/strava -F verify_token=$STRAVA_WEBHOOK_VERIFY_TOKEN
 ```
 
-Strava does not sign webhook events, so the Worker treats them as hints: new activities are re-read from Strava with the athlete's own token. Optionally set `STRAVA_SUBSCRIPTION_ID` to the returned subscription ID to reject events for any other subscription. Apply migration `0013_activity_imports.sql` before deploying.
+Strava does not sign webhook events, so the Worker treats them as hints and checks them with the athlete's own token: new activities are re-read from Strava, an imported activity is deleted only once Strava no longer returns it, and a connection is dropped only once Strava rejects the token. Events for connected athletes are stored in D1 before they are acknowledged and retried with backoff from the existing cron trigger, so a transient failure does not drop a deletion. Optionally set `STRAVA_SUBSCRIPTION_ID` to the returned subscription ID to reject events for any other subscription. Apply migrations `0013_activity_imports.sql` and `0014_strava_webhook_events.sql` before deploying.
 
 For local testing without a Strava app, set `STRAVA_API_ORIGIN` to a mock server that implements `/oauth/authorize`, `/oauth/token`, `/oauth/deauthorize`, `/api/v3/athlete/activities` and `/api/v3/activities/:id`. Leave it unset in production.
 

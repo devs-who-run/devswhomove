@@ -13,7 +13,9 @@ describe('Activity imports and Strava sync', () => {
   const stravaCalls: string[] = [];
   let stravaActivities: Record<string, unknown>[] = [];
   let tokenExpiresAt = 4_102_444_800;
-  let refreshFails = false;
+  let refreshFails: false | number = false;
+  let tokenRevoked = false;
+  let failActivityReads = false;
   let deauthorizations = 0;
 
   const request = (path: string, method = 'GET', data?: unknown, session?: string) =>
@@ -37,6 +39,9 @@ describe('Activity imports and Strava sync', () => {
     ...overrides,
   });
 
+  const stateCookie = (response: Response) =>
+    /dwm_strava_state=([^;]+)/.exec(response.headers.get('Set-Cookie')!)![1];
+
   async function connectAlice(): Promise<void> {
     const start = await request('/auth/strava', 'GET', undefined, sessions.alice);
     expect(start.status).toBe(302);
@@ -45,11 +50,12 @@ describe('Activity imports and Strava sync', () => {
     expect(location.searchParams.get('scope')).toBe('activity:read_all');
     expect(location.searchParams.get('redirect_uri')).toBe(`${origin}/auth/strava/callback`);
     const state = location.searchParams.get('state')!;
+    const stateCookie = /dwm_strava_state=([^;]+)/.exec(start.headers.get('Set-Cookie')!)![1];
     const callback = await runtime.dispatchFetch(
       `${origin}/auth/strava/callback?state=${state}&code=good-code&scope=read,activity:read_all`,
       {
         redirect: 'manual',
-        headers: { Cookie: `dwm_session=${sessions.alice}; dwm_strava_state=${state}` },
+        headers: { Cookie: `dwm_session=${sessions.alice}; dwm_strava_state=${stateCookie}` },
       },
     );
     expect(callback.status).toBe(302);
@@ -77,7 +83,7 @@ describe('Activity imports and Strava sync', () => {
           if (url.pathname === '/oauth/token') {
             const form = new URLSearchParams(await outbound.text());
             if (form.get('grant_type') === 'refresh_token' && refreshFails)
-              return WorkerResponse.json({ message: 'Bad Request' }, { status: 400 });
+              return WorkerResponse.json({ message: 'Refresh failed' }, { status: refreshFails });
             if (form.get('client_secret') !== 'strava-secret')
               return WorkerResponse.json({}, { status: 401 });
             return WorkerResponse.json({
@@ -91,17 +97,27 @@ describe('Activity imports and Strava sync', () => {
             deauthorizations++;
             return WorkerResponse.json({});
           }
+          if (url.pathname.startsWith('/api/v3/') && tokenRevoked)
+            return WorkerResponse.json({ message: 'Authorization Error' }, { status: 401 });
+          if (url.pathname === '/api/v3/athlete') return WorkerResponse.json({ id: 777 });
           if (url.pathname === '/api/v3/athlete/activities') {
             const before = Number(url.searchParams.get('before') ?? Infinity);
             const after = Number(url.searchParams.get('after') ?? -Infinity);
-            const page = Number(url.searchParams.get('page'));
-            const matching = stravaActivities.filter((activity) => {
-              const start = Date.parse(String(activity['start_date'])) / 1000;
-              return start < before && start > after;
-            });
-            return WorkerResponse.json(page === 1 ? matching : []);
+            const page = Number(url.searchParams.get('page') ?? 1);
+            const perPage = Number(url.searchParams.get('per_page') ?? 30);
+            const start = (activity: Record<string, unknown>) =>
+              Date.parse(String(activity['start_date'])) / 1000;
+            // Like Strava: `before` pages run newest first, `after` pages oldest first.
+            const matching = stravaActivities
+              .filter((activity) => start(activity) < before && start(activity) > after)
+              .sort((a, b) =>
+                url.searchParams.has('before') ? start(b) - start(a) : start(a) - start(b),
+              );
+            return WorkerResponse.json(matching.slice((page - 1) * perPage, page * perPage));
           }
           const single = /^\/api\/v3\/activities\/(\d+)$/.exec(url.pathname);
+          if (single && failActivityReads)
+            return new WorkerResponse('Unavailable', { status: 503 });
           if (single) {
             const found = stravaActivities.find((activity) => String(activity['id']) === single[1]);
             return found ? WorkerResponse.json(found) : new WorkerResponse(null, { status: 404 });
@@ -137,9 +153,11 @@ describe('Activity imports and Strava sync', () => {
     stravaActivities = [];
     tokenExpiresAt = 4_102_444_800;
     refreshFails = false;
+    tokenRevoked = false;
+    failActivityReads = false;
     deauthorizations = 0;
     await db.exec(
-      'DELETE FROM activities; DELETE FROM strava_connections; DELETE FROM rate_limits;',
+      'DELETE FROM activities; DELETE FROM strava_connections; DELETE FROM rate_limits; DELETE FROM strava_webhook_events;',
     );
   });
 
@@ -290,7 +308,7 @@ describe('Activity imports and Strava sync', () => {
       `${origin}/auth/strava/callback?state=${state}&code=good-code&scope=activity:read_all`,
       {
         redirect: 'manual',
-        headers: { Cookie: `dwm_session=${sessions.bob}; dwm_strava_state=${state}` },
+        headers: { Cookie: `dwm_session=${sessions.bob}; dwm_strava_state=${stateCookie(start)}` },
       },
     );
     const location = new URL(callback.headers.get('Location')!);
@@ -305,7 +323,9 @@ describe('Activity imports and Strava sync', () => {
       `${origin}/auth/strava/callback?state=${state}&code=good-code&scope=read`,
       {
         redirect: 'manual',
-        headers: { Cookie: `dwm_session=${sessions.alice}; dwm_strava_state=${state}` },
+        headers: {
+          Cookie: `dwm_session=${sessions.alice}; dwm_strava_state=${stateCookie(start)}`,
+        },
       },
     );
     expect(new URL(narrow.headers.get('Location')!).searchParams.get('reason')).toContain(
@@ -332,7 +352,14 @@ describe('Activity imports and Strava sync', () => {
 
     tokenExpiresAt = 1;
     await connectAlice();
-    refreshFails = true;
+    refreshFails = 500;
+    const temporary = await request('/api/strava/sync', 'POST', undefined, sessions.alice);
+    expect(temporary.status).toBe(502);
+    expect(
+      await (await request('/api/strava', 'GET', undefined, sessions.alice)).json(),
+    ).toMatchObject({ connected: true });
+
+    refreshFails = 400;
     const revoked = await request('/api/strava/sync', 'POST', undefined, sessions.alice);
     expect(revoked.status).toBe(409);
     expect(await (await request('/api/strava', 'GET', undefined, sessions.alice)).json()).toEqual({
@@ -374,6 +401,10 @@ describe('Activity imports and Strava sync', () => {
     };
     const count = async () =>
       Number(await db.prepare(`SELECT COUNT(*) AS count FROM activities`).first('count'));
+    const queued = async () =>
+      Number(
+        await db.prepare('SELECT COUNT(*) AS count FROM strava_webhook_events').first('count'),
+      );
 
     expect(
       (await event({ object_type: 'activity', object_id: 2001, aspect_type: 'create' })).status,
@@ -381,22 +412,123 @@ describe('Activity imports and Strava sync', () => {
     await waitFor(async () => (await count()) === 1);
     expect(await count()).toBe(1);
 
+    // A delete event for an activity Strava still returns is ignored.
+    await event({ object_type: 'activity', object_id: 2001, aspect_type: 'delete' });
+    await waitFor(async () => (await queued()) === 0);
+    expect(await count()).toBe(1);
+
+    stravaActivities = [];
     await event({ object_type: 'activity', object_id: 2001, aspect_type: 'delete' });
     await waitFor(async () => (await count()) === 0);
     expect(await count()).toBe(0);
 
-    await event({
-      object_type: 'athlete',
-      object_id: 777,
-      aspect_type: 'update',
-      updates: { authorized: 'false' },
-    });
+    // A deauthorization event is ignored while Strava still accepts the token.
+    const deauthorize = () =>
+      event({
+        object_type: 'athlete',
+        object_id: 777,
+        aspect_type: 'update',
+        updates: { authorized: 'false' },
+      });
+    await deauthorize();
+    await waitFor(async () => (await queued()) === 0);
+    expect(
+      await db.prepare('SELECT COUNT(*) AS count FROM strava_connections').first('count'),
+    ).toBe(1);
+
+    tokenRevoked = true;
+    await deauthorize();
     await waitFor(
       async () =>
         Number(
           await db.prepare('SELECT COUNT(*) AS count FROM strava_connections').first('count'),
         ) === 0,
     );
+    expect(
+      await db.prepare('SELECT COUNT(*) AS count FROM strava_connections').first('count'),
+    ).toBe(0);
+  });
+
+  it('stores webhook events and retries them after a transient failure', async () => {
+    await connectAlice();
+    stravaActivities = [
+      { id: 4001, sport_type: 'Run', start_date: '2026-02-03T07:00:00Z', moving_time: 1500 },
+    ];
+    failActivityReads = true;
+    const response = await runtime.dispatchFetch(`${origin}/webhooks/strava`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        object_type: 'activity',
+        object_id: 4001,
+        aspect_type: 'create',
+        owner_id: 777,
+      }),
+    });
+    expect(response.status).toBe(200);
+    const attempts = async () =>
+      Number(await db.prepare('SELECT attempts FROM strava_webhook_events').first('attempts'));
+    for (let attempt = 0; attempt < 50 && (await attempts()) !== 1; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await attempts()).toBe(1);
+
+    failActivityReads = false;
+    await db.exec(`UPDATE strava_webhook_events SET next_attempt_at = '2000-01-01T00:00:00.000Z'`);
+    await (await runtime.getWorker()).scheduled();
+    expect(
+      await db.prepare('SELECT COUNT(*) AS count FROM strava_webhook_events').first('count'),
+    ).toBe(0);
+    expect(await db.prepare('SELECT external_id FROM activities').first('external_id')).toBe(
+      '4001',
+    );
+
+    // Events for athletes with no connection are acknowledged but not stored.
+    await runtime.dispatchFetch(`${origin}/webhooks/strava`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        object_type: 'activity',
+        object_id: 1,
+        aspect_type: 'create',
+        owner_id: 9,
+      }),
+    });
+    expect(
+      await db.prepare('SELECT COUNT(*) AS count FROM strava_webhook_events').first('count'),
+    ).toBe(0);
+  });
+
+  it('backfills long histories across several sync requests', async () => {
+    await connectAlice();
+    stravaActivities = Array.from({ length: 450 }, (_, index) => ({
+      id: 10_000 + index,
+      sport_type: index % 2 ? 'Ride' : 'Run',
+      start_date: new Date(Date.UTC(2025, 0, 1) - index * 86_400_000).toISOString(),
+      moving_time: 1800,
+    }));
+    const first = (await (
+      await request('/api/strava/sync', 'POST', undefined, sessions.alice)
+    ).json()) as { imported: number; historyComplete: boolean };
+    expect(first).toMatchObject({ imported: 400, historyComplete: false });
+    const second = (await (
+      await request('/api/strava/sync', 'POST', undefined, sessions.alice)
+    ).json()) as { imported: number; historyComplete: boolean };
+    expect(second).toMatchObject({ imported: 50, historyComplete: true });
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM activities').first('count')).toBe(450);
+  });
+
+  it('rejects a Strava callback completed by a different signed-in user', async () => {
+    const start = await request('/auth/strava', 'GET', undefined, sessions.alice);
+    const state = new URL(start.headers.get('Location')!).searchParams.get('state')!;
+    const cookieValue = /dwm_strava_state=([^;]+)/.exec(start.headers.get('Set-Cookie')!)![1];
+    const callback = await runtime.dispatchFetch(
+      `${origin}/auth/strava/callback?state=${state}&code=good-code&scope=activity:read_all`,
+      {
+        redirect: 'manual',
+        headers: { Cookie: `dwm_session=${sessions.bob}; dwm_strava_state=${cookieValue}` },
+      },
+    );
+    expect(new URL(callback.headers.get('Location')!).searchParams.get('strava')).toBe('error');
     expect(
       await db.prepare('SELECT COUNT(*) AS count FROM strava_connections').first('count'),
     ).toBe(0);

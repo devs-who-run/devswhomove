@@ -34,6 +34,7 @@ export interface StravaActivity {
 interface ConnectionRow {
   user_id: string;
   athlete_id: number;
+  created_at: string;
   encrypted_tokens: string;
   scope: string;
   newest_cursor: number;
@@ -55,6 +56,15 @@ const PAGE_SIZE = 200;
 /** Re-read a few days before the newest cursor so late uploads are not skipped. */
 const NEWEST_OVERLAP_SECONDS = 3 * 86400;
 export const STRAVA_SCOPE = 'activity:read_all';
+
+const REVOKED_MESSAGE = 'Strava access was revoked. Connect Strava again to keep importing.';
+
+/** Strava rejected this athlete's token: access is gone, not temporarily unavailable. */
+class StravaRevokedError extends HttpError {
+  constructor() {
+    super(409, REVOKED_MESSAGE);
+  }
+}
 
 export const stravaConfigured = (env: StravaEnv) =>
   Boolean(env.STRAVA_CLIENT_ID && env.STRAVA_CLIENT_SECRET && env.STRAVA_TOKEN_KEY);
@@ -154,14 +164,22 @@ async function tokenRequest(env: StravaEnv, params: Record<string, string>) {
       ...params,
     }),
   });
-  const data = await response.json<{
-    access_token?: string;
-    refresh_token?: string;
-    expires_at?: number;
-    athlete?: { id?: number };
-  }>();
-  if (!response.ok || !data.access_token || !data.refresh_token || !data.expires_at) return null;
+  const data = await response
+    .json<{
+      access_token?: string;
+      refresh_token?: string;
+      expires_at?: number;
+      athlete?: { id?: number };
+      message?: string;
+    }>()
+    .catch(() => ({}) as Record<string, undefined>);
+  if (!response.ok || !data.access_token || !data.refresh_token || !data.expires_at) {
+    console.error('Strava token request failed', response.status, data.message ?? '');
+    // 400/401 mean Strava rejected the code or refresh token; anything else may be temporary.
+    return { ok: false as const, permanent: response.status === 400 || response.status === 401 };
+  }
   return {
+    ok: true as const,
     tokens: {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
@@ -185,7 +203,7 @@ export async function connectStrava(
       'Strava did not grant access to your activities. Allow “View data about your activities” and try again.',
     );
   const result = await tokenRequest(env, { code, grant_type: 'authorization_code' });
-  if (!result || !Number.isSafeInteger(result.athleteId))
+  if (!result.ok || !Number.isSafeInteger(result.athleteId))
     throw new HttpError(502, 'Strava could not complete the connection. Please try again.');
   const owner = await db
     .prepare('SELECT user_id FROM strava_connections WHERE athlete_id = ?')
@@ -235,13 +253,28 @@ async function accessToken(env: StravaEnv, db: D1Database, row: ConnectionRow): 
     grant_type: 'refresh_token',
     refresh_token: tokens.refreshToken,
   });
-  if (!refreshed) {
-    await db.prepare('DELETE FROM strava_connections WHERE user_id = ?').bind(row.user_id).run();
-    throw new HttpError(409, 'Strava access was revoked. Connect Strava again to keep importing.');
+  if (!refreshed.ok) {
+    if (!refreshed.permanent)
+      throw new HttpError(502, 'Strava could not refresh access right now. Please try again.');
+    await db
+      .prepare(
+        `DELETE FROM strava_connections WHERE user_id = ? AND athlete_id = ? AND created_at = ?`,
+      )
+      .bind(row.user_id, row.athlete_id, row.created_at)
+      .run();
+    throw new StravaRevokedError();
   }
   await db
-    .prepare('UPDATE strava_connections SET encrypted_tokens = ? WHERE user_id = ?')
-    .bind(await encryptTokens(env, refreshed.tokens, row.user_id), row.user_id)
+    .prepare(
+      `UPDATE strava_connections SET encrypted_tokens = ?
+      WHERE user_id = ? AND athlete_id = ? AND created_at = ?`,
+    )
+    .bind(
+      await encryptTokens(env, refreshed.tokens, row.user_id),
+      row.user_id,
+      row.athlete_id,
+      row.created_at,
+    )
     .run();
   return refreshed.tokens.accessToken;
 }
@@ -255,8 +288,7 @@ async function stravaGet<T>(env: StravaEnv, token: string, path: string): Promis
     throw new HttpError(503, 'Strava’s rate limit was reached. Try again in about 15 minutes.', {
       'Retry-After': '900',
     });
-  if (response.status === 401)
-    throw new HttpError(409, 'Strava access was revoked. Connect Strava again to keep importing.');
+  if (response.status === 401) throw new StravaRevokedError();
   if (!response.ok) throw new HttpError(502, 'Strava could not be reached. Please try again.');
   return response.json<T>();
 }
@@ -327,15 +359,25 @@ export async function syncStrava(env: StravaEnv, db: D1Database, userId: string,
       )) ?? [];
     const before = oldest;
     await importPage(activities);
-    if (activities.length < PAGE_SIZE || oldest >= before) historyComplete = true;
+    if (!activities.length) historyComplete = true;
+    // Undated activities cannot move the cursor; step past them so the next page makes progress.
+    else if (oldest >= before) oldest = before - 1;
   }
   const lastSyncedAt = new Date().toISOString();
   await db
     .prepare(
       `UPDATE strava_connections SET newest_cursor = ?, oldest_cursor = ?, history_complete = ?,
-      last_synced_at = ? WHERE user_id = ?`,
+      last_synced_at = ? WHERE user_id = ? AND athlete_id = ? AND created_at = ?`,
     )
-    .bind(newest, oldest, historyComplete ? 1 : 0, lastSyncedAt, userId)
+    .bind(
+      newest,
+      oldest,
+      historyComplete ? 1 : 0,
+      lastSyncedAt,
+      userId,
+      row.athlete_id,
+      row.created_at,
+    )
     .run();
   return { ...importSummary(results), historyComplete, lastSyncedAt };
 }
@@ -346,11 +388,12 @@ export async function disconnectStrava(env: StravaEnv, db: D1Database, userId: s
   if (!row) return;
   try {
     const tokens = await decryptTokens(env, row.encrypted_tokens, userId);
-    await fetch(`${stravaOrigin(env)}/oauth/deauthorize`, {
+    const response = await fetch(`${stravaOrigin(env)}/oauth/deauthorize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ access_token: tokens.accessToken }),
     });
+    if (!response.ok) console.error('Strava deauthorization was not confirmed', response.status);
   } catch (error) {
     console.error('Strava deauthorization failed; the local connection is removed anyway.', error);
   }
@@ -376,9 +419,10 @@ export async function webhookOwner(db: D1Database, event: StravaWebhookEvent) {
 }
 
 /**
- * Apply a Strava webhook event. Webhooks are unsigned, so an event is only a hint: new activities
- * are re-read from Strava with the athlete's own token, deletions only affect Strava imports, and
- * deauthorization is the athlete revoking access to this app.
+ * Apply a Strava webhook event. Webhooks are unsigned, so an event is only a hint and is checked
+ * against Strava with the athlete's own token: new activities are re-read, an activity is deleted
+ * only once Strava no longer returns it, and a connection is dropped only once Strava rejects the
+ * token. If Strava's state cannot be confirmed, the error propagates so the event is retried.
  */
 export async function applyStravaWebhook(
   env: StravaEnv,
@@ -387,9 +431,22 @@ export async function applyStravaWebhook(
   event: StravaWebhookEvent,
   deleteActivity: (activityId: string) => Promise<void>,
 ): Promise<void> {
+  const row = await connection(db, userId);
+  if (!row || row.athlete_id !== event.owner_id) return;
   if (event.object_type === 'athlete') {
-    if (event.updates?.['authorized'] === 'false')
-      await db.prepare('DELETE FROM strava_connections WHERE user_id = ?').bind(userId).run();
+    if (event.updates?.['authorized'] !== 'false') return;
+    try {
+      await stravaGet(env, await accessToken(env, db, row), '/athlete');
+      return; // Strava still accepts the token, so access was not revoked.
+    } catch (error) {
+      if (!(error instanceof StravaRevokedError)) throw error;
+    }
+    await db
+      .prepare(
+        'DELETE FROM strava_connections WHERE user_id = ? AND athlete_id = ? AND created_at = ?',
+      )
+      .bind(userId, row.athlete_id, row.created_at)
+      .run();
     return;
   }
   if (event.object_type !== 'activity' || !Number.isSafeInteger(event.object_id)) return;
@@ -400,12 +457,16 @@ export async function applyStravaWebhook(
       )
       .bind(userId, String(event.object_id))
       .first<{ id: string }>();
-    if (imported) await deleteActivity(imported.id);
+    if (!imported) return;
+    const stillThere = await stravaGet<StravaActivity>(
+      env,
+      await accessToken(env, db, row),
+      `/activities/${event.object_id}`,
+    );
+    if (!stillThere) await deleteActivity(imported.id);
     return;
   }
   if (event.aspect_type !== 'create') return;
-  const row = await connection(db, userId);
-  if (!row) return;
   const activity = await stravaGet<StravaActivity>(
     env,
     await accessToken(env, db, row),

@@ -65,29 +65,19 @@ export async function importActivities(
         }
       }
       const start = Date.parse(entry.occurredAt);
-      const overlapping = await db
-        .prepare(
-          `SELECT id FROM activities WHERE user_id = ? AND sport = ?
-          AND occurred_at BETWEEN ? AND ? LIMIT 1`,
-        )
-        .bind(
-          userId,
-          entry.sport,
-          new Date(start - DUPLICATE_WINDOW_MS).toISOString(),
-          new Date(start + DUPLICATE_WINDOW_MS).toISOString(),
-        )
-        .first<{ id: string }>();
-      if (overlapping) {
-        results.push({ index, status: 'duplicate', id: overlapping.id });
-        continue;
-      }
       const id = crypto.randomUUID();
+      // The overlap check is part of the INSERT so concurrent imports (a sync racing a webhook,
+      // or two uploads) cannot both store the same workout.
       const inserted = await db
         .prepare(
           `INSERT INTO activities
           (id, user_id, title, sport, occurred_at, duration, distance, notes, visibility, source,
             payload_hash, import_source, external_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, '', 'private', 'web', ?, ?, ?) ON CONFLICT DO NOTHING`,
+          SELECT ?, ?, ?, ?, ?, ?, ?, '', 'private', 'web', ?, ?, ?
+          WHERE NOT EXISTS (
+            SELECT 1 FROM activities WHERE user_id = ? AND sport = ?
+            AND occurred_at BETWEEN ? AND ?
+          ) ON CONFLICT DO NOTHING`,
         )
         .bind(
           id,
@@ -100,6 +90,10 @@ export async function importActivities(
           await sha256(JSON.stringify(entry)),
           source,
           externalId,
+          userId,
+          entry.sport,
+          new Date(start - DUPLICATE_WINDOW_MS).toISOString(),
+          new Date(start + DUPLICATE_WINDOW_MS).toISOString(),
         )
         .run();
       results.push(

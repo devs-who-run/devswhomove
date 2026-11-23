@@ -249,6 +249,42 @@ describe('activity import parsers', () => {
     expect(result.ignoredFiles).toBe(1);
   });
 
+  it('does not add distance between GPX segments and skips points without valid coordinates', () => {
+    const result = parseGpx(`<?xml version="1.0"?>
+      <gpx:gpx xmlns:gpx="http://www.topografix.com/GPX/1/1"><gpx:trk><gpx:type>running</gpx:type>
+        <gpx:trkseg>
+          <gpx:trkpt lat="0" lon="0"><gpx:time>2026-02-01T07:00:00Z</gpx:time></gpx:trkpt>
+          <gpx:trkpt lat="0.009" lon="0"><gpx:time>2026-02-01T07:05:00Z</gpx:time></gpx:trkpt>
+          <gpx:trkpt lon="5"><gpx:time>2026-02-01T07:06:00Z</gpx:time></gpx:trkpt>
+          <gpx:trkpt lat="95" lon="0"><gpx:time>2026-02-01T07:07:00Z</gpx:time></gpx:trkpt>
+        </gpx:trkseg>
+        <gpx:trkseg>
+          <gpx:trkpt lat="10" lon="10"><gpx:time>2026-02-01T07:10:00Z</gpx:time></gpx:trkpt>
+          <gpx:trkpt lat="10.009" lon="10"><gpx:time>2026-02-01T07:15:00Z</gpx:time></gpx:trkpt>
+        </gpx:trkseg>
+      </gpx:trk></gpx:gpx>`);
+    // Two 1 km segments ~1,500 km apart: only the in-segment distance counts.
+    expect(result.activities).toMatchObject([{ sport: 'Running', duration: 15, distance: 2.002 }]);
+  });
+
+  it('reads Garmin account backups with nested UploadedFiles archives', async () => {
+    const inner = zip({
+      'activity_9.fit': fitFile({
+        start: '2026-02-07T06:30:00Z',
+        sport: 2,
+        timerMs: 3_600_000,
+        distanceCm: 3_000_000,
+      }),
+    });
+    const outer = zip({
+      'DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip': await inner.arrayBuffer(),
+      'DI_CONNECT/DI-Connect-User/user_profile.json': '{}',
+    });
+    const result = await parseImportFile(new File([outer], 'garmin-backup.zip'));
+    expect(result.activities).toMatchObject([{ sport: 'Cycling', distance: 30, source: 'garmin' }]);
+    expect(result.ignoredFiles).toBe(1);
+  });
+
   it('rejects unsupported files', async () => {
     await expect(parseImportFile(new File(['x'], 'notes.txt'))).rejects.toThrow('not a FIT');
   });
