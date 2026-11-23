@@ -284,6 +284,7 @@ describe('Worker with real D1 storage', () => {
         '0010_account_deletion_recovery.sql',
         '0011_account_deletion_failure_audit.sql',
         '0012_atproto_event_edit_tokens.sql',
+        '0013_activity_imports.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {

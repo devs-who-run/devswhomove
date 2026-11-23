@@ -300,6 +300,7 @@
                   aria-labelledby="profile-account-tab"
                   [hidden]="profileTab() !== 'account'"
                 >
+                  <app-activity-imports [profile]="ownProfile" (imported)="activitiesImported()" />
                   <app-account-settings [profile]="ownProfile" (deleted)="accountDeleted()" />
                 </section>
               }

@@ -2,3 +2,8 @@ GITHUB_CLIENT_ID=your-github-oauth-client-id
 GITHUB_CLIENT_SECRET=your-github-oauth-client-secret
 ATPROTO_OAUTH_PRIVATE_KEY=base64-encoded-pkcs8-pem
 ATPROTO_SESSION_KEY=base64-encoded-32-byte-key
+# Optional: Strava import. Create an API app at https://www.strava.com/settings/api
+STRAVA_CLIENT_ID=your-strava-client-id
+STRAVA_CLIENT_SECRET=your-strava-client-secret
+STRAVA_TOKEN_KEY=base64-encoded-32-byte-key
+STRAVA_WEBHOOK_VERIFY_TOKEN=random-string-you-choose

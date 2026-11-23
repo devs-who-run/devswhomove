@@ -37,6 +37,7 @@ export interface Activity {
   notes: string;
   visibility: Visibility;
   source: 'web' | 'agent';
+  importSource?: 'strava' | 'garmin' | 'apple-health' | 'file' | null;
   photo?: string | null;
   kudos?: number;
   kudoed?: boolean;
