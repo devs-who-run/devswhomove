@@ -13,6 +13,8 @@ export interface TrackPoint {
 }
 
 export const MAX_ROUTE_POINTS = 500;
+/** The Worker rejects routes with more segments than this. */
+export const MAX_ROUTE_SEGMENTS = 50;
 export const TRIM_OPTIONS = [200, 500, 1000] as const;
 export type TrimMeters = (typeof TRIM_OPTIONS)[number];
 
@@ -88,24 +90,51 @@ function simplifyLine(line: [number, number][], tolerance: number): [number, num
   return line.filter((_, index) => keep[index]);
 }
 
-/** Simplify segments until they fit in `maxPoints`, rounding coordinates to about a metre. */
+/**
+ * Simplify segments until they fit in `maxPoints` and `maxSegments`, rounding coordinates to about
+ * a metre. Segments are never joined, so privacy gaps stay gaps; when there are too many, the
+ * shortest are dropped and the rest keep their order.
+ */
 export function simplifyRoute(
   segments: RouteSegments,
   maxPoints = MAX_ROUTE_POINTS,
+  maxSegments = MAX_ROUTE_SEGMENTS,
 ): RouteSegments {
   const round = (value: number) => Math.round(value * 1e5) / 1e5;
-  const rounded = segments.map((segment) =>
+  const kept =
+    segments.length <= maxSegments
+      ? segments
+      : segments
+          .map((segment, index) => ({ segment, index, length: routeLength(segment) }))
+          .sort((a, b) => b.length - a.length)
+          .slice(0, maxSegments)
+          .sort((a, b) => a.index - b.index)
+          .map(({ segment }) => segment);
+  const rounded = kept.map((segment) =>
     segment.map(([lat, lng]) => [round(lat), round(lng)] as [number, number]),
   );
   const fits = (candidate: RouteSegments) =>
+    candidate.length <= maxSegments &&
     candidate.reduce((sum, segment) => sum + segment.length, 0) <= maxPoints;
   let result = rounded;
   for (let tolerance = 2; tolerance <= 10_000; tolerance *= 2) {
     result = rounded.map((segment) => simplifyLine(segment, tolerance));
     if (fits(result)) return result;
   }
-  // Only reachable with hundreds of segments: keep each segment's end points, as many as fit.
-  return result.slice(0, Math.floor(maxPoints / 2)).map((segment) => [segment[0], segment.at(-1)!]);
+  // Only reachable when segments alone exceed the point budget: keep each one's end points.
+  return result
+    .slice(0, Math.min(maxSegments, Math.floor(maxPoints / 2)))
+    .map((segment) => [segment[0], segment.at(-1)!]);
+}
+
+/** Length of a segment in metres. */
+function routeLength(segment: [number, number][]): number {
+  let meters = 0;
+  for (let index = 1; index < segment.length; index++) {
+    const [lat, lng] = segment[index - 1];
+    meters += distanceMeters({ lat, lng }, { lat: segment[index][0], lng: segment[index][1] });
+  }
+  return meters;
 }
 
 /** Prepare the trimmed, simplified route that is safe to upload. */

@@ -126,12 +126,13 @@ function coordinates(point: Element): [number, number] | null {
   return position;
 }
 
-/** Read GPX tracks. Pass `track` to also collect the first track's points. */
+/** Read GPX tracks. Pass `track` to also collect the points of the first accepted track. */
 export function parseGpx(text: string, track?: TrackPoint[]): ParseResult {
   const document = xml(text);
   const garmin = /garmin/i.test(document.documentElement.getAttribute('creator') ?? '');
   const result: ParseResult = { activities: [], skipped: 0, ignoredFiles: 0 };
-  for (const [index, trk] of byTag(document, 'trk').entries()) {
+  for (const trk of byTag(document, 'trk')) {
+    const points: TrackPoint[] = [];
     let distance = 0;
     let first = NaN;
     let last = NaN;
@@ -145,8 +146,8 @@ export function parseGpx(text: string, track?: TrackPoint[]): ParseResult {
         if (position) {
           if (previous) distance += haversineKm(previous, position);
           previous = position;
-          if (track && index === 0)
-            track.push({
+          if (track)
+            points.push({
               lat: position[0],
               lng: position[1],
               time: Number.isFinite(time) ? time : null,
@@ -168,13 +169,15 @@ export function parseGpx(text: string, track?: TrackPoint[]): ParseResult {
           source: garmin ? 'garmin' : 'file',
         })
       : null;
-    if (activity) result.activities.push(activity);
-    else result.skipped++;
+    if (activity) {
+      if (track && !result.activities.length) track.push(...points);
+      result.activities.push(activity);
+    } else result.skipped++;
   }
   return result;
 }
 
-/** Read TCX activities. Pass `track` to also collect the first activity's points. */
+/** Read TCX activities. Pass `track` to also collect the points of the first accepted activity. */
 export function parseTcx(text: string, track?: TrackPoint[]): ParseResult {
   const document = xml(text);
   // TCX is Garmin's format, so the namespace says nothing; the creator names the device.
@@ -182,8 +185,9 @@ export function parseTcx(text: string, track?: TrackPoint[]): ParseResult {
     childText(document, 'Creator'),
   );
   const result: ParseResult = { activities: [], skipped: 0, ignoredFiles: 0 };
-  for (const [index, element] of byTag(document, 'Activity').entries()) {
-    if (track && index === 0)
+  for (const element of byTag(document, 'Activity')) {
+    const points: TrackPoint[] = [];
+    if (track)
       for (const point of byTag(element, 'Trackpoint')) {
         const lat = Number(childText(point, 'LatitudeDegrees') || NaN);
         const lng = Number(childText(point, 'LongitudeDegrees') || NaN);
@@ -195,7 +199,7 @@ export function parseTcx(text: string, track?: TrackPoint[]): ParseResult {
         )
           continue;
         const time = Date.parse(childText(point, 'Time'));
-        track.push({ lat, lng, time: Number.isFinite(time) ? time : null });
+        points.push({ lat, lng, time: Number.isFinite(time) ? time : null });
       }
     const laps = byTag(element, 'Lap');
     const seconds = laps.reduce((sum, lap) => sum + Number(childText(lap, 'TotalTimeSeconds')), 0);
@@ -216,8 +220,10 @@ export function parseTcx(text: string, track?: TrackPoint[]): ParseResult {
       distance: meters / 1000,
       source: garmin ? 'garmin' : 'file',
     });
-    if (activity) result.activities.push(activity);
-    else result.skipped++;
+    if (activity) {
+      if (track && !result.activities.length) track.push(...points);
+      result.activities.push(activity);
+    } else result.skipped++;
   }
   return result;
 }

@@ -1340,6 +1340,18 @@ describe('App', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.route-preview svg path')).not.toBeNull();
     app.editor.routeImport.visibility.set('public');
+    // Route controls are locked while the activity and its route are being saved.
+    app.saving.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const element = fixture.nativeElement as HTMLElement;
+    for (const selector of ['#route-trim', '#route-visibility', '.route-preview button'])
+      expect((element.querySelector(selector) as HTMLInputElement).disabled).toBe(true);
+    app.saving.set(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    for (const selector of ['#route-trim', '#route-visibility', '.route-preview button'])
+      expect((element.querySelector(selector) as HTMLInputElement).disabled).toBe(false);
     await app.editor.save();
     const upload = fetchMock.mock.calls.find(([path]) => path === '/api/activities/new/route');
     const sent = JSON.parse(upload?.[1]?.body as string) as {

@@ -38,6 +38,10 @@ export class RouteImport {
       this.track.set(track);
       this.fileName.set(file.name);
       return activity;
+    } catch (error) {
+      // A newer file was chosen meanwhile: its import is unaffected by this one failing.
+      if (requestId !== this.requestId) return null;
+      throw error;
     } finally {
       if (requestId === this.requestId) this.busy.set(false);
     }

@@ -99,7 +99,14 @@
             · start and end hidden
           }
         </span>
-        <button type="button" class="text-button danger" (click)="removeRoute()">Remove</button>
+        <button
+          type="button"
+          class="text-button danger"
+          (click)="removeRoute()"
+          [disabled]="saving()"
+        >
+          Remove
+        </button>
       </figcaption>
     </figure>
     @if (route.hasTrack()) {
@@ -109,6 +116,7 @@
           <select
             id="route-trim"
             name="routeTrim"
+            [disabled]="saving()"
             [ngModel]="route.trimMeters()"
             (ngModelChange)="route.trimMeters.set($event)"
           >
@@ -124,6 +132,7 @@
           <select
             id="route-visibility"
             name="routeVisibility"
+            [disabled]="saving()"
             [ngModel]="route.visibility()"
             (ngModelChange)="route.visibility.set($event)"
           >

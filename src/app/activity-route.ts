@@ -59,16 +59,19 @@ export class ActivityRoute {
   readonly activityId = input<string>();
   readonly segments = input<RouteSegments | null>(null);
   readonly label = input('Route outline, with the start and end trimmed for privacy');
-  private readonly fetched = signal<RouteSegments | null>(null);
+  private readonly fetched = signal<{ id: string; segments: RouteSegments } | null>(null);
 
   readonly drawing = computed(() => {
-    const segments = this.segments() ?? this.fetched();
+    const fetched = this.fetched();
+    const segments =
+      this.segments() ?? (fetched && fetched.id === this.activityId() ? fetched.segments : null);
     return segments ? drawRoute(segments) : null;
   });
 
   constructor() {
     effect((onCleanup) => {
       const id = this.activityId();
+      this.fetched.set(null);
       if (!id || this.segments()) return;
       const controller = new AbortController();
       onCleanup(() => controller.abort());
@@ -78,7 +81,7 @@ export class ActivityRoute {
       })
         .then((response) => (response.ok ? response.json() : null))
         .then((result: { segments?: RouteSegments } | null) =>
-          this.fetched.set(result?.segments ?? null),
+          this.fetched.set(result?.segments ? { id, segments: result.segments } : null),
         )
         .catch(() => undefined);
     });

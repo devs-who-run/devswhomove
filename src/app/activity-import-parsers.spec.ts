@@ -392,4 +392,30 @@ describe('activity import parsers', () => {
       'title',
     ]);
   });
+
+  it('collects the track of the workout that is kept, not of a rejected one before it', async () => {
+    // The first GPX track has no timestamps and the first TCX activity is too short, so both
+    // are rejected and the second workout is the one returned.
+    const gpx = `<gpx>
+      <trk><trkseg><trkpt lat="10" lon="10"/><trkpt lat="10.1" lon="10"/></trkseg></trk>
+      <trk><type>running</type><trkseg>
+        <trkpt lat="51.5" lon="-0.12"><time>2026-02-01T07:00:00Z</time></trkpt>
+        <trkpt lat="51.6" lon="-0.12"><time>2026-02-01T07:30:00Z</time></trkpt>
+      </trkseg></trk></gpx>`;
+    const fromGpx = await readWorkoutWithTrack(new File([gpx], 'two.gpx'));
+    expect(fromGpx.activity).toMatchObject({ sport: 'Running', duration: 30 });
+    expect(fromGpx.track.map(({ lat }) => lat)).toEqual([51.5, 51.6]);
+
+    const trackpoint = (lat: number) =>
+      `<Trackpoint><Position><LatitudeDegrees>${lat}</LatitudeDegrees><LongitudeDegrees>0</LongitudeDegrees></Position></Trackpoint>`;
+    const tcx = `<TrainingCenterDatabase><Activities>
+      <Activity Sport="Running"><Id>2026-02-03T17:00:00Z</Id><Lap><TotalTimeSeconds>10</TotalTimeSeconds>
+        <Track>${trackpoint(10)}${trackpoint(10.1)}</Track></Lap></Activity>
+      <Activity Sport="Biking"><Id>2026-02-04T17:00:00Z</Id><Lap><TotalTimeSeconds>1200</TotalTimeSeconds>
+        <Track>${trackpoint(52)}${trackpoint(52.1)}</Track></Lap></Activity>
+    </Activities></TrainingCenterDatabase>`;
+    const fromTcx = await readWorkoutWithTrack(new File([tcx], 'two.tcx'));
+    expect(fromTcx.activity).toMatchObject({ sport: 'Cycling', duration: 20 });
+    expect(fromTcx.track.map(({ lat }) => lat)).toEqual([52, 52.1]);
+  });
 });

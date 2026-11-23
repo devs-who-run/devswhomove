@@ -76,4 +76,17 @@ describe('route geometry', () => {
     expect(drawing.end![1]).toBeLessThan(drawing.start![1]);
     expect(drawRoute([]).paths).toEqual([]);
   });
+
+  it('keeps at most 50 segments without joining them, dropping the shortest', () => {
+    // 60 separate segments; segment i is (i + 1) points long, so the first ten are the shortest.
+    const segments: [number, number][][] = Array.from({ length: 60 }, (_, i) =>
+      Array.from({ length: i + 2 }, (_, j) => [52 + i * 0.01 + (j % 2) * 0.0001, j * 0.0001]),
+    );
+    const simplified = simplifyRoute(segments, 5000);
+    expect(simplified).toHaveLength(50);
+    expect(simplified.map((segment) => segment[0][0])).toEqual(
+      segments.slice(10).map((segment) => segment[0][0]),
+    );
+    expect(simplifyRoute(segments, 60).length).toBeLessThanOrEqual(50);
+  });
 });
