@@ -2,7 +2,8 @@ import { Component, input } from '@angular/core';
 import { SPORT_ICON_PATHS } from './sport-icons';
 
 const PATHS: Record<string, string> = {
-  move: 'm3 17 6-10 4 6 3-5 5 9M6 4h3m8 16h3',
+  // Brand mark: the track and chevron from public/brand/icon.svg, scaled from 512px to 24px.
+  brand: 'M9.94 5.81h4.12a6.19 6.19 0 0 1 0 12.38H9.94a6.19 6.19 0 0 1 0-12.38ZM11.06 9.84 13.69 12l-2.63 2.16',
   grid: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
   calendar: 'M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2ZM7 14h3m4 0h3m-10 4h3',
   user: 'M20 21v-2a7 7 0 0 0-14 0v2M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
@@ -40,7 +41,7 @@ const PATHS: Record<string, string> = {
     ':host{display:inline-flex;width:1.25em;height:1.25em;flex-shrink:0}svg{width:100%;height:100%;overflow:visible}',
 })
 export class Icon {
-  readonly name = input('move');
+  readonly name = input('brand');
   path(): string {
     return PATHS[this.name()] || PATHS['Other'];
   }

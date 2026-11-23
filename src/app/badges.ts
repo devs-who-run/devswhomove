@@ -41,7 +41,7 @@ const DEFINITIONS: BadgeDefinition[] = [
     id: 'first-move',
     name: 'First move',
     description: 'Log your first activity.',
-    icon: 'move',
+    icon: 'brand',
     target: 1,
     value: (s) => s.sessions,
   },
