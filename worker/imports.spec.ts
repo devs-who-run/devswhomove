@@ -16,6 +16,9 @@ describe('Activity imports and Strava sync', () => {
   let refreshFails: false | number = false;
   let tokenRevoked = false;
   let failActivityReads = false;
+  let failActivityLists = false;
+  /** Runs while Strava is answering a list request, to simulate a concurrent disconnect. */
+  let duringList: (() => Promise<void>) | undefined;
   let deauthorizations = 0;
 
   const request = (path: string, method = 'GET', data?: unknown, session?: string) =>
@@ -100,6 +103,13 @@ describe('Activity imports and Strava sync', () => {
           if (url.pathname.startsWith('/api/v3/') && tokenRevoked)
             return WorkerResponse.json({ message: 'Authorization Error' }, { status: 401 });
           if (url.pathname === '/api/v3/athlete') return WorkerResponse.json({ id: 777 });
+          if (url.pathname === '/api/v3/athlete/activities' && failActivityLists)
+            return new WorkerResponse('Unavailable', { status: 503 });
+          if (url.pathname === '/api/v3/athlete/activities' && duringList) {
+            const hook = duringList;
+            duringList = undefined;
+            await hook();
+          }
           if (url.pathname === '/api/v3/athlete/activities') {
             const before = Number(url.searchParams.get('before') ?? Infinity);
             const after = Number(url.searchParams.get('after') ?? -Infinity);
@@ -154,10 +164,12 @@ describe('Activity imports and Strava sync', () => {
     tokenExpiresAt = 4_102_444_800;
     refreshFails = false;
     tokenRevoked = false;
+    failActivityLists = false;
+    duringList = undefined;
     failActivityReads = false;
     deauthorizations = 0;
     await db.exec(
-      'DELETE FROM activities; DELETE FROM strava_connections; DELETE FROM rate_limits; DELETE FROM strava_webhook_events;',
+      'DELETE FROM activities; DELETE FROM strava_connections; DELETE FROM rate_limits; DELETE FROM strava_webhook_events; DELETE FROM strava_deleted_activities;',
     );
   });
 
@@ -638,6 +650,98 @@ describe('Activity imports and Strava sync', () => {
         .prepare(`SELECT COUNT(*) AS count FROM activities WHERE import_source = 'strava'`)
         .first('count'),
     ).toBe(0);
+  });
+
+  it('drops pages fetched for a connection that was removed mid-sync', async () => {
+    await connectAlice();
+    stravaActivities = [
+      { id: 6001, sport_type: 'Run', start_date: '2026-01-20T07:00:00Z', moving_time: 1800 },
+    ];
+    // The athlete disconnects while Strava is still answering the sync's list request.
+    duringList = async () => {
+      await db.exec('DELETE FROM strava_connections');
+    };
+    await request('/api/strava/sync', 'POST', undefined, sessions.alice);
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM activities').first('count')).toBe(0);
+  });
+
+  it('does not re-import a Strava activity deleted here until Strava is reconnected', async () => {
+    await connectAlice();
+    stravaActivities = [
+      { id: 7001, sport_type: 'Run', start_date: '2026-01-21T07:00:00Z', moving_time: 1800 },
+    ];
+    await request('/api/strava/sync', 'POST', undefined, sessions.alice);
+    const id = await db.prepare('SELECT id FROM activities').first<string>('id');
+    expect(
+      (await request(`/api/activities/${id}`, 'DELETE', undefined, sessions.alice)).status,
+    ).toBe(200);
+
+    await db.exec(`UPDATE strava_connections SET refreshed_at = '2000-01-01T00:00:00.000Z'`);
+    await (await runtime.getWorker()).scheduled();
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM activities').first('count')).toBe(0);
+
+    await request('/api/strava', 'DELETE', undefined, sessions.alice);
+    await connectAlice();
+    await request('/api/strava/sync', 'POST', undefined, sessions.alice);
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM activities').first('count')).toBe(1);
+  });
+
+  it('keeps the stored copy when a Strava edit would overlap another activity', async () => {
+    await connectAlice();
+    stravaActivities = [
+      {
+        id: 8001,
+        name: 'Ride',
+        sport_type: 'Ride',
+        start_date: '2026-01-22T07:00:00Z',
+        moving_time: 1800,
+      },
+    ];
+    await request('/api/strava/sync', 'POST', undefined, sessions.alice);
+    await request(
+      '/api/imports',
+      'POST',
+      { source: 'garmin', activities: [run({ occurredAt: '2026-01-23T07:00:00.000Z' })] },
+      sessions.alice,
+    );
+    // On Strava the ride is changed into a run at the same time as the Garmin run.
+    stravaActivities = [
+      {
+        id: 8001,
+        name: 'Run',
+        sport_type: 'Run',
+        start_date: '2026-01-23T07:00:30Z',
+        moving_time: 1800,
+      },
+    ];
+    await db.exec(
+      `UPDATE activities SET fetched_at = '2000-01-01T00:00:00.000Z' WHERE import_source = 'strava'`,
+    );
+    await db.exec(`UPDATE strava_connections SET refreshed_at = '2000-01-01T00:00:00.000Z'`);
+    await (await runtime.getWorker()).scheduled();
+    const strava = await db
+      .prepare(`SELECT title, sport, fetched_at FROM activities WHERE import_source = 'strava'`)
+      .first<{ title: string; sport: string; fetched_at: string }>();
+    expect(strava).toMatchObject({ title: 'Ride', sport: 'Cycling' });
+    expect(Date.parse(strava!.fetched_at)).toBeGreaterThan(Date.now() - 60_000);
+  });
+
+  it('backs off a failing re-fetch so healthy connections are not crowded out', async () => {
+    await connectAlice();
+    await db.exec(`UPDATE strava_connections SET refreshed_at = '2000-01-01T00:00:00.000Z'`);
+    failActivityLists = true;
+    await (await runtime.getWorker()).scheduled();
+    const row = await db
+      .prepare('SELECT refresh_retry_at, refreshed_at FROM strava_connections')
+      .first<{ refresh_retry_at: string; refreshed_at: string }>();
+    expect(Date.parse(row!.refresh_retry_at)).toBeGreaterThan(Date.now() + 30 * 60_000);
+    expect(row!.refreshed_at).toBe('2000-01-01T00:00:00.000Z');
+
+    // While backing off it is not retried, even though it is overdue.
+    failActivityLists = false;
+    stravaCalls.length = 0;
+    await (await runtime.getWorker()).scheduled();
+    expect(stravaCalls.some((call) => call.includes('/athlete/activities'))).toBe(false);
   });
 
   it('includes the Strava connection in the data export without tokens', async () => {

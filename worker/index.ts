@@ -795,12 +795,18 @@ async function deleteGithubActivity(
       .first();
     if (!owned) return false;
     // The photo key is queued in the same transaction as the delete, so it survives R2 failures.
-    const [, deleted] = await env.DB.batch([
+    const [, , deleted] = await env.DB.batch([
       env.DB.prepare(
         `INSERT OR IGNORE INTO photo_deletions (key, queued_at, actor_id)
       SELECT photo_key, ?, ? FROM activities
       WHERE id = ? AND user_id = ? AND photo_key IS NOT NULL`,
       ).bind(new Date().toISOString(), `github:${userId}`, activityId, userId),
+      // Remember deleted Strava imports so the periodic re-fetch does not bring them back.
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO strava_deleted_activities (user_id, external_id, deleted_at)
+        SELECT user_id, external_id, ? FROM activities
+        WHERE id = ? AND user_id = ? AND import_source = 'strava' AND external_id IS NOT NULL`,
+      ).bind(new Date().toISOString(), activityId, userId),
       env.DB.prepare('DELETE FROM activities WHERE id = ? AND user_id = ?').bind(
         activityId,
         userId,
@@ -2357,40 +2363,54 @@ async function runStravaWebhookEvent(
   }
 }
 
-/** Connections whose history is re-fetched per cron run; each reads at most two pages. */
+/**
+ * Per-cron-run bounds. D1 allows 1,000 queries per invocation on Workers Paid and a batch counts
+ * as one query. A re-fetch costs about a dozen queries per connection (reservation, token, two
+ * pages of one lookup plus one batch each, cursor write), so 10 connections use ~120; the purge
+ * uses two per chunk of 200, so 25 chunks use 50 and remove up to 5,000 rows per run. Together
+ * with the webhook retries and the other jobs this stays well below the limit.
+ */
 const STRAVA_REFRESHES_PER_RUN = 10;
+const STRAVA_PURGE_CHUNKS_PER_RUN = 25;
 
 /**
  * Keep Strava data within its retention window: advance due re-fetch passes, then delete
  * imports that Strava has not re-confirmed for seven days. Runs from the Worker's cron trigger.
  */
 async function runStravaLifecycle(env: Env): Promise<void> {
+  let due: string[] = [];
   if (stravaConfigured(env)) {
-    for (const userId of await stravaRefreshesDue(env.DB, STRAVA_REFRESHES_PER_RUN)) {
+    try {
+      due = await stravaRefreshesDue(env.DB, STRAVA_REFRESHES_PER_RUN);
+    } catch (error) {
+      // A failed lookup must not skip the purge below.
+      console.error('Could not list due Strava re-fetches', error);
+    }
+  }
+  for (const userId of due) {
+    try {
+      const actor = {
+        user: { id: userId } as Profile,
+        agent: false,
+        scopes: [],
+        provider: 'github',
+      } as Identity;
+      const reservation = await beginAccountMutation(env, env.DB, actor);
       try {
-        const actor = {
-          user: { id: userId } as Profile,
-          agent: false,
-          scopes: [],
-          provider: 'github',
-        } as Identity;
-        const reservation = await beginAccountMutation(env, env.DB, actor);
-        try {
-          await refreshStravaHistory(
-            env,
-            guardMutationDatabase(env.DB, reservation.assertNotLost),
-            userId,
-          );
-        } finally {
-          await reservation.release();
-        }
-      } catch (error) {
-        console.error('Strava re-fetch failed', error instanceof Error ? error.message : error);
+        await refreshStravaHistory(
+          env,
+          guardMutationDatabase(env.DB, reservation.assertNotLost),
+          userId,
+        );
+      } finally {
+        await reservation.release();
       }
+    } catch (error) {
+      console.error('Strava re-fetch failed', error instanceof Error ? error.message : error);
     }
   }
   // Purge even when Strava is not configured, so data never outlives the retention window.
-  const purged = await purgeExpiredStravaImports(env.DB);
+  const purged = await purgeExpiredStravaImports(env.DB, STRAVA_PURGE_CHUNKS_PER_RUN);
   if (purged) await purgeDeletedPhotos(env, true);
 }
 

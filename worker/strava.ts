@@ -1,6 +1,5 @@
 import type { Sport } from '../src/app/models';
 import { importActivities, importSummary, type ImportResult } from './imports';
-import { deleteActivitySocial } from './social';
 import { HttpError } from './validation';
 
 export interface StravaEnv {
@@ -44,6 +43,7 @@ interface ConnectionRow {
   last_synced_at: string | null;
   refresh_cursor: number | null;
   refreshed_at: string | null;
+  refresh_retry_at: string | null;
 }
 
 export interface StravaStatus {
@@ -63,6 +63,8 @@ export const STRAVA_SCOPE = 'activity:read_all';
 export const STRAVA_RETENTION_MS = 7 * 86400_000;
 /** Start a new re-fetch pass this long after the last one finished, leaving slack before purge. */
 const REFRESH_INTERVAL_MS = 4 * 86400_000;
+/** A failed re-fetch is retried after this delay, so it cannot crowd out healthy connections. */
+const REFRESH_RETRY_MS = 60 * 60_000;
 
 const REVOKED_MESSAGE = 'Strava access was revoked. Connect Strava again to keep importing.';
 
@@ -219,8 +221,10 @@ export async function connectStrava(
   if (owner && owner.user_id !== userId)
     throw new HttpError(409, 'This Strava account is already connected to another profile.');
   const previous = await connection(db, userId);
-  if (previous && previous.athlete_id !== result.athleteId)
+  if (previous && previous.athlete_id !== result.athleteId) {
     await deleteStravaImports(db, { userId });
+    await db.prepare('DELETE FROM strava_deleted_activities WHERE user_id = ?').bind(userId).run();
+  }
   const now = Math.floor(Date.now() / 1000);
   await db
     .prepare(
@@ -257,68 +261,99 @@ export async function connectStrava(
 
 /**
  * Delete Strava-imported activities with their kudos and comments, queueing photos for removal.
- * Limited to one user, or (for the retention purge) to rows Strava has not re-confirmed since
- * `staleBefore`. Returns the number of activities removed.
+ *
+ * - `userId`: one user's imports. With `unconnected`, only while that user has no Strava
+ *   connection, so a reconnect that happens mid-cleanup keeps the new connection's data.
+ * - `staleBefore`: the retention purge, for rows Strava has not re-confirmed since then.
+ *
+ * Every statement re-checks its condition inside the batch's transaction, so a row re-confirmed
+ * (or reconnected) after it was selected keeps its activity, social data and photo. At most
+ * `maxChunks` chunks of 200 are processed. Returns the number of activities removed.
  */
 export async function deleteStravaImports(
   db: D1Database,
-  filter: { userId: string } | { staleBefore: string },
+  filter: { userId: string; unconnected?: boolean } | { staleBefore: string },
+  maxChunks = Infinity,
 ): Promise<number> {
+  const condition =
+    'userId' in filter
+      ? {
+          sql: `user_id = ? AND import_source = 'strava'${
+            filter.unconnected
+              ? ' AND NOT EXISTS (SELECT 1 FROM strava_connections WHERE user_id = ?)'
+              : ''
+          }`,
+          binds: filter.unconnected ? [filter.userId, filter.userId] : [filter.userId],
+        }
+      : {
+          sql: `import_source = 'strava' AND (fetched_at IS NULL OR fetched_at < ?)`,
+          binds: [filter.staleBefore],
+        };
   let removed = 0;
-  for (;;) {
-    const rows = await (
-      'userId' in filter
-        ? db
-            .prepare(
-              `SELECT id, user_id FROM activities WHERE user_id = ? AND import_source = 'strava'
-            LIMIT 200`,
-            )
-            .bind(filter.userId)
-        : db
-            .prepare(
-              `SELECT id, user_id FROM activities WHERE import_source = 'strava'
-            AND (fetched_at IS NULL OR fetched_at < ?) LIMIT 200`,
-            )
-            .bind(filter.staleBefore)
-    ).all<{ id: string; user_id: string }>();
-    if (!rows.results.length) return removed;
+  for (let chunk = 0; chunk < maxChunks; chunk++) {
+    const rows = await db
+      .prepare(`SELECT id FROM activities WHERE ${condition.sql} LIMIT 200`)
+      .bind(...condition.binds)
+      .all<{ id: string }>();
+    if (!rows.results.length) break;
     const ids = JSON.stringify(rows.results.map((row) => row.id));
-    const now = new Date().toISOString();
-    await db.batch([
+    const still = `id IN (SELECT value FROM json_each(?)) AND ${condition.sql}`;
+    const [, , , deleted] = await db.batch([
       // Photos are queued in the same transaction as the delete so they survive R2 failures.
       db
         .prepare(
           `INSERT OR IGNORE INTO photo_deletions (key, queued_at, actor_id)
           SELECT photo_key, ?, 'github:' || user_id FROM activities
-          WHERE id IN (SELECT value FROM json_each(?)) AND photo_key IS NOT NULL`,
+          WHERE ${still} AND photo_key IS NOT NULL`,
         )
-        .bind(now, ids),
-      ...deleteActivitySocial(
-        db,
-        rows.results.map((row) => row.id),
-      ),
+        .bind(new Date().toISOString(), ids, ...condition.binds),
       db
         .prepare(
-          `DELETE FROM activities WHERE import_source = 'strava'
-          AND id IN (SELECT value FROM json_each(?))`,
+          `DELETE FROM activity_kudos WHERE activity_id IN (SELECT id FROM activities WHERE ${still})`,
         )
-        .bind(ids),
+        .bind(ids, ...condition.binds),
+      db
+        .prepare(
+          `DELETE FROM activity_comments WHERE activity_id IN (SELECT id FROM activities WHERE ${still})`,
+        )
+        .bind(ids, ...condition.binds),
+      db.prepare(`DELETE FROM activities WHERE ${still}`).bind(ids, ...condition.binds),
     ]);
-    removed += rows.results.length;
+    const changes = deleted?.meta.changes ?? 0;
+    removed += changes;
+    // Nothing deleted means the condition stopped matching (e.g. a reconnect): stop here.
+    if (!changes) break;
   }
+  return removed;
 }
 
-/** Remove a connection and every activity imported through it. */
+/**
+ * Remove a connection and every activity imported through it. The connection row goes first,
+ * fenced to this generation, so in-flight syncs and webhooks can no longer write; imports are
+ * then deleted only while the user has no connection, so a replacement keeps its own data.
+ */
 async function forgetStrava(db: D1Database, row: ConnectionRow): Promise<number> {
-  const removed = await deleteStravaImports(db, { userId: row.user_id });
   await db
     .prepare(
       'DELETE FROM strava_connections WHERE user_id = ? AND athlete_id = ? AND created_at = ?',
     )
     .bind(row.user_id, row.athlete_id, row.created_at)
     .run();
-  return removed;
+  await db
+    .prepare(
+      `DELETE FROM strava_deleted_activities WHERE user_id = ?
+      AND NOT EXISTS (SELECT 1 FROM strava_connections WHERE user_id = ?)`,
+    )
+    .bind(row.user_id, row.user_id)
+    .run();
+  return deleteStravaImports(db, { userId: row.user_id, unconnected: true });
 }
+
+/** The import options that fence writes to this connection generation. */
+const fence = (row: ConnectionRow, observedAt: string) => ({
+  observedAt,
+  connection: { athleteId: row.athlete_id, createdAt: row.created_at },
+});
 
 async function connection(db: D1Database, userId: string) {
   return db
@@ -418,8 +453,14 @@ async function syncConnection(
   let newest = row.newest_cursor;
   let oldest = row.oldest_cursor;
   let historyComplete = row.history_complete === 1;
-  const importPage = async (activities: StravaActivity[]) => {
-    const page = await importActivities(db, userId, 'strava', activities.map(stravaImportItem));
+  const importPage = async (activities: StravaActivity[], observedAt: string) => {
+    const page = await importActivities(
+      db,
+      userId,
+      'strava',
+      activities.map(stravaImportItem),
+      fence(row, observedAt),
+    );
     results.push(...page);
     for (const activity of activities) {
       const start = Math.floor(Date.parse(activity.start_date ?? '') / 1000);
@@ -438,7 +479,7 @@ async function syncConnection(
         token,
         `/athlete/activities?after=${after}&per_page=${PAGE_SIZE}&page=${page}`,
       )) ?? [];
-    await importPage(activities);
+    await importPage(activities, new Date().toISOString());
     if (activities.length < PAGE_SIZE) break;
   }
   while (!historyComplete && pages < pageBudget) {
@@ -450,7 +491,7 @@ async function syncConnection(
         `/athlete/activities?before=${oldest}&per_page=${PAGE_SIZE}&page=1`,
       )) ?? [];
     const before = oldest;
-    await importPage(activities);
+    await importPage(activities, new Date().toISOString());
     if (!activities.length) historyComplete = true;
     // Undated activities cannot move the cursor; step past them so the next page makes progress.
     else if (oldest >= before) oldest = before - 1;
@@ -524,11 +565,18 @@ export async function refreshStravaHistory(
           token,
           `/athlete/activities?before=${cursor}&per_page=${PAGE_SIZE}&page=1`,
         )) ?? [];
+      const observedAt = new Date().toISOString();
       if (!activities.length) {
         finished = true;
         break;
       }
-      await importActivities(db, userId, 'strava', activities.map(stravaImportItem));
+      await importActivities(
+        db,
+        userId,
+        'strava',
+        activities.map(stravaImportItem),
+        fence(row, observedAt),
+      );
       const before = cursor;
       for (const activity of activities) {
         const start = Math.floor(Date.parse(activity.start_date ?? '') / 1000);
@@ -538,7 +586,7 @@ export async function refreshStravaHistory(
     }
     await db
       .prepare(
-        `UPDATE strava_connections SET refresh_cursor = ?,
+        `UPDATE strava_connections SET refresh_cursor = ?, refresh_retry_at = NULL,
         refreshed_at = CASE WHEN ? THEN ? ELSE refreshed_at END
         WHERE user_id = ? AND athlete_id = ? AND created_at = ?`,
       )
@@ -553,6 +601,19 @@ export async function refreshStravaHistory(
       .run();
   } catch (error) {
     if (error instanceof StravaRevokedError) await forgetStrava(db, row);
+    else
+      await db
+        .prepare(
+          `UPDATE strava_connections SET refresh_retry_at = ?
+          WHERE user_id = ? AND athlete_id = ? AND created_at = ?`,
+        )
+        .bind(
+          new Date(Date.now() + REFRESH_RETRY_MS).toISOString(),
+          userId,
+          row.athlete_id,
+          row.created_at,
+        )
+        .run();
     throw error;
   }
 }
@@ -562,19 +623,25 @@ export async function stravaRefreshesDue(db: D1Database, limit: number): Promise
   const due = await db
     .prepare(
       `SELECT user_id FROM strava_connections
-      WHERE refresh_cursor IS NOT NULL OR refreshed_at IS NULL OR refreshed_at < ?
+      WHERE (refresh_retry_at IS NULL OR refresh_retry_at <= ?)
+      AND (refresh_cursor IS NOT NULL OR refreshed_at IS NULL OR refreshed_at < ?)
       ORDER BY COALESCE(refreshed_at, '') LIMIT ?`,
     )
-    .bind(new Date(Date.now() - REFRESH_INTERVAL_MS).toISOString(), limit)
+    .bind(new Date().toISOString(), new Date(Date.now() - REFRESH_INTERVAL_MS).toISOString(), limit)
     .all<{ user_id: string }>();
   return due.results.map((row) => row.user_id);
 }
 
-/** Delete Strava imports that Strava has not re-confirmed within the retention window. */
-export function purgeExpiredStravaImports(db: D1Database): Promise<number> {
-  return deleteStravaImports(db, {
-    staleBefore: new Date(Date.now() - STRAVA_RETENTION_MS).toISOString(),
-  });
+/**
+ * Delete Strava imports that Strava has not re-confirmed within the retention window, at most
+ * `maxChunks` chunks of 200 per call (two D1 queries per chunk).
+ */
+export function purgeExpiredStravaImports(db: D1Database, maxChunks: number): Promise<number> {
+  return deleteStravaImports(
+    db,
+    { staleBefore: new Date(Date.now() - STRAVA_RETENTION_MS).toISOString() },
+    maxChunks,
+  );
 }
 
 export interface StravaWebhookEvent {
@@ -644,5 +711,12 @@ export async function applyStravaWebhook(
     await accessToken(env, db, row),
     `/activities/${event.object_id}`,
   );
-  if (activity) await importActivities(db, userId, 'strava', [stravaImportItem(activity)]);
+  if (activity)
+    await importActivities(
+      db,
+      userId,
+      'strava',
+      [stravaImportItem(activity)],
+      fence(row, new Date().toISOString()),
+    );
 }
