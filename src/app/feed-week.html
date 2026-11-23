@@ -1,6 +1,6 @@
 <section class="week-banner" aria-labelledby="week-heading">
   <div class="week-copy">
-    <p class="week-eyebrow">{{ today | date: 'EEEE' }} · Week {{ weekNumber() }}</p>
+    <p class="week-eyebrow">{{ today() | date: 'EEEE' }} · Week {{ weekNumber() }}</p>
     @if (viewer() && !preview()) {
       <h1 id="week-heading">
         {{ greeting() }}
