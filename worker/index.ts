@@ -36,7 +36,7 @@ import {
   getPeriodRecap,
 } from './insights';
 import { deleteAccountRateLimits, enforceRateLimit } from './rate-limit';
-import { date, HttpError, number, sport, text, visibility } from './validation';
+import { date, HttpError, number, routeSegments, sport, text, visibility } from './validation';
 import {
   FILE_IMPORT_SOURCES,
   importActivities,
@@ -107,7 +107,8 @@ const ACTIVITY_SELECT = `SELECT a.id, a.user_id AS userId, u.username, u.name, u
   a.title, a.sport, a.occurred_at AS occurredAt, a.duration, a.distance, a.notes,
   a.visibility, a.source, a.import_source AS importSource,
   CASE WHEN a.photo_key IS NULL THEN NULL
-    ELSE '/api/activities/' || a.id || '/photo?v=' || substr(a.photo_key, -12) END AS photo
+    ELSE '/api/activities/' || a.id || '/photo?v=' || substr(a.photo_key, -12) END AS photo,
+  CASE WHEN a.route_json IS NULL THEN NULL ELSE a.route_visibility END AS routeVisibility
   FROM activities a JOIN users u ON u.id = a.user_id`;
 const ATPROTO_ACTIVITY_SELECT = `SELECT a.uri AS id, a.did AS userId, u.handle AS username,
   u.name, u.avatar,
@@ -118,7 +119,7 @@ const ATPROTO_ACTIVITY_SELECT = `SELECT a.uri AS id, a.did AS userId, u.handle A
   json_extract(a.record_json, '$.distance') AS distance,
   json_extract(a.record_json, '$.notes') AS notes,
   'public' AS visibility, json_extract(a.record_json, '$.source') AS source,
-  NULL AS importSource, NULL AS photo
+  NULL AS importSource, NULL AS photo, NULL AS routeVisibility
   FROM atproto_activities a JOIN atproto_accounts u ON u.did = a.did`;
 
 const json = (body: unknown, status = 200) =>
@@ -2815,6 +2816,44 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
       return json({
         photo: key ? `/api/activities/${activityId}/photo?v=${key.slice(-12)}` : null,
       });
+    }
+    const routeMatch = /^\/api\/activities\/([^/]+)\/route$/.exec(url.pathname);
+    if (routeMatch && method === 'GET') {
+      if (auth) requireIdentity(auth, 'activities:read');
+      const row = await env.DB.prepare(
+        `SELECT a.route_json AS route FROM activities a JOIN users u ON u.id = a.user_id
+      WHERE a.id = ? AND a.route_json IS NOT NULL
+      AND (a.user_id = ? OR (a.route_visibility = 'public' AND a.visibility = 'public'
+        AND u.visibility = 'public'))`,
+      )
+        .bind(decodedPathPart(routeMatch[1]), auth?.user.id || '')
+        .first<{ route: string }>();
+      if (!row) throw new HttpError(404, 'Route not found.');
+      return new Response(`{"segments":${row.route}}`, {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' },
+      });
+    }
+    if (routeMatch && (method === 'PUT' || method === 'DELETE')) {
+      const actor = requireIdentity(auth, 'activities:write');
+      if (actor.provider === 'atproto')
+        throw new HttpError(400, 'Activity routes are not supported for AT Protocol accounts.');
+      let route: string | null = null;
+      let routeVisibility = 'hidden';
+      if (method === 'PUT') {
+        const data = await body(request, 32_768);
+        route = JSON.stringify(routeSegments(data['segments']));
+        const requested = data['visibility'] ?? 'hidden';
+        if (requested !== 'hidden' && requested !== 'public')
+          throw new HttpError(400, 'Route visibility must be hidden or public.');
+        routeVisibility = requested;
+      }
+      const result = await env.DB.prepare(
+        'UPDATE activities SET route_json = ?, route_visibility = ? WHERE id = ? AND user_id = ?',
+      )
+        .bind(route, routeVisibility, decodedPathPart(routeMatch[1]), actor.user.id)
+        .run();
+      if (!result.meta.changes) throw new HttpError(404, 'Activity not found.');
+      return json({ routeVisibility: route ? routeVisibility : null });
     }
     if (url.pathname === '/api/activities/bulk-visibility' && method === 'PATCH') {
       const { user } = requireIdentity(auth, undefined, true);

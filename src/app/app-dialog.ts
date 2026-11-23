@@ -4,6 +4,7 @@ import { ActivityForm, type ActivityFormValue } from './activity-form';
 import { EventForm, type EventFormValue } from './event-form';
 import { Icon } from './icon';
 import { SPORTS, type Club, type Profile, type Sport, type Visibility } from './models';
+import type { RouteImport } from './route-import';
 
 export type Modal = 'activity' | 'event' | 'profile' | 'club' | 'atproto-login' | null;
 export interface ClubFormValue {
@@ -40,6 +41,7 @@ export class AppDialog {
   readonly profileHidden = input(false);
   readonly photoPreview = input('');
   readonly photoBusy = input(false);
+  readonly routeImport = input<RouteImport | null>(null);
   readonly publicDisclosure = model(false);
   readonly atprotoHandle = model('');
   readonly closeModal = output<void>();

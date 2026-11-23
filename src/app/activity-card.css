@@ -195,3 +195,20 @@
     height: 36px;
   }
 }
+
+.activity-route {
+  margin: 0 0 14px;
+}
+.activity-route-placeholder {
+  aspect-ratio: 2 / 1;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+.activity-route figcaption {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}

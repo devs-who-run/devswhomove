@@ -1,3 +1,4 @@
+import { ActivityRoute } from './activity-route';
 import { DatePipe } from '@angular/common';
 import { Component, input, output } from '@angular/core';
 import { ActivityActions } from './activity-actions';
@@ -6,7 +7,7 @@ import type { Activity, Profile } from './models';
 
 @Component({
   selector: 'app-profile-activities',
-  imports: [DatePipe, Icon],
+  imports: [ActivityRoute, DatePipe, Icon],
   templateUrl: './profile-activities.html',
   styleUrls: ['./page-layout.css', './profile-activities.css'],
 })

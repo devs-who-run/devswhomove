@@ -82,6 +82,13 @@
           loading="lazy"
         />
       }
+      @if (activity.routeVisibility) {
+        @defer (on viewport) {
+          <app-activity-route class="profile-activity-route" [activityId]="activity.id" />
+        } @placeholder {
+          <div class="profile-activity-route"></div>
+        }
+      }
     </div>
     <div class="profile-activity-metric">
       @if (activity.distance !== null) {

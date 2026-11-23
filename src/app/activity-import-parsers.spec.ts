@@ -6,7 +6,9 @@ import {
   parseGpx,
   parseImportFile,
   parseTcx,
+  readWorkoutWithTrack,
 } from './activity-import-parsers';
+import type { TrackPoint } from './route-geometry';
 
 const FIT_EPOCH = 631_065_600;
 
@@ -24,7 +26,10 @@ if (!('stream' in Blob.prototype))
   });
 
 /** Build a minimal FIT file with a Garmin file_id message and one session message. */
-function fitFile(session: { start: string; sport: number; timerMs: number; distanceCm: number }) {
+function fitFile(
+  session: { start: string; sport: number; timerMs: number; distanceCm: number },
+  records: { lat: number; lng: number; compressed?: boolean }[] = [],
+) {
   const bytes: number[] = [];
   const u16 = (value: number) => bytes.push(value & 0xff, (value >> 8) & 0xff);
   const u32 = (value: number) =>
@@ -44,6 +49,19 @@ function fitFile(session: { start: string; sport: number; timerMs: number; dista
   bytes.push(session.sport);
   u32(session.timerMs);
   u32(session.distanceCm);
+  if (records.length) {
+    // record definition (local 2, global 20): position_lat and position_long as sint32.
+    bytes.push(0x42, 0, 0);
+    u16(20);
+    bytes.push(2, 0, 4, 0x85, 1, 4, 0x85);
+    const semicircles = (degrees: number) => Math.round((degrees / 180) * 2 ** 31);
+    for (const record of records) {
+      // A compressed timestamp header (bit 7) addresses local type 2 in bits 5-6.
+      bytes.push(record.compressed ? 0x80 | (2 << 5) : 0x02);
+      u32(semicircles(record.lat));
+      u32(semicircles(record.lng));
+    }
+  }
   const header = [
     14,
     0x20,
@@ -287,5 +305,91 @@ describe('activity import parsers', () => {
 
   it('rejects unsupported files', async () => {
     await expect(parseImportFile(new File(['x'], 'notes.txt'))).rejects.toThrow('not a FIT');
+  });
+
+  it('collects the first GPX track only when asked', () => {
+    const gpx = `<gpx xmlns="http://www.topografix.com/GPX/1/1">
+      <trk><trkseg>
+        <trkpt lat="51.5" lon="-0.12"><time>2026-02-01T07:00:00Z</time></trkpt>
+        <trkpt lat="51.6" lon="-0.13"></trkpt>
+        <trkpt lon="5"><time>2026-02-01T07:06:00Z</time></trkpt>
+      </trkseg></trk>
+      <trk><trkseg><trkpt lat="10" lon="10"><time>2026-02-02T07:00:00Z</time></trkpt>
+        <trkpt lat="10.1" lon="10"><time>2026-02-02T07:10:00Z</time></trkpt></trkseg></trk></gpx>`;
+    const track: TrackPoint[] = [];
+    expect(parseGpx(gpx, track).activities).toHaveLength(2);
+    expect(track).toEqual([
+      { lat: 51.5, lng: -0.12, time: Date.parse('2026-02-01T07:00:00Z') },
+      { lat: 51.6, lng: -0.13, time: null },
+    ]);
+  });
+
+  it('collects TCX trackpoints with positions', () => {
+    const track: TrackPoint[] = [];
+    parseTcx(
+      `<TrainingCenterDatabase><Activities><Activity Sport="Running">
+        <Id>2026-02-03T17:00:00Z</Id>
+        <Lap StartTime="2026-02-03T17:00:00Z"><TotalTimeSeconds>600</TotalTimeSeconds>
+          <DistanceMeters>2000</DistanceMeters><Track>
+          <Trackpoint><Time>2026-02-03T17:00:00Z</Time><Position>
+            <LatitudeDegrees>-33.9</LatitudeDegrees><LongitudeDegrees>151.2</LongitudeDegrees>
+          </Position></Trackpoint>
+          <Trackpoint><Time>2026-02-03T17:00:05Z</Time><HeartRateBpm><Value>120</Value></HeartRateBpm></Trackpoint>
+        </Track></Lap></Activity></Activities></TrainingCenterDatabase>`,
+      track,
+    );
+    expect(track).toEqual([{ lat: -33.9, lng: 151.2, time: Date.parse('2026-02-03T17:00:00Z') }]);
+  });
+
+  it('decodes signed FIT record positions, including compressed-header records', () => {
+    const track: TrackPoint[] = [];
+    const result = parseFit(
+      fitFile({ start: '2026-02-05T06:30:00Z', sport: 1, timerMs: 600_000, distanceCm: 200_000 }, [
+        { lat: -33.9, lng: 151.2 },
+        { lat: 40.7, lng: -74, compressed: true },
+      ]),
+      track,
+    );
+    expect(result.activities).toMatchObject([{ sport: 'Running', duration: 10, distance: 2 }]);
+    expect(track.map(({ lat, lng }) => [lat, lng])).toEqual([
+      [expect.closeTo(-33.9, 6), expect.closeTo(151.2, 6)],
+      [expect.closeTo(40.7, 6), expect.closeTo(-74, 6)],
+    ]);
+  });
+
+  it('reads a single workout with its track for the activity form', async () => {
+    const gpx = (tracks: number) =>
+      `<gpx>${'<trk><type>walking</type><trkseg><trkpt lat="1" lon="1"><time>2026-02-01T07:00:00Z</time></trkpt><trkpt lat="1.01" lon="1"><time>2026-02-01T07:20:00Z</time></trkpt></trkseg></trk>'.repeat(tracks)}</gpx>`;
+    const { activity, track } = await readWorkoutWithTrack(new File([gpx(1)], 'walk.gpx'));
+    expect(activity).toMatchObject({ sport: 'Walking', duration: 20 });
+    expect(track).toHaveLength(2);
+    await expect(readWorkoutWithTrack(new File([gpx(2)], 'two.gpx'))).rejects.toThrow(
+      'several workouts',
+    );
+    await expect(readWorkoutWithTrack(new File(['<gpx/>'], 'empty.gpx'))).rejects.toThrow(
+      'No workout',
+    );
+    await expect(readWorkoutWithTrack(new File(['x'], 'export.zip'))).rejects.toThrow(
+      'not a FIT, GPX or TCX',
+    );
+  });
+
+  it('does not send tracks with bulk imports', async () => {
+    const result = await parseImportFile(
+      new File(
+        [
+          '<gpx><trk><trkseg><trkpt lat="1" lon="1"><time>2026-02-01T07:00:00Z</time></trkpt><trkpt lat="1.01" lon="1"><time>2026-02-01T07:20:00Z</time></trkpt></trkseg></trk></gpx>',
+        ],
+        'walk.gpx',
+      ),
+    );
+    expect(Object.keys(result.activities[0]).sort()).toEqual([
+      'distance',
+      'duration',
+      'occurredAt',
+      'source',
+      'sport',
+      'title',
+    ]);
   });
 });

@@ -66,6 +66,7 @@
         [profileHidden]="profileHidden()"
         [photoPreview]="photoPreview()"
         [photoBusy]="photoBusy()"
+        [routeImport]="routeImport()"
         [saving]="saving()"
         [(publicDisclosure)]="publicDisclosure"
         (choosePhoto)="choosePhoto.emit($event)"
@@ -184,7 +185,11 @@
       >
         Not now
       </button>
-      <button class="button primary" type="submit" [disabled]="saving() || photoBusy()">
+      <button
+        class="button primary"
+        type="submit"
+        [disabled]="saving() || photoBusy() || routeImport()?.busy()"
+      >
         {{
           modal() === 'atproto-login'
             ? 'Continue to Bluesky'

@@ -74,6 +74,93 @@
   maxlength="2000"
   placeholder="The little things are worth remembering."
 ></textarea>
+@if (viewer()?.provider !== 'atproto' && routeImport(); as route) {
+  <label for="activity-workout"
+    >Import from a watch file <span class="optional">(optional)</span></label
+  >
+  @if (route.fileName()) {
+    <figure class="route-preview">
+      @if (!route.hasTrack()) {
+        <p class="route-empty">This workout has no GPS track, so only the stats were filled in.</p>
+      } @else if (route.segments()?.length) {
+        <app-activity-route
+          [segments]="route.segments()"
+          label="Preview of the route that will be saved"
+        />
+      } @else {
+        <p class="route-empty">
+          The whole route is inside the privacy zone, so only the stats will be saved.
+        </p>
+      }
+      <figcaption>
+        <span
+          ><app-icon name="lock" />{{ route.fileName() }}
+          @if (route.hasTrack()) {
+            · start and end hidden
+          }
+        </span>
+        <button type="button" class="text-button danger" (click)="removeRoute()">Remove</button>
+      </figcaption>
+    </figure>
+    @if (route.hasTrack()) {
+      <div class="form-row">
+        <div>
+          <label for="route-trim">Hide around start and end</label>
+          <select
+            id="route-trim"
+            name="routeTrim"
+            [ngModel]="route.trimMeters()"
+            (ngModelChange)="route.trimMeters.set($event)"
+          >
+            @for (meters of trimOptions; track meters) {
+              <option [ngValue]="meters">
+                {{ meters < 1000 ? meters + ' m' : meters / 1000 + ' km' }}
+              </option>
+            }
+          </select>
+        </div>
+        <div>
+          <label for="route-visibility">Route map</label>
+          <select
+            id="route-visibility"
+            name="routeVisibility"
+            [ngModel]="route.visibility()"
+            (ngModelChange)="route.visibility.set($event)"
+          >
+            <option value="hidden">Only me · stats are still shared</option>
+            <option value="public">Show with the activity</option>
+          </select>
+        </div>
+      </div>
+    }
+  }
+  <div class="photo-picker" [class.has-photo]="route.fileName()">
+    <input
+      id="activity-workout"
+      name="workout"
+      type="file"
+      accept=".fit,.gpx,.tcx,.gz"
+      (change)="importWorkout($event)"
+      [disabled]="route.busy() || saving()"
+    />
+    <span class="photo-picker-label" aria-hidden="true">
+      <app-icon name="plus" />
+      <span>
+        <strong>{{
+          route.busy()
+            ? 'Reading workout…'
+            : route.fileName()
+              ? 'Choose a different file'
+              : 'Choose a FIT, GPX or TCX file'
+        }}</strong>
+        <small>Fills in the details. The file stays on your device.</small>
+      </span>
+    </span>
+  </div>
+  @if (workoutError()) {
+    <p class="form-error" role="alert">{{ workoutError() }}</p>
+  }
+}
 @if (viewer()?.provider !== 'atproto') {
   <label for="activity-photo">Add a photo <span class="optional">(optional)</span></label>
   @if (photoPreview()) {

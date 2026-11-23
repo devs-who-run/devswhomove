@@ -30,12 +30,20 @@ export function requirePublicProfile(user: Profile): void {
   if (user.visibility !== 'public') throw new HttpError(403, PUBLIC_PROFILE_REQUIRED);
 }
 
-/** Add kudos and comment counts from public members to a list of activities. */
+/**
+ * Add kudos and comment counts from public members to a list of activities. Also hides whether
+ * other people's activities have a hidden route, since every activity list is returned through here.
+ */
 export async function withSocial(
   db: D1Database,
-  activities: Activity[],
+  items: Activity[],
   viewerId?: string,
 ): Promise<Activity[]> {
+  const activities = items.map((activity) =>
+    activity.routeVisibility === 'hidden' && activity.userId !== viewerId
+      ? { ...activity, routeVisibility: null }
+      : activity,
+  );
   const ids = activities
     .filter((activity) => activity.visibility === 'public')
     .map((activity) => activity.id);
