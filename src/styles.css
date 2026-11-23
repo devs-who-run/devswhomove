@@ -12,14 +12,24 @@
   --tab-accent: #234d3c;
   --lime: #d8f294;
   --muted: #5f6b62;
-  --border: #e5e9e1;
+  --border: #e3e8df;
+  --border-strong: #d6ddd1;
   --border-hover: #cbd7c1;
   --heading: 'Manrope', system-ui, sans-serif;
-  --page: #f8f9f6;
-  --text: #25342e;
+  --page: #f6f7f3;
+  --text: #1f2d27;
+  --text-soft: #46544c;
   --surface: #fff;
   --surface-raised: #fdfefb;
-  --surface-soft: #edf1e4;
+  --surface-soft: #eef3e6;
+  --segment: #e9eee4;
+  --metric: #f6f7f3;
+  --brand: #234d3c;
+  --on-brand: #fff;
+  --brand-text: #234d3c;
+  --hero: #234d3c;
+  --hero-track: #2f5f4b;
+  --hero-muted: #cfe0d5;
   --accent-text: #bdd99b;
 }
 .brand-lockups .brand-lockup-light {
@@ -39,27 +49,33 @@ html:root[data-theme='dark'] {
   /* Grayscale antialiasing renders light-on-dark text noticeably thinner on macOS. */
   -webkit-font-smoothing: auto;
   -moz-osx-font-smoothing: auto;
-  --page: #111c17;
-  --text: #f1f6f0;
-  --surface: #19271f;
-  --surface-raised: #15221b;
-  --surface-soft: #253528;
-  --muted: #cdd7cf;
-  --border: #648168;
-  --border-hover: #7a9864;
-  --accent-text: #cde6ad;
-  --tab-accent: #cde6ad;
+  --page: #0e1814;
+  --text: #edf3ee;
+  --text-soft: #c3d0c8;
+  --surface: #16231d;
+  --surface-raised: #121e18;
+  --surface-soft: #22352b;
+  --segment: #1c2b24;
+  --metric: #1c2b24;
+  --muted: #b3c2b8;
+  --border: #2f4338;
+  --border-strong: #4a6456;
+  --border-hover: #6b8a74;
+  --brand: #c9e88f;
+  --on-brand: #13251d;
+  --brand-text: #c9e88f;
+  --hero: #1b3328;
+  --hero-track: #2a4a3c;
+  --hero-muted: #c3d6ca;
+  --accent-text: #c9e88f;
+  --tab-accent: #c9e88f;
 }
 html:root[data-theme='dark'] body {
   font-weight: 450;
 }
-html:root[data-theme='dark'] :is(.sidebar, .topbar) {
-  background: var(--surface-raised);
-}
 html:root[data-theme='dark']
   :is(
     .activity-card,
-    .weekly-card,
     .event-card,
     .profile-stats,
     .consistency-card,
@@ -75,11 +91,8 @@ html:root[data-theme='dark']
 }
 html:root[data-theme='dark']
   :is(
-    .agent-promo,
     .privacy-callout,
     .events-banner,
-    .date-tile,
-    .terminal-mark,
     .activity-sport-icon,
     .token-reveal,
     .activity-footer .agent-label
@@ -90,29 +103,9 @@ html:root[data-theme='dark']
 }
 html:root[data-theme='dark']
   :is(
-    .workspace-label,
-    nav a,
-    .sidebar-bottom,
-    .today,
     .preview-strip,
     .eyebrow,
     .page-heading > div > p:last-child,
-    .tabs button,
-    .sport-filters button,
-    .person small,
-    .sport-label,
-    .activity-notes,
-    .activity-metrics > div > span,
-    .activity-metrics small,
-    .activity-footer,
-    .feed-end,
-    .week-total span,
-    .chart-day small,
-    .week-footer,
-    .mini-sport,
-    .mini-event > span:last-child > small,
-    .agent-promo p,
-    .right-footnote,
     .page-footer,
     .events-banner,
     .event-date,
@@ -138,7 +131,7 @@ html:root[data-theme='dark']
   ) {
   color: var(--muted);
 }
-html:root[data-theme='dark'] :is(.account strong, .breadcrumb span, .events-banner strong, dialog) {
+html:root[data-theme='dark'] :is(.events-banner strong, dialog) {
   color: var(--text);
 }
 html:root[data-theme='dark'] :is(label, legend) {
@@ -149,9 +142,6 @@ html:root[data-theme='dark']
     h1 span,
     .text-button,
     .preview-strip button,
-    .tabs button.selected,
-    .week-footer strong,
-    .host-button,
     .agent-principles strong,
     .footer-wordmark,
     .loading-state
@@ -159,38 +149,11 @@ html:root[data-theme='dark']
   color: var(--accent-text);
 }
 html:root[data-theme='dark']
-  :is(nav a.active, .sport-filters button.selected, .sport-filters > span) {
-  background: #2b3e2b;
-  border-color: #506546;
-  color: #d3e8b9;
-}
-html:root[data-theme='dark']
-  :is(
-    nav a:hover,
-    .github-button:hover,
-    .outline:hover:not(:disabled),
-    .icon-button:hover,
-    .host-button:hover
-  ) {
+  :is(.github-button:hover, .outline:hover:not(:disabled), .icon-button:hover, .host-button:hover) {
   background: #2c3e30;
 }
-html:root[data-theme='dark']
-  :is(
-    .outline,
-    .sport-filters button,
-    .sport-filters > span,
-    .host-button,
-    dialog,
-    .empty-state,
-    .activity-footer
-  ) {
+html:root[data-theme='dark'] :is(.outline, dialog, .empty-state) {
   border-color: var(--border);
-}
-html:root[data-theme='dark'] .tabs button.selected {
-  border-bottom-color: #bdd99b;
-}
-html:root[data-theme='dark'] .sport-filters button:hover {
-  border-color: #9fb985;
 }
 html:root[data-theme='dark'] :is(.primary, .primary:hover:not(:disabled)) {
   background: #bdd99b;
@@ -219,7 +182,7 @@ html:root[data-theme='dark'] .profile-avatar {
   border-color: var(--page);
   color: #d3e8b9;
 }
-html:root[data-theme='dark'] :is(.bar-track, .heatmap > span, .heatmap-legend i) {
+html:root[data-theme='dark'] :is(.heatmap > span, .heatmap-legend i) {
   background: #2b392d;
 }
 html:root[data-theme='dark'] :is(.heatmap .moved, .heatmap-legend i.moved) {
@@ -239,9 +202,6 @@ html:root[data-theme='dark'] .activity-glyph {
 }
 html:root[data-theme='dark'] .mini-event:hover strong {
   color: #d3e8b9;
-}
-html:root[data-theme='dark'] .terminal-mark .status-dot {
-  border-color: var(--surface-soft);
 }
 html:root[data-theme='dark'] .event-art {
   background: #2a3d2c;
@@ -297,12 +257,6 @@ html:root[data-theme='dark'] :is(button, a, input, select, textarea):focus-visib
 }
 html:root[data-theme='dark'] dialog::backdrop {
   background: #050b08b8;
-}
-@media (max-width: 520px) {
-  html:root[data-theme='dark'] .sidebar {
-    background: #15221bf5;
-    border-color: var(--border);
-  }
 }
 * {
   box-sizing: border-box;

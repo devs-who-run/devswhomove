@@ -1,19 +1,11 @@
 <div class="page-heading">
   <div>
-    <p class="eyebrow">GOOD COMPANY. GREAT REASON TO GO.</p>
-    <h1>Better <span>together.</span></h1>
-    <p>A morning run, a friendly match, a ride with no rush. Find your people.</p>
+    <h1>Move together</h1>
+    <p>No qualifying pace. No gatekeeping. Every starting point is welcome.</p>
   </div>
   <button class="button primary" (click)="hostEvent.emit()">
     <app-icon name="plus" /> Host an event
   </button>
-</div>
-<div class="events-banner">
-  <app-icon name="people" />
-  <p>
-    <strong>No qualifying pace. No gatekeeping.</strong> Just developers making time to move. Every
-    starting point is welcome.
-  </p>
 </div>
 <app-sport-filter
   class="event-filters"
@@ -26,20 +18,20 @@
   @for (event of events(); track event.id) {
     <article class="event-card">
       <div
-        class="event-art"
+        class="event-band"
         [class.tennis]="event.sport === 'Tennis'"
         [class.cycling]="event.sport === 'Cycling'"
       >
-        <span class="sport-label"><app-icon [name]="event.sport" />{{ event.sport }}</span
-        ><app-icon class="event-big-icon" [name]="event.sport" /><span class="event-art-caption"
-          >FIND YOUR PEOPLE. MAKE YOUR MOVE.</span
-        >
+        <span class="date-tile">
+          <small>{{ event.startsAt | date: 'MMM' }}</small>
+          <strong>{{ event.startsAt | date: 'dd' }}</strong>
+        </span>
+        <span class="event-when">
+          <span class="sport-label"><app-icon [name]="event.sport" />{{ event.sport }}</span>
+          <span class="event-date">{{ event.startsAt | date: 'EEE · h:mm a' }}</span>
+        </span>
       </div>
       <div class="event-body">
-        <div class="event-date">
-          {{ event.startsAt | date: 'EEEE, MMM d' }} <span>·</span>
-          {{ event.startsAt | date: 'h:mm a' }}
-        </div>
         <h2>{{ event.title }}</h2>
         @if (event.clubSlug) {
           <p class="event-conference">
@@ -61,10 +53,27 @@
         <p class="event-description">{{ event.description }}</p>
         <p class="event-detail"><app-icon name="pin" />{{ event.location }}</p>
         <p class="event-detail"><app-icon name="move" />{{ event.level }}</p>
-        <p class="event-detail">
-          <app-icon name="people" />{{ event.attendees }} / {{ event.capacity }} going
-          <span class="host-name">· Hosted by {{ event.hostName }}</span>
-        </p>
+        <p class="event-detail"><app-icon name="user" />Hosted by {{ event.hostName }}</p>
+        <div class="capacity">
+          <p class="capacity-text">
+            <span>{{ event.attendees }} going</span>
+            <span>
+              @if (event.attendees >= event.capacity) {
+                Full
+              } @else {
+                {{ event.capacity - event.attendees }}
+                {{ event.capacity - event.attendees === 1 ? 'spot' : 'spots' }} left
+              }
+            </span>
+          </p>
+          <div
+            class="capacity-bar"
+            role="img"
+            [attr.aria-label]="event.attendees + ' of ' + event.capacity + ' spots taken'"
+          >
+            <span [style.width.%]="capacityPercent(event)"></span>
+          </div>
+        </div>
         @if (event.hostId === viewer()?.id) {
           <button
             class="button outline full"

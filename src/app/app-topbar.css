@@ -1,234 +1,339 @@
-.theme-control {
-  position: relative;
+:host {
+  display: contents;
 }
 
-.theme-control::after {
-  position: absolute;
-  top: 50%;
-  right: 12px;
-  width: 7px;
-  height: 7px;
-  border-right: 1.5px solid var(--muted);
-  border-bottom: 1.5px solid var(--muted);
-  content: '';
-  transform: translateY(-70%) rotate(45deg);
-  pointer-events: none;
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 12px rgb(15 30 22 / 4%);
+}
+
+.topbar-inner {
+  max-width: 1240px;
+  min-height: 64px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px 28px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.brand-lockups img {
+  width: auto;
+  height: 36px;
+}
+
+.brand-mark {
+  display: none;
+  width: 36px;
+  height: 36px;
+}
+
+.primary-nav {
+  align-self: stretch;
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+}
+
+.primary-nav a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.primary-nav a app-icon {
+  font-size: 15px;
+}
+
+.primary-nav a:hover {
+  color: var(--text);
+}
+
+.primary-nav a.active {
+  border-bottom-color: var(--brand-text);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.theme-control {
+  position: relative;
 }
 
 .theme-control app-icon {
   position: absolute;
   top: 50%;
-  left: 11px;
-  width: 15px;
-  height: 15px;
+  left: 12px;
+  width: 16px;
+  height: 16px;
   color: var(--muted);
   transform: translateY(-50%);
   pointer-events: none;
 }
 
 .theme-control select {
-  width: 150px;
-  min-height: 44px;
+  height: 44px;
   margin: 0;
-  padding: 7px 15px 7px 33px;
+  padding: 0 12px 0 36px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-soft);
   font-size: 13px;
   cursor: pointer;
-  appearance: none;
 }
 
-.mobile-signout {
+.log-button {
+  height: 44px;
+  border-radius: 12px;
+  background: var(--lime);
+  color: #16352a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.log-button:hover:not(:disabled) {
+  background: #cdea80;
+}
+
+.account {
+  position: relative;
+}
+
+.account-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 10px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.account-button:hover {
+  border-color: var(--border-hover);
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #dfe9d3;
+  color: #234d3c;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font: 700 13px var(--heading);
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chevron {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgb(15 30 22 / 14%);
+}
+
+.account-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+
+.account-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.account-menu a,
+.account-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+}
+
+.account-menu a:hover,
+.account-menu button:hover:not(:disabled) {
+  background: var(--surface-soft);
+}
+
+.tabbar {
   display: none;
 }
 
-.topbar {
-  height: 81px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 40px;
-  background: #fcfdf9;
-}
-
-.breadcrumb {
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.breadcrumb span {
-  color: #344238;
-  margin-left: 4px;
-}
-
-.topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 26px;
-}
-
-.today {
-  font-size: 12px;
-  letter-spacing: 1px;
-  color: #829078;
-}
-
-.tiny-divider {
-  margin: 0 7px;
-  color: #b5bcad;
-}
-
-.compact {
-  min-height: 36px;
-  padding: 8px 13px;
-  font-size: 13px;
-}
-
-.icon-button {
-  width: 30px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: transparent;
-  border-radius: 6px;
-}
-
-.icon-button:hover {
-  background: #e7eddf;
-}
-
-select {
-  width: 100%;
-  border: 1px solid #dce4d1;
-  border-radius: 6px;
-  background: #fdfefa;
-  color: #3f5136;
-  min-height: 41px;
-  padding: 10px 12px;
-  margin-bottom: 17px;
-  font-size: 13px;
-  outline-offset: 2px !important;
-}
-
-@media (max-width: 1250px) {
-  .topbar {
-    padding: 0 27px;
+@media (max-width: 1100px) {
+  .topbar-inner {
+    gap: 12px 20px;
   }
 
-  .topbar-actions {
-    gap: 15px;
+  .primary-nav {
+    gap: 20px;
   }
 
-  .today {
-    font-size: 12px;
-  }
-}
-@media (max-width: 1050px) {
-  .topbar {
-    padding: 0 22px;
-  }
-
-  .breadcrumb {
-    font-size: 12px;
-  }
-
-  .today {
+  .primary-nav a app-icon {
     display: none;
   }
 }
-@media (max-width: 850px) {
-  .mobile-signout {
-    display: inline-flex;
-  }
-}
-@media (max-width: 700px) {
-  .topbar .breadcrumb {
+
+@media (max-width: 860px) {
+  .primary-nav {
     display: none;
   }
-}
-@media (max-width: 520px) {
-  .topbar-actions {
-    width: 100%;
+
+  .topbar-inner {
     justify-content: space-between;
-    gap: 8px;
+    padding: 0 16px;
+  }
+
+  .log-button {
+    display: none;
+  }
+
+  .tabbar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 15;
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    align-items: center;
+    min-height: 68px;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+  }
+
+  .tabbar a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-height: 56px;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .tab-icon {
+    width: 52px;
+    height: 30px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-size: 19px;
+  }
+
+  .tabbar a.active {
+    color: var(--brand-text);
+    font-weight: 700;
+  }
+
+  .tabbar a.active .tab-icon {
+    background: var(--surface-soft);
+  }
+
+  .tab-log {
+    justify-self: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    background: var(--lime);
+    color: #16352a;
+    display: grid;
+    place-items: center;
+    font-size: 22px;
+  }
+}
+
+@media (max-width: 520px) {
+  .brand-lockups {
+    display: none;
+  }
+
+  .brand-mark {
+    display: block;
+  }
+
+  .account-name,
+  .chevron {
+    display: none;
+  }
+
+  .account-button {
+    padding: 0 3px;
   }
 
   .theme-control select {
-    width: 150px;
-    max-width: 150px;
-    font-size: 13px;
-    padding-left: 32px;
+    width: 44px;
+    padding: 0;
+    color: transparent;
   }
 
-  .topbar {
-    height: 64px;
-    padding: 0 19px;
-  }
-
-  .breadcrumb {
-    font-size: 12px;
-  }
-
-  .breadcrumb span {
-    display: block;
-    margin-left: 0;
-    margin-top: 3px;
-  }
-
-  .topbar .button {
-    font-size: 12px;
-    padding: 8px 12px;
-  }
-
-  select {
-    font-size: 16px;
-    padding: 9px;
-    min-width: 0;
-  }
-}
-
-@media (max-width: 360px) {
-  .topbar {
-    height: auto;
-    min-height: 64px;
-    padding: 8px 12px;
-  }
-
-  .topbar-actions {
-    flex-wrap: wrap;
+  .theme-control select option {
+    color: var(--text);
   }
 
   .theme-control app-icon {
-    display: none;
+    left: 50%;
+    transform: translate(-50%, -50%);
   }
-
-  .topbar-actions {
-    gap: 4px;
-  }
-
-  .topbar .button {
-    gap: 4px;
-    padding: 8px 4px;
-  }
-
-  .theme-control select {
-    width: 132px;
-    max-width: 132px;
-    padding-left: 12px;
-  }
-}
-.icon-button {
-  width: 44px;
-  height: 44px;
-}
-
-.theme-control select {
-  min-height: 44px;
-  font-size: 13px;
-}
-
-.today {
-  color: var(--muted);
-  font-size: max(12px, 0.85em);
 }

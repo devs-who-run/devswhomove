@@ -1,47 +1,121 @@
 <header class="topbar">
-  <div class="breadcrumb">Your next commit? <span>A little movement.</span></div>
-  <div class="topbar-actions">
-    <div class="theme-control">
-      <label for="theme-preference" class="sr-only">Color theme</label>
-      <app-icon
-        [name]="
-          theme.preference() === 'system'
-            ? 'monitor'
-            : theme.preference() === 'dark'
-              ? 'moon'
-              : 'sun'
-        "
-      />
-      <select
-        id="theme-preference"
-        aria-label="Color theme"
-        [ngModel]="theme.preference()"
-        (ngModelChange)="theme.setPreference($event)"
-      >
-        <option value="system">System theme</option>
-        <option value="light">Light theme</option>
-        <option value="dark">Dark theme</option>
-      </select>
+  <div class="topbar-inner">
+    <a class="brand" routerLink="/feed" aria-label="Devs Who Move home">
+      <span class="brand-lockups">
+        <img class="brand-lockup-light" src="/brand/lockup_horizontal_light.svg" alt="" />
+        <img class="brand-lockup-dark" src="/brand/lockup_horizontal_dark.svg" alt="" />
+      </span>
+      <img class="brand-mark" src="/brand/icon.svg" alt="" />
+    </a>
+
+    <nav class="primary-nav" aria-label="Main navigation">
+      @for (item of nav(); track item.page) {
+        <a
+          [routerLink]="'/' + item.page"
+          [class.active]="page() === item.page"
+          [attr.aria-current]="page() === item.page ? 'page' : null"
+        >
+          <app-icon [name]="item.icon" /><span>{{ item.label }}</span>
+        </a>
+      }
+    </nav>
+
+    <div class="topbar-actions">
+      <div class="theme-control">
+        <label for="theme-preference" class="sr-only">Color theme</label>
+        <app-icon
+          [name]="
+            theme.preference() === 'system'
+              ? 'monitor'
+              : theme.preference() === 'dark'
+                ? 'moon'
+                : 'sun'
+          "
+        />
+        <select
+          id="theme-preference"
+          aria-label="Color theme"
+          [ngModel]="theme.preference()"
+          (ngModelChange)="theme.setPreference($event)"
+        >
+          <option value="system">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+
+      @if (viewer(); as user) {
+        <button class="button log-button" (click)="logActivity.emit()">
+          <app-icon name="plus" /> Log activity
+        </button>
+        <div class="account">
+          <button
+            class="account-button"
+            [attr.aria-expanded]="menuOpen()"
+            aria-controls="account-menu"
+            [attr.aria-label]="'Account menu for ' + user.name"
+            (click)="toggleMenu()"
+          >
+            <span class="avatar">
+              @if (user.avatar) {
+                <img [src]="user.avatar" alt="" referrerpolicy="no-referrer" />
+              } @else {
+                {{ initials(user.name) }}
+              }
+            </span>
+            <span class="account-name">{{ firstName() }}</span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+          @if (menuOpen()) {
+            <div class="account-menu" id="account-menu">
+              <div class="account-summary">
+                <strong>{{ user.name }}</strong>
+                <span>&#64;{{ user.username }}</span>
+              </div>
+              <a routerLink="/profile" (click)="closeMenu()">
+                <app-icon name="user" /> Your profile
+              </a>
+              <button (click)="closeMenu(); signOut.emit()" [disabled]="saving()">
+                <app-icon name="logout" /> Sign out
+              </button>
+            </div>
+          }
+        </div>
+      } @else {
+        <app-login
+          placement="header"
+          (githubLogin)="githubLogin.emit()"
+          (atprotoLogin)="atprotoLogin.emit()"
+        />
+      }
     </div>
-    <span class="today">{{ '2026' }} <span class="tiny-divider">/</span> EST. IN MOTION</span>
-    @if (viewer()) {
-      <button
-        class="icon-button mobile-signout"
-        aria-label="Sign out"
-        (click)="signOut.emit()"
-        [disabled]="saving()"
-      >
-        <app-icon name="logout" />
-      </button>
-      <button class="button primary compact" (click)="logActivity.emit()">
-        <app-icon name="plus" /> Log activity
-      </button>
-    } @else {
-      <app-login
-        placement="header"
-        (githubLogin)="githubLogin.emit()"
-        (atprotoLogin)="atprotoLogin.emit()"
-      />
-    }
   </div>
 </header>
+
+<nav class="tabbar" aria-label="Main navigation">
+  @for (item of tabsBefore(); track item.page) {
+    <a
+      [routerLink]="'/' + item.page"
+      [class.active]="page() === item.page"
+      [attr.aria-current]="page() === item.page ? 'page' : null"
+    >
+      <span class="tab-icon"><app-icon [name]="item.icon" /></span>{{ item.label }}
+    </a>
+  }
+  @if (viewer()) {
+    <button class="tab-log" aria-label="Log activity" (click)="logActivity.emit()">
+      <app-icon name="plus" />
+    </button>
+  }
+  @for (item of tabsAfter(); track item.page) {
+    <a
+      [routerLink]="'/' + item.page"
+      [class.active]="page() === item.page"
+      [attr.aria-current]="page() === item.page ? 'page' : null"
+    >
+      <span class="tab-icon"><app-icon [name]="item.icon" /></span>{{ item.label }}
+    </a>
+  }
+</nav>

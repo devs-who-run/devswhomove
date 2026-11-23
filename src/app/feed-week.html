@@ -1,0 +1,52 @@
+<section class="week-banner" aria-labelledby="week-heading">
+  <div class="week-copy">
+    <p class="week-eyebrow">{{ today | date: 'EEEE' }} · Week {{ weekNumber() }}</p>
+    @if (viewer() && !preview()) {
+      <h1 id="week-heading">
+        {{ greeting() }}
+        @if (streak() > 1) {
+          <span>You’re on a {{ streak() }}‑day streak.</span>
+        }
+      </h1>
+      <p>
+        {{ streak() > 1 ? 'One easy session keeps it going.' : 'Small steps. They add up.' }}
+        You don’t have to go fast. Just go.
+      </p>
+    } @else {
+      <h1 id="week-heading">Your people. <span>Your pace.</span></h1>
+      <p>
+        {{
+          preview()
+            ? 'A glimpse of your future rhythm.'
+            : 'A place for developers who move. Every sport. Every starting point.'
+        }}
+      </p>
+    }
+  </div>
+
+  <dl class="week-stats">
+    <div>
+      <dt>moving this week</dt>
+      <dd class="week-total">{{ weeklyMinutes() | number: '1.0-0' }}<span> min</span></dd>
+    </div>
+    <div>
+      <dt>covered</dt>
+      <dd>{{ weeklyDistance() | number: '1.1-1' }}<span> km</span></dd>
+    </div>
+    <div>
+      <dt>{{ weekly().length === 1 ? 'session' : 'sessions' }}</dt>
+      <dd class="week-sessions">{{ weekly().length }}</dd>
+    </div>
+  </dl>
+
+  <div class="week-chart" role="img" [attr.aria-label]="weekChartLabel()">
+    @for (bar of weekBars(); track $index) {
+      <div class="chart-day" [title]="bar.day + ': ' + bar.minutes + ' minutes'">
+        <div class="bar-track">
+          <span [style.height.%]="bar.height" [class.has-value]="bar.minutes > 0"></span>
+        </div>
+        <small aria-hidden="true">{{ bar.shortDay }}</small>
+      </div>
+    }
+  </div>
+</section>

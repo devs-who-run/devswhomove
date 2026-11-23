@@ -28,8 +28,7 @@ import { ProfileActivities } from './profile-activities';
 import { ProfileHeader } from './profile-header';
 import { AccountSettings } from './account-settings';
 import { ActivityImports } from './activity-imports';
-import { AppSidebar, type Page } from './app-sidebar';
-import { AppTopbar } from './app-topbar';
+import { AppTopbar, type NavItem, type Page } from './app-topbar';
 import { AuthState } from './auth-state';
 import { ProfileSummary } from './profile-summary';
 import {
@@ -43,6 +42,9 @@ import {
 } from './models';
 
 type ProfileTab = 'activity' | 'progress' | 'account';
+
+/** Top-level routes. Profile is reached from the account menu, so it is not in the nav. */
+const ROUTED_PAGES: readonly Page[] = ['feed', 'events', 'clubs', 'profile', 'agents'];
 
 @Component({
   imports: [
@@ -65,7 +67,6 @@ type ProfileTab = 'activity' | 'progress' | 'account';
     ProfileHeader,
     AccountSettings,
     ActivityImports,
-    AppSidebar,
     AppTopbar,
     ProfileBadges,
   ],
@@ -75,12 +76,11 @@ type ProfileTab = 'activity' | 'progress' | 'account';
 })
 export class App {
   private readonly router = inject(Router);
-  readonly nav: { page: Page; label: string; mobileLabel: string; icon: string }[] = [
-    { page: 'feed', label: 'The community', mobileLabel: 'Feed', icon: 'grid' },
-    { page: 'events', label: 'Move together', mobileLabel: 'Events', icon: 'calendar' },
-    { page: 'clubs', label: 'Clubs', mobileLabel: 'Clubs', icon: 'people' },
-    { page: 'profile', label: 'Your profile', mobileLabel: 'Profile', icon: 'user' },
-    { page: 'agents', label: 'Your agents', mobileLabel: 'Agents', icon: 'terminal' },
+  readonly nav: NavItem[] = [
+    { page: 'feed', label: 'Feed', icon: 'grid' },
+    { page: 'events', label: 'Events', icon: 'calendar' },
+    { page: 'clubs', label: 'Clubs', icon: 'people' },
+    { page: 'agents', label: 'Agents', icon: 'terminal' },
   ];
   readonly page = signal<Page>('feed');
   readonly loading = signal(true);
@@ -290,7 +290,7 @@ export class App {
     this.page.set(
       page === 'activities' && username
         ? 'activity'
-        : this.nav.some((item) => item.page === page)
+        : ROUTED_PAGES.includes(page as Page)
           ? (page as Page)
           : 'feed',
     );
