@@ -3,27 +3,18 @@
   >Skip to content</a
 >
 <div class="app-shell">
-  <app-sidebar
+  <app-topbar
     [nav]="nav"
     [page]="page()"
     [viewer]="viewer()"
     [saving]="saving()"
-    (navigate)="navigate($event)"
     (githubLogin)="auth.login()"
     (atprotoLogin)="auth.loginAtproto()"
     (signOut)="auth.logout()"
+    (logActivity)="editor.openModal('activity')"
   />
 
   <div class="main-shell">
-    <app-topbar
-      [viewer]="viewer()"
-      [saving]="saving()"
-      (githubLogin)="auth.login()"
-      (atprotoLogin)="auth.loginAtproto()"
-      (signOut)="auth.logout()"
-      (logActivity)="editor.openModal('activity')"
-    />
-
     <main #main id="main" tabindex="-1">
       @if (error() && !editor.modal()) {
         <div class="banner error" role="alert">

@@ -1,66 +1,68 @@
-.event-art {
-  height: 165px;
-  background: #e3ead7;
-  position: relative;
-  overflow: hidden;
-  padding: 18px;
+.event-band {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  background: #e3f1c4;
 }
-.event-art::after {
-  content: '';
-  position: absolute;
-  inset: -70px -20px -20px 50%;
-  border: 1px solid #819c5b40;
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 25px #819c5b12,
-    0 0 0 50px #819c5b10,
-    0 0 0 75px #819c5b0d;
-  transform: rotate(30deg);
+.event-band.cycling {
+  background: #f5e6c8;
 }
-.event-art.tennis {
-  background: #ede8d7;
+.event-band.tennis {
+  background: #d9e9f1;
 }
-.event-art.cycling {
-  background: #dfebe5;
+:host-context([data-theme='dark']) .event-band {
+  background: #25391f;
 }
-.event-big-icon {
-  position: absolute;
-  right: 35px;
-  top: 37px;
-  font-size: 80px;
-  color: #77925c;
-  transform: rotate(-12deg);
+:host-context([data-theme='dark']) .event-band.cycling {
+  background: #3a2f1c;
 }
-.tennis .event-big-icon {
-  color: #a09464;
+:host-context([data-theme='dark']) .event-band.tennis {
+  background: #1d3140;
 }
-.cycling .event-big-icon {
-  color: #6e9885;
+.date-tile {
+  width: 54px;
+  height: 58px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--surface);
 }
-.event-art-caption {
-  position: absolute;
-  left: 18px;
-  bottom: 17px;
-  font-size: 12px;
-  letter-spacing: 1.4px;
-  color: #7f906c;
+.date-tile small {
+  color: var(--brand-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.date-tile strong {
+  font: 800 22px var(--heading);
+}
+.event-when {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .sport-label {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  color: var(--brand-text);
   font-size: 12px;
-  color: #6d7f63;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 .sport-label app-icon {
   font-size: 13px;
 }
-.event-art .sport-label {
-  font-size: 12px;
-  background: #ffffff75;
-  border-radius: 5px;
-  padding: 5px 7px;
+.event-date {
+  color: var(--text);
+  font-size: 13px;
 }
 .event-conference {
   font-size: 13px;
@@ -75,15 +77,40 @@
 }
 .event-detail {
   display: flex;
-  gap: 7px;
+  gap: 8px;
   align-items: center;
-  font-size: 12px;
-  color: #7d8973;
-  margin: 0 0 11px;
   flex-wrap: wrap;
+  margin: 0 0 8px;
+  color: var(--text-soft);
+  font-size: 13px;
 }
-.host-name {
+.event-detail app-icon {
+  font-size: 15px;
+}
+.capacity {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.capacity-text {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
   font-size: 12px;
+}
+.capacity-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--metric);
+}
+.capacity-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--brand);
 }
 .host-actions {
   display: grid;
@@ -98,37 +125,4 @@
   padding: 12px 12px 12px 30px;
   border: 1px solid var(--border);
   border-radius: 9px;
-}
-@media (max-width: 700px) {
-  .event-detail,
-  .host-name {
-    font-size: 12px;
-  }
-  .event-art {
-    height: 145px;
-  }
-  .event-big-icon {
-    font-size: 65px;
-    right: 25px;
-    top: 40px;
-  }
-}
-@media (max-width: 520px) {
-  .event-art {
-    height: 170px;
-  }
-  .event-big-icon {
-    font-size: 85px;
-    right: 60px;
-    top: 35px;
-  }
-  .event-detail {
-    font-size: 13px;
-  }
-}
-.sport-label,
-.event-art-caption,
-.event-detail {
-  color: var(--muted);
-  font-size: max(12px, 0.85em);
 }

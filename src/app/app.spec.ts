@@ -104,7 +104,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     fixture.detectChanges();
-    const link = fixture.nativeElement.querySelector('.sidebar .brand') as HTMLAnchorElement;
+    const link = fixture.nativeElement.querySelector('.topbar .brand') as HTMLAnchorElement;
     expect(link.getAttribute('aria-label')).toBe('Devs Who Move home');
     expect(link.querySelector('.brand-lockup-light')?.getAttribute('src')).toBe(
       '/brand/lockup_horizontal_light.svg',
@@ -115,23 +115,20 @@ describe('App', () => {
     expect(link.querySelector('.brand-mark')?.getAttribute('src')).toBe('/brand/icon.svg');
   });
 
-  it('keeps descriptive navigation names alongside compact mobile labels', async () => {
+  it('shows the same short destinations in the top navbar and the mobile tab bar', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     fixture.detectChanges();
-    const links = fixture.nativeElement.querySelectorAll(
-      '.sidebar nav a',
-    ) as NodeListOf<HTMLAnchorElement>;
-    expect(Array.from(links, (link) => link.getAttribute('aria-label'))).toEqual([
-      'The community',
-      'Move together',
-      'Clubs',
-      'Your profile',
-      'Your agents',
-    ]);
+    const labels = (selector: string) =>
+      Array.from(
+        fixture.nativeElement.querySelectorAll(selector) as NodeListOf<HTMLAnchorElement>,
+        (link) => link.textContent?.trim(),
+      );
+    expect(labels('.primary-nav a')).toEqual(['Feed', 'Events', 'Clubs', 'Agents']);
+    expect(labels('.tabbar a')).toEqual(['Feed', 'Events', 'Clubs', 'Agents']);
     expect(
-      Array.from(links, (link) => link.querySelector('.mobile-label')?.textContent?.trim()),
-    ).toEqual(['Feed', 'Events', 'Clubs', 'Profile', 'Agents']);
+      fixture.nativeElement.querySelector('.primary-nav a.active')?.getAttribute('aria-current'),
+    ).toBe('page');
   });
 
   it('routes sign-in actions from each app entry point to the existing auth handlers', async () => {
@@ -140,7 +137,7 @@ describe('App', () => {
     fixture.detectChanges();
     const html = fixture.nativeElement as HTMLElement;
 
-    html.querySelector<HTMLButtonElement>('app-login[placement="sidebar"] .github-button')!.click();
+    html.querySelector<HTMLButtonElement>('app-login[placement="header"] .primary')!.click();
     expect(fixture.componentInstance.error()).toContain('GitHub sign-in needs setup');
     html.querySelector<HTMLButtonElement>('app-login[placement="header"] .outline')!.click();
     expect(fixture.componentInstance.error()).toContain('AT Protocol sign-in needs setup');
@@ -175,6 +172,12 @@ describe('App', () => {
     html.querySelector<HTMLButtonElement>('.agent-promo button')!.click();
     await fixture.whenStable();
     expect(TestBed.inject(Router).url).toBe('/agents');
+
+    await TestBed.inject(Router).navigateByUrl('/feed');
+    await fixture.whenStable();
+    html.querySelector<HTMLButtonElement>('.clubs-promo button')!.click();
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/clubs');
   });
 
   it('keeps extracted activity fields registered with the dialog form', async () => {
@@ -445,7 +448,7 @@ describe('App', () => {
     );
   });
 
-  it('clears agent tokens when signing out from the sidebar', async () => {
+  it('clears agent tokens when signing out from the account menu', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(Response.json({ ...bootstrap, viewer: DEMO_PROFILE }));
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
@@ -463,8 +466,13 @@ describe('App', () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(Response.json(bootstrap));
-    fixture.nativeElement
-      .querySelector('app-login[placement="sidebar"] [aria-label="Sign out"]')
+    fixture.nativeElement.querySelector('.account-button').click();
+    fixture.detectChanges();
+    expect(
+      fixture.nativeElement.querySelector('.account-button').getAttribute('aria-expanded'),
+    ).toBe('true');
+    Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('.account-menu button'))
+      .find((button) => button.textContent?.includes('Sign out'))!
       .click();
     await fixture.whenStable();
     expect(fixture.componentInstance.agent.tokens()).toEqual([]);

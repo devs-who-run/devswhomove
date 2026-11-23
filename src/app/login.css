@@ -109,11 +109,11 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-height: 43px;
-  padding: 11px 18px;
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: 7px;
+  min-height: 44px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 12px;
   line-height: 1.4;
   transition:
     background 0.15s,
@@ -124,22 +124,23 @@
   transform: translateY(-1px);
 }
 .primary {
-  background: var(--green);
-  color: #fff;
+  background: var(--brand);
+  color: var(--on-brand);
 }
 .primary:hover:not(:disabled) {
   background: #153b2b;
 }
 .outline {
-  border: 1px solid #d9e1d3;
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
 }
 .outline:hover:not(:disabled) {
-  background: #f0f5e9;
+  background: var(--surface-soft);
 }
 .compact {
-  min-height: 36px;
-  padding: 8px 13px;
+  min-height: 44px;
+  padding: 0 14px;
   font-size: 13px;
 }
 .full {

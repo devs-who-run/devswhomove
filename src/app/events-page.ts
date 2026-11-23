@@ -33,4 +33,8 @@ export class EventsPage {
   readonly cancelEvent = output<SportEvent>();
   readonly joinEvent = output<SportEvent>();
   readonly conferenceLink = conferenceLink;
+
+  capacityPercent(event: SportEvent): number {
+    return event.capacity > 0 ? Math.min(100, (event.attendees / event.capacity) * 100) : 0;
+  }
 }
