@@ -286,6 +286,7 @@ describe('Worker with real D1 storage', () => {
         '0012_atproto_event_edit_tokens.sql',
         '0013_activity_imports.sql',
         '0014_strava_webhook_events.sql',
+        '0015_strava_data_lifecycle.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {

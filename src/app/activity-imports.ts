@@ -93,8 +93,9 @@ const plural = (count: number, one: string, many = `${one}s`) =>
               </div>
             }
             <p class="fine-print">
-              Strava’s API terms only allow showing Strava data to you, so Strava imports stay
-              private.
+              Strava’s API terms only allow showing Strava data to you while you stay connected.
+              Strava imports stay private, are re-checked with Strava every few days, and are
+              removed if you disconnect or delete them on Strava.
             </p>
           </article>
 
@@ -206,11 +207,20 @@ export class ActivityImports implements OnInit {
 
   async disconnectStrava(): Promise<void> {
     if (this.busy()) return;
+    if (
+      !confirm(
+        'Disconnect Strava? Every activity imported from Strava will be removed from your profile, including its kudos, comments and photo.',
+      )
+    )
+      return;
     this.error.set('');
     try {
-      await request('/api/strava', 'DELETE');
+      const { removed } = await request<{ removed: number }>('/api/strava', 'DELETE');
       this.strava.set({ configured: true, connected: false });
-      this.status.set('Strava disconnected. Activities you already imported stay on your profile.');
+      this.status.set(
+        `Strava disconnected and ${plural(removed, 'imported activity', 'imported activities')} removed.`,
+      );
+      if (removed) this.imported.emit();
     } catch (error) {
       this.error.set(errorMessage(error));
     }

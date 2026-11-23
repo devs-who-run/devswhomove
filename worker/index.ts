@@ -51,6 +51,9 @@ import {
   stravaAuthorizeUrl,
   stravaConfigured,
   stravaStatus,
+  purgeExpiredStravaImports,
+  refreshStravaHistory,
+  stravaRefreshesDue,
   syncStrava,
   webhookOwner,
   type StravaEnv,
@@ -2354,6 +2357,43 @@ async function runStravaWebhookEvent(
   }
 }
 
+/** Connections whose history is re-fetched per cron run; each reads at most two pages. */
+const STRAVA_REFRESHES_PER_RUN = 10;
+
+/**
+ * Keep Strava data within its retention window: advance due re-fetch passes, then delete
+ * imports that Strava has not re-confirmed for seven days. Runs from the Worker's cron trigger.
+ */
+async function runStravaLifecycle(env: Env): Promise<void> {
+  if (stravaConfigured(env)) {
+    for (const userId of await stravaRefreshesDue(env.DB, STRAVA_REFRESHES_PER_RUN)) {
+      try {
+        const actor = {
+          user: { id: userId } as Profile,
+          agent: false,
+          scopes: [],
+          provider: 'github',
+        } as Identity;
+        const reservation = await beginAccountMutation(env, env.DB, actor);
+        try {
+          await refreshStravaHistory(
+            env,
+            guardMutationDatabase(env.DB, reservation.assertNotLost),
+            userId,
+          );
+        } finally {
+          await reservation.release();
+        }
+      } catch (error) {
+        console.error('Strava re-fetch failed', error instanceof Error ? error.message : error);
+      }
+    }
+  }
+  // Purge even when Strava is not configured, so data never outlives the retention window.
+  const purged = await purgeExpiredStravaImports(env.DB);
+  if (purged) await purgeDeletedPhotos(env, true);
+}
+
 /** Retry stored webhook events that are due. Runs from the Worker's cron trigger. */
 async function retryStravaWebhookEvents(env: Env): Promise<void> {
   const due = await env.DB.prepare(
@@ -2684,8 +2724,9 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
     }
     if (url.pathname === '/api/strava' && method === 'DELETE') {
       const actor = githubImporter(auth);
-      await disconnectStrava(env, env.DB, actor.user.id);
-      return json({ ok: true });
+      const removed = await disconnectStrava(env, env.DB, actor.user.id);
+      await purgeDeletedPhotos(env);
+      return json({ ok: true, removed });
     }
     const cardMatch = /^\/api\/activities\/([^/]+)\/card\.png$/.exec(url.pathname);
     if (cardMatch && (method === 'GET' || method === 'HEAD'))
@@ -3464,6 +3505,7 @@ export default {
       purgeExpiredAccountExports(env),
       retryAtprotoDeletion(env),
       retryStravaWebhookEvents(env),
+      runStravaLifecycle(env),
     ]);
   },
 } satisfies ExportedHandler<Env>;

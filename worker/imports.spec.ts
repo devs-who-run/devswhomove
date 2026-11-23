@@ -359,9 +359,19 @@ describe('Activity imports and Strava sync', () => {
       await (await request('/api/strava', 'GET', undefined, sessions.alice)).json(),
     ).toMatchObject({ connected: true });
 
+    await db
+      .prepare(
+        `INSERT INTO activities (id, user_id, title, sport, occurred_at, duration, visibility, source,
+          payload_hash, import_source, external_id, fetched_at)
+        VALUES ('revoked-run', 'alice', 'Run', 'Running', '2026-01-01T07:00:00.000Z', 30, 'private',
+          'web', 'x', 'strava', '9', ?)`,
+      )
+      .bind(new Date().toISOString())
+      .run();
     refreshFails = 400;
     const revoked = await request('/api/strava/sync', 'POST', undefined, sessions.alice);
     expect(revoked.status).toBe(409);
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM activities').first('count')).toBe(0);
     expect(await (await request('/api/strava', 'GET', undefined, sessions.alice)).json()).toEqual({
       configured: true,
       connected: false,
@@ -534,18 +544,100 @@ describe('Activity imports and Strava sync', () => {
     ).toBe(0);
   });
 
-  it('disconnects Strava and keeps already imported activities', async () => {
+  it('disconnects Strava and removes its imports but keeps other imports', async () => {
     await connectAlice();
     stravaActivities = [
       { id: 3001, sport_type: 'Walk', start_date: '2026-01-05T10:00:00Z', moving_time: 900 },
     ];
     await request('/api/strava/sync', 'POST', undefined, sessions.alice);
-    const disconnect = await request('/api/strava', 'DELETE', undefined, sessions.alice);
-    expect(disconnect.status).toBe(200);
-    expect(deauthorizations).toBe(1);
-    expect(await db.prepare('SELECT title FROM activities').first('title')).toBe(
-      'Walking from Strava',
+    await request(
+      '/api/imports',
+      'POST',
+      { source: 'garmin', activities: [run()] },
+      sessions.alice,
     );
+    const stravaId = await db
+      .prepare(`SELECT id FROM activities WHERE import_source = 'strava'`)
+      .first<string>('id');
+    await db
+      .prepare(
+        `INSERT INTO activity_kudos (activity_id, actor_id, created_at) VALUES (?, 'alice', ?)`,
+      )
+      .bind(stravaId, new Date().toISOString())
+      .run();
+
+    const disconnect = await request('/api/strava', 'DELETE', undefined, sessions.alice);
+    expect(await disconnect.json()).toEqual({ ok: true, removed: 1 });
+    expect(deauthorizations).toBe(1);
+    const left = await db.prepare('SELECT import_source AS source FROM activities').all();
+    expect(left.results).toEqual([{ source: 'garmin' }]);
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM activity_kudos').first('count')).toBe(0);
+  });
+
+  it('re-fetches Strava history on cron and purges imports not re-confirmed in 7 days', async () => {
+    await connectAlice();
+    stravaActivities = [
+      {
+        id: 5001,
+        name: 'Kept run',
+        sport_type: 'Run',
+        start_date: '2026-01-10T07:00:00Z',
+        moving_time: 1800,
+      },
+      {
+        id: 5002,
+        name: 'Deleted ride',
+        sport_type: 'Ride',
+        start_date: '2026-01-11T07:00:00Z',
+        moving_time: 3600,
+      },
+    ];
+    await request('/api/strava/sync', 'POST', undefined, sessions.alice);
+    await request(
+      '/api/imports',
+      'POST',
+      { source: 'garmin', activities: [run()] },
+      sessions.alice,
+    );
+    const eightDaysAgo = new Date(Date.now() - 8 * 86_400_000).toISOString();
+    await db
+      .prepare(`UPDATE activities SET fetched_at = ? WHERE import_source = 'strava'`)
+      .bind(eightDaysAgo)
+      .run();
+    await db
+      .prepare('UPDATE strava_connections SET refreshed_at = ?')
+      .bind(new Date(Date.now() - 5 * 86_400_000).toISOString())
+      .run();
+    // The ride was deleted on Strava and the run was renamed.
+    stravaActivities = [{ ...stravaActivities[0], name: 'Renamed run' }];
+
+    await (await runtime.getWorker()).scheduled();
+
+    const left = await db
+      .prepare('SELECT title, import_source AS source FROM activities ORDER BY occurred_at')
+      .all();
+    expect(left.results).toEqual([
+      { title: 'Renamed run', source: 'strava' },
+      { title: 'Lunch run', source: 'garmin' },
+    ]);
+    const connection = await db
+      .prepare('SELECT refresh_cursor, refreshed_at FROM strava_connections')
+      .first<{ refresh_cursor: number | null; refreshed_at: string }>();
+    expect(connection?.refresh_cursor).toBeNull();
+    expect(Date.parse(connection!.refreshed_at)).toBeGreaterThan(Date.now() - 60_000);
+
+    // Without a connection nothing re-confirms Strava data, so it is purged after 7 days.
+    await db.exec('DELETE FROM strava_connections');
+    await db
+      .prepare(`UPDATE activities SET fetched_at = ? WHERE import_source = 'strava'`)
+      .bind(eightDaysAgo)
+      .run();
+    await (await runtime.getWorker()).scheduled();
+    expect(
+      await db
+        .prepare(`SELECT COUNT(*) AS count FROM activities WHERE import_source = 'strava'`)
+        .first('count'),
+    ).toBe(0);
   });
 
   it('includes the Strava connection in the data export without tokens', async () => {

@@ -52,6 +52,8 @@ export async function importActivities(
       };
       const externalId =
         data['externalId'] == null ? null : text(data['externalId'], 'External ID', 128);
+      // Strava rows may only be kept while Strava keeps returning them (see the 7-day purge).
+      const fetchedAt = source === 'strava' ? new Date().toISOString() : null;
       if (externalId) {
         const existing = await db
           .prepare(
@@ -60,6 +62,24 @@ export async function importActivities(
           .bind(userId, source, externalId)
           .first<{ id: string }>();
         if (existing) {
+          // Seeing the activity again re-confirms it and picks up edits made on Strava.
+          if (fetchedAt)
+            await db
+              .prepare(
+                `UPDATE activities SET title = ?, sport = ?, occurred_at = ?, duration = ?,
+                distance = ?, fetched_at = ? WHERE id = ? AND user_id = ?`,
+              )
+              .bind(
+                entry.title,
+                entry.sport,
+                entry.occurredAt,
+                entry.duration,
+                entry.distance,
+                fetchedAt,
+                existing.id,
+                userId,
+              )
+              .run();
           results.push({ index, status: 'duplicate', id: existing.id });
           continue;
         }
@@ -72,8 +92,8 @@ export async function importActivities(
         .prepare(
           `INSERT INTO activities
           (id, user_id, title, sport, occurred_at, duration, distance, notes, visibility, source,
-            payload_hash, import_source, external_id)
-          SELECT ?, ?, ?, ?, ?, ?, ?, '', 'private', 'web', ?, ?, ?
+            payload_hash, import_source, external_id, fetched_at)
+          SELECT ?, ?, ?, ?, ?, ?, ?, '', 'private', 'web', ?, ?, ?, ?
           WHERE NOT EXISTS (
             SELECT 1 FROM activities WHERE user_id = ? AND sport = ?
             AND occurred_at BETWEEN ? AND ?
@@ -90,6 +110,7 @@ export async function importActivities(
           await sha256(JSON.stringify(entry)),
           source,
           externalId,
+          fetchedAt,
           userId,
           entry.sport,
           new Date(start - DUPLICATE_WINDOW_MS).toISOString(),
