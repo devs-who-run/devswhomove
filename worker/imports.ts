@@ -41,9 +41,9 @@ async function sha256(value: string): Promise<string> {
  *
  * Imports are always private, carry no notes or GPS data, and are de-duplicated both by the
  * provider's own ID and by a same-sport activity that starts within two minutes, so importing
- * the same run from Garmin, Apple Health and Strava keeps only the first copy. A whole page costs
- * two D1 queries (a lookup and one batch), which keeps syncs and cron runs well inside D1's
- * per-invocation query limit; every guard is evaluated inside the batch's transaction.
+ * the same run from Garmin, Apple Health and Strava keeps only the first copy. A whole page is
+ * one D1 batch, which counts as a single query toward D1's per-invocation limit; every guard is
+ * evaluated inside the batch's transaction.
  */
 export async function importActivities(
   db: D1Database,
@@ -69,12 +69,20 @@ export async function importActivities(
       if (!item || typeof item !== 'object' || Array.isArray(item))
         throw new HttpError(400, 'Expected an activity object.');
       const data = item as Record<string, unknown>;
+      const occurredAt = date(data['occurredAt'], false);
+      const start = Date.parse(occurredAt);
+      // The ±2-minute overlap window must be a representable date, or the whole batch would fail.
+      if (
+        !Number.isFinite(new Date(start - DUPLICATE_WINDOW_MS).getTime()) ||
+        !Number.isFinite(new Date(start + DUPLICATE_WINDOW_MS).getTime())
+      )
+        throw new HttpError(400, 'Enter a valid date.');
       valid.push({
         index,
         entry: {
           title: text(data['title'], 'Title', 100),
           sport: sport(data['sport']),
-          occurredAt: date(data['occurredAt'], false),
+          occurredAt,
           duration: number(data['duration'], 'Duration in minutes', 1, 1440),
           distance:
             data['distance'] == null ? null : number(data['distance'], 'Distance in km', 0, 2000),
@@ -92,18 +100,6 @@ export async function importActivities(
   const strava = source === 'strava';
   // Strava rows may only be kept while Strava keeps returning them (see the 7-day purge).
   const observedAt = strava ? (options.observedAt ?? new Date().toISOString()) : null;
-  const externalIds = valid.flatMap((item) => (item.externalId ? [item.externalId] : []));
-  const existing = new Map<string, string>();
-  if (externalIds.length) {
-    const rows = await db
-      .prepare(
-        `SELECT id, external_id FROM activities WHERE user_id = ? AND import_source = ?
-        AND external_id IN (SELECT value FROM json_each(?))`,
-      )
-      .bind(userId, source, JSON.stringify(externalIds))
-      .all<{ id: string; external_id: string }>();
-    for (const row of rows.results) existing.set(row.external_id, row.id);
-  }
 
   // Guards shared by every write: the connection that fetched the data must still exist.
   const connectionGuard = options.connection
@@ -122,49 +118,54 @@ export async function importActivities(
     ];
   };
 
+  // Every decision is made from the rows' state inside the batch's transaction, not from an
+  // earlier read: an existing copy (same provider ID) is refreshed, and the insert only runs when
+  // no copy exists, so a row purged or created concurrently is handled correctly.
   const statements: D1PreparedStatement[] = [];
-  const plan: { index: number; kind: 'insert' | 'existing'; id: string; statement: number }[] = [];
+  const inserts: { index: number; id: string; statement: number }[] = [];
   for (const { index, entry, externalId } of valid) {
-    const existingId = externalId ? existing.get(externalId) : undefined;
-    if (existingId) {
-      if (strava) {
-        // Seeing the activity again re-confirms it and picks up edits made on Strava, unless the
-        // edit would make it overlap another activity, in which case the stored copy is kept.
-        // A stale observation (older than the stored one) changes nothing.
-        statements.push(
-          db
-            .prepare(
-              `UPDATE activities SET title = ?, sport = ?, occurred_at = ?, duration = ?,
-              distance = ?
-              WHERE id = ? AND user_id = ? AND (fetched_at IS NULL OR fetched_at <= ?)
-              AND NOT EXISTS (
-                SELECT 1 FROM activities other WHERE other.user_id = ? AND other.sport = ?
-                AND other.occurred_at BETWEEN ? AND ? AND other.id <> ?
-              ) ${connectionGuard.sql}`,
-            )
-            .bind(
-              entry.title,
-              entry.sport,
-              entry.occurredAt,
-              entry.duration,
-              entry.distance,
-              existingId,
-              userId,
-              observedAt,
-              ...overlap(entry.sport, entry.occurredAt),
-              existingId,
-              ...connectionGuard.binds,
-            ),
-          db
-            .prepare(
-              `UPDATE activities SET fetched_at = ? WHERE id = ? AND user_id = ?
-              AND (fetched_at IS NULL OR fetched_at <= ?) ${connectionGuard.sql}`,
-            )
-            .bind(observedAt, existingId, userId, observedAt, ...connectionGuard.binds),
-        );
-      }
-      plan.push({ index, kind: 'existing', id: existingId, statement: -1 });
-      continue;
+    const sameExternal = externalId
+      ? {
+          sql: 'AND NOT EXISTS (SELECT 1 FROM activities WHERE user_id = ? AND import_source = ? AND external_id = ?)',
+          binds: [userId, source, externalId],
+        }
+      : { sql: '', binds: [] };
+    if (strava && externalId) {
+      // Seeing the activity again re-confirms it and picks up edits made on Strava, unless the
+      // edit would make it overlap another activity, in which case the stored copy is kept.
+      // A stale observation (older than the stored one) changes nothing.
+      statements.push(
+        db
+          .prepare(
+            `UPDATE activities SET title = ?, sport = ?, occurred_at = ?, duration = ?, distance = ?
+            WHERE user_id = ? AND import_source = 'strava' AND external_id = ?
+            AND (fetched_at IS NULL OR fetched_at <= ?)
+            AND NOT EXISTS (
+              SELECT 1 FROM activities other WHERE other.user_id = ? AND other.sport = ?
+              AND other.occurred_at BETWEEN ? AND ? AND other.external_id IS NOT ?
+            ) ${connectionGuard.sql}`,
+          )
+          .bind(
+            entry.title,
+            entry.sport,
+            entry.occurredAt,
+            entry.duration,
+            entry.distance,
+            userId,
+            externalId,
+            observedAt,
+            ...overlap(entry.sport, entry.occurredAt),
+            externalId,
+            ...connectionGuard.binds,
+          ),
+        db
+          .prepare(
+            `UPDATE activities SET fetched_at = ?
+            WHERE user_id = ? AND import_source = 'strava' AND external_id = ?
+            AND (fetched_at IS NULL OR fetched_at <= ?) ${connectionGuard.sql}`,
+          )
+          .bind(observedAt, userId, externalId, observedAt, ...connectionGuard.binds),
+      );
     }
     const id = crypto.randomUUID();
     // The overlap check is part of the INSERT so concurrent imports (a sync racing a webhook,
@@ -177,7 +178,7 @@ export async function importActivities(
             binds: [userId, externalId],
           }
         : { sql: '', binds: [] };
-    plan.push({ index, kind: 'insert', id, statement: statements.length });
+    inserts.push({ index, id, statement: statements.length });
     statements.push(
       db
         .prepare(
@@ -188,7 +189,7 @@ export async function importActivities(
           WHERE NOT EXISTS (
             SELECT 1 FROM activities WHERE user_id = ? AND sport = ?
             AND occurred_at BETWEEN ? AND ?
-          ) ${tombstone.sql} ${connectionGuard.sql}
+          ) ${sameExternal.sql} ${tombstone.sql} ${connectionGuard.sql}
           ON CONFLICT DO NOTHING`,
         )
         .bind(
@@ -204,19 +205,20 @@ export async function importActivities(
           externalId,
           observedAt,
           ...overlap(entry.sport, entry.occurredAt),
+          ...sameExternal.binds,
           ...tombstone.binds,
           ...connectionGuard.binds,
         ),
     );
   }
-  const outcomes = statements.length ? await db.batch(statements) : [];
-  for (const step of plan) {
-    if (step.kind === 'existing')
-      results.push({ index: step.index, status: 'duplicate', id: step.id });
-    else if (outcomes[step.statement]?.meta.changes)
-      results.push({ index: step.index, status: 'imported', id: step.id });
-    else results.push({ index: step.index, status: 'duplicate' });
-  }
+  // One batch per page: D1 counts a batch as a single query toward its per-invocation limit.
+  const outcomes = await db.batch(statements);
+  for (const { index, id, statement } of inserts)
+    results.push(
+      outcomes[statement]?.meta.changes
+        ? { index, status: 'imported', id }
+        : { index, status: 'duplicate' },
+    );
   return results.sort((a, b) => a.index - b.index);
 }
 

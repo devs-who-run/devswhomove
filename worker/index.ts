@@ -2366,9 +2366,11 @@ async function runStravaWebhookEvent(
 /**
  * Per-cron-run bounds. D1 allows 1,000 queries per invocation on Workers Paid and a batch counts
  * as one query. A re-fetch costs about a dozen queries per connection (reservation, token, two
- * pages of one lookup plus one batch each, cursor write), so 10 connections use ~120; the purge
- * uses two per chunk of 200, so 25 chunks use 50 and remove up to 5,000 rows per run. Together
- * with the webhook retries and the other jobs this stays well below the limit.
+ * pages of one batch each, cursor write), so 10 connections use ~100; the purge uses two per
+ * chunk of 200, so 25 chunks use 50 and remove up to 5,000 rows per run. Together with the
+ * webhook retries and the other jobs this stays well below the limit. Rows become purgeable half
+ * a day before the 7-day deadline, so 48 runs (240,000 rows) can drain a backlog in time; a run
+ * that hits the cap logs it and the next run continues.
  */
 const STRAVA_REFRESHES_PER_RUN = 10;
 const STRAVA_PURGE_CHUNKS_PER_RUN = 25;
@@ -2411,6 +2413,8 @@ async function runStravaLifecycle(env: Env): Promise<void> {
   }
   // Purge even when Strava is not configured, so data never outlives the retention window.
   const purged = await purgeExpiredStravaImports(env.DB, STRAVA_PURGE_CHUNKS_PER_RUN);
+  if (purged >= STRAVA_PURGE_CHUNKS_PER_RUN * 200)
+    console.warn('Strava purge hit its per-run cap; the next cron run continues the backlog.');
   if (purged) await purgeDeletedPhotos(env, true);
 }
 

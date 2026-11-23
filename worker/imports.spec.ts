@@ -20,6 +20,9 @@ describe('Activity imports and Strava sync', () => {
   /** Runs while Strava is answering a list request, to simulate a concurrent disconnect. */
   let duringList: (() => Promise<void>) | undefined;
   let deauthorizations = 0;
+  let athleteId = 777;
+  /** Activity IDs returned by each list response, to prove what Strava was asked for. */
+  const listedIds: number[] = [];
 
   const request = (path: string, method = 'GET', data?: unknown, session?: string) =>
     runtime.dispatchFetch(`${origin}${path}`, {
@@ -93,7 +96,7 @@ describe('Activity imports and Strava sync', () => {
               access_token: `access-${form.get('grant_type')}`,
               refresh_token: 'refresh-token',
               expires_at: tokenExpiresAt,
-              athlete: { id: 777 },
+              athlete: { id: athleteId },
             });
           }
           if (url.pathname === '/oauth/deauthorize') {
@@ -123,7 +126,9 @@ describe('Activity imports and Strava sync', () => {
               .sort((a, b) =>
                 url.searchParams.has('before') ? start(b) - start(a) : start(a) - start(b),
               );
-            return WorkerResponse.json(matching.slice((page - 1) * perPage, page * perPage));
+            const pageItems = matching.slice((page - 1) * perPage, page * perPage);
+            listedIds.push(...pageItems.map((activity) => Number(activity['id'])));
+            return WorkerResponse.json(pageItems);
           }
           const single = /^\/api\/v3\/activities\/(\d+)$/.exec(url.pathname);
           if (single && failActivityReads)
@@ -168,6 +173,8 @@ describe('Activity imports and Strava sync', () => {
     duringList = undefined;
     failActivityReads = false;
     deauthorizations = 0;
+    athleteId = 777;
+    listedIds.length = 0;
     await db.exec(
       'DELETE FROM activities; DELETE FROM strava_connections; DELETE FROM rate_limits; DELETE FROM strava_webhook_events; DELETE FROM strava_deleted_activities;',
     );
@@ -658,10 +665,16 @@ describe('Activity imports and Strava sync', () => {
       { id: 6001, sport_type: 'Run', start_date: '2026-01-20T07:00:00Z', moving_time: 1800 },
     ];
     // The athlete disconnects while Strava is still answering the sync's list request.
+    let disconnected = false;
     duringList = async () => {
       await db.exec('DELETE FROM strava_connections');
+      disconnected = true;
     };
-    await request('/api/strava/sync', 'POST', undefined, sessions.alice);
+    const sync = await request('/api/strava/sync', 'POST', undefined, sessions.alice);
+    expect(disconnected).toBe(true);
+    expect(listedIds).toContain(6001);
+    expect(sync.status).toBe(200);
+    expect(await sync.json()).toMatchObject({ imported: 0, duplicates: 1 });
     expect(await db.prepare('SELECT COUNT(*) AS count FROM activities').first('count')).toBe(0);
   });
 
@@ -677,7 +690,9 @@ describe('Activity imports and Strava sync', () => {
     ).toBe(200);
 
     await db.exec(`UPDATE strava_connections SET refreshed_at = '2000-01-01T00:00:00.000Z'`);
+    listedIds.length = 0;
     await (await runtime.getWorker()).scheduled();
+    expect(listedIds).toContain(7001);
     expect(await db.prepare('SELECT COUNT(*) AS count FROM activities').first('count')).toBe(0);
 
     await request('/api/strava', 'DELETE', undefined, sessions.alice);
@@ -742,6 +757,36 @@ describe('Activity imports and Strava sync', () => {
     stravaCalls.length = 0;
     await (await runtime.getWorker()).scheduled();
     expect(stravaCalls.some((call) => call.includes('/athlete/activities'))).toBe(false);
+  });
+
+  it("switching Strava athletes removes the previous athlete's imports in one step", async () => {
+    await connectAlice();
+    stravaActivities = [
+      { id: 9001, sport_type: 'Run', start_date: '2026-01-24T07:00:00Z', moving_time: 1800 },
+    ];
+    await request('/api/strava/sync', 'POST', undefined, sessions.alice);
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM activities').first('count')).toBe(1);
+
+    athleteId = 888;
+    await connectAlice();
+    expect(await db.prepare('SELECT athlete_id FROM strava_connections').first('athlete_id')).toBe(
+      888,
+    );
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM activities').first('count')).toBe(0);
+  });
+
+  it('reports out-of-range dates as invalid without failing the rest of the batch', async () => {
+    const response = await request(
+      '/api/imports',
+      'POST',
+      {
+        source: 'file',
+        activities: [run(), run({ occurredAt: '-271821-04-20T00:00:00.000Z' })],
+      },
+      sessions.alice,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ imported: 1, invalid: 1 });
   });
 
   it('includes the Strava connection in the data export without tokens', async () => {
