@@ -24,18 +24,33 @@
 .brand {
   display: flex;
   align-items: center;
+  gap: 12px;
   flex-shrink: 0;
-}
-
-.brand-lockups img {
-  width: auto;
-  height: 36px;
+  color: var(--text);
 }
 
 .brand-mark {
-  display: none;
-  width: 36px;
-  height: 36px;
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.1;
+}
+
+.brand-name {
+  font: 800 20px var(--heading);
+  letter-spacing: -0.02em;
+}
+
+.brand-tagline {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
 }
 
 .primary-nav {
@@ -365,12 +380,8 @@
 }
 
 @media (max-width: 520px) {
-  .brand-lockups {
+  .brand-text {
     display: none;
-  }
-
-  .brand-mark {
-    display: block;
   }
 
   .account-name,

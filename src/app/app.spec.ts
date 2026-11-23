@@ -123,12 +123,8 @@ describe('App', () => {
     fixture.detectChanges();
     const link = fixture.nativeElement.querySelector('.topbar .brand') as HTMLAnchorElement;
     expect(link.getAttribute('aria-label')).toBe('Devs Who Move home');
-    expect(link.querySelector('.brand-lockup-light')?.getAttribute('src')).toBe(
-      '/brand/lockup_horizontal_light.svg',
-    );
-    expect(link.querySelector('.brand-lockup-dark')?.getAttribute('src')).toBe(
-      '/brand/lockup_horizontal_dark.svg',
-    );
+    expect(link.querySelector('.brand-name')?.textContent).toBe('Devs Who Move');
+    expect(link.querySelector('.brand-tagline')?.textContent).toBe('Your people. Your pace.');
     expect(link.querySelector('.brand-mark')?.getAttribute('src')).toBe('/brand/icon.svg');
   });
 
