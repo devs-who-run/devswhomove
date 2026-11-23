@@ -79,31 +79,91 @@
   flex-shrink: 0;
 }
 
-.theme-control {
+.theme-switch {
+  --thumb-size: 34px;
   position: relative;
-}
-
-.theme-control app-icon {
-  position: absolute;
-  top: 50%;
-  left: 12px;
-  width: 16px;
-  height: 16px;
-  color: var(--muted);
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.theme-control select {
-  height: 44px;
-  margin: 0;
-  padding: 0 12px 0 36px;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 999px;
+  background: var(--segment);
+}
+
+.theme-thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  border-radius: 50%;
   background: var(--surface);
-  color: var(--text-soft);
-  font-size: 13px;
+  box-shadow:
+    0 1px 2px rgb(16 36 27 / 0.12),
+    0 2px 6px rgb(16 36 27 / 0.08);
+  transform: translateX(calc(var(--thumb-index, 1) * (var(--thumb-size) + 2px)));
+  transition: transform 0.22s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+.theme-switch button {
+  position: relative;
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
   cursor: pointer;
+  transition: color 0.15s;
+}
+
+.theme-switch button:hover {
+  color: var(--text);
+}
+
+.theme-switch button[aria-checked='true'] {
+  color: var(--brand-text);
+}
+
+.theme-switch button:focus-visible,
+.theme-cycle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.theme-switch app-icon,
+.theme-cycle app-icon {
+  width: 17px;
+  height: 17px;
+}
+
+:host-context([data-theme='dark']) .theme-thumb {
+  background: var(--surface-soft);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+}
+
+.theme-cycle {
+  display: none;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--brand-text);
+  cursor: pointer;
+}
+
+.theme-cycle-icon {
+  animation: theme-spin-in 0.3s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+@keyframes theme-spin-in {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.6);
+  }
 }
 
 .log-button {
@@ -322,18 +382,21 @@
     padding: 0 3px;
   }
 
-  .theme-control select {
-    width: 44px;
-    padding: 0;
-    color: transparent;
+  .theme-switch {
+    display: none;
   }
 
-  .theme-control select option {
-    color: var(--text);
+  .theme-cycle {
+    display: grid;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-thumb {
+    transition: none;
   }
 
-  .theme-control app-icon {
-    left: 50%;
-    transform: translate(-50%, -50%);
+  .theme-cycle-icon {
+    animation: none;
   }
 }

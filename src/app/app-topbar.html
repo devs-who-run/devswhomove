@@ -21,28 +21,43 @@
     </nav>
 
     <div class="topbar-actions">
-      <div class="theme-control">
-        <label for="theme-preference" class="sr-only">Color theme</label>
-        <app-icon
-          [name]="
-            theme.preference() === 'system'
-              ? 'monitor'
-              : theme.preference() === 'dark'
-                ? 'moon'
-                : 'sun'
-          "
-        />
-        <select
-          id="theme-preference"
-          aria-label="Color theme"
-          [ngModel]="theme.preference()"
-          (ngModelChange)="theme.setPreference($event)"
-        >
-          <option value="system">System</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
+      <div
+        class="theme-switch"
+        role="radiogroup"
+        aria-label="Color theme"
+        [style.--thumb-index]="themeIndex()"
+      >
+        <span class="theme-thumb" aria-hidden="true"></span>
+        @for (option of themes; track option.value) {
+          <button
+            type="button"
+            role="radio"
+            [attr.aria-checked]="theme.preference() === option.value"
+            [attr.aria-label]="option.label"
+            [attr.title]="option.label"
+            [tabindex]="theme.preference() === option.value ? 0 : -1"
+            (click)="theme.setPreference(option.value)"
+            (keydown)="moveTheme($event)"
+          >
+            <app-icon [name]="option.icon" />
+          </button>
+        }
       </div>
+      <button
+        type="button"
+        class="theme-cycle"
+        [attr.aria-label]="
+          'Color theme: ' + currentTheme().label + '. Switch to ' + nextTheme().label
+        "
+        [attr.title]="currentTheme().label"
+        (click)="theme.setPreference(nextTheme().value)"
+      >
+        @for (option of themes; track option.value) {
+          @if (theme.preference() === option.value) {
+            <app-icon class="theme-cycle-icon" [name]="option.icon" />
+          }
+        }
+      </button>
 
       @if (viewer(); as user) {
         <button class="button log-button" (click)="logActivity.emit()">
