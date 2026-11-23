@@ -1333,9 +1333,10 @@ describe('App', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     // The browser refuses to submit when a value doesn't match the field's step.
-    expect(
-      (fixture.nativeElement.querySelector('#duration') as HTMLInputElement).checkValidity(),
-    ).toBe(true);
+    for (const id of ['#duration', '#distance'])
+      expect((fixture.nativeElement.querySelector(id) as HTMLInputElement).checkValidity()).toBe(
+        true,
+      );
     expect(app.editor.activityForm.distance).toBeCloseTo(3, 1);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.route-preview svg path')).not.toBeNull();

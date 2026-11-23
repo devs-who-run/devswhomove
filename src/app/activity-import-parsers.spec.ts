@@ -418,4 +418,18 @@ describe('activity import parsers', () => {
     expect(fromTcx.activity).toMatchObject({ sport: 'Cycling', duration: 20 });
     expect(fromTcx.track.map(({ lat }) => lat)).toEqual([52, 52.1]);
   });
+
+  it('collects very long tracks', () => {
+    const count = 300_000;
+    const points = Array.from(
+      { length: count },
+      (_, index) =>
+        `<trkpt lat="${(index % 1000) / 1000}" lon="1"><time>${new Date(
+          Date.UTC(2026, 1, 1) + index * 250,
+        ).toISOString()}</time></trkpt>`,
+    ).join('');
+    const track: TrackPoint[] = [];
+    parseGpx(`<gpx><trk><trkseg>${points}</trkseg></trk></gpx>`, track);
+    expect(track).toHaveLength(count);
+  });
 });

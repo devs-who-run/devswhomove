@@ -55,7 +55,8 @@ export class ActivityForm {
       form.sport = workout.sport;
       // The duration field accepts tenths of a minute.
       form.duration = Math.max(1, Math.round(workout.duration * 10) / 10);
-      form.distance = workout.distance;
+      // The distance field accepts hundredths of a kilometre.
+      form.distance = workout.distance === null ? null : Math.round(workout.distance * 100) / 100;
       form.occurredAt = localDate(new Date(workout.occurredAt));
       if (!form.title.trim()) form.title = workout.title;
     } catch (error) {

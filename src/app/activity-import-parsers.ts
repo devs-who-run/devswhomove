@@ -170,7 +170,8 @@ export function parseGpx(text: string, track?: TrackPoint[]): ParseResult {
         })
       : null;
     if (activity) {
-      if (track && !result.activities.length) track.push(...points);
+      // Append one by one: spreading a long track would exceed the engine's argument limit.
+      if (track && !result.activities.length) for (const point of points) track.push(point);
       result.activities.push(activity);
     } else result.skipped++;
   }
@@ -221,7 +222,8 @@ export function parseTcx(text: string, track?: TrackPoint[]): ParseResult {
       source: garmin ? 'garmin' : 'file',
     });
     if (activity) {
-      if (track && !result.activities.length) track.push(...points);
+      // Append one by one: spreading a long track would exceed the engine's argument limit.
+      if (track && !result.activities.length) for (const point of points) track.push(point);
       result.activities.push(activity);
     } else result.skipped++;
   }
