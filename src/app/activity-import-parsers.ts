@@ -1,9 +1,11 @@
 import type { Sport } from './models';
+import type { TrackPoint } from './route-geometry';
 
 /**
- * Browser-side readers for workout exports. Only a summary of each workout (sport, start time,
- * duration and distance) leaves the device; GPS tracks, heart rate and other health samples are
- * read and discarded here.
+ * Browser-side readers for workout exports. Bulk imports send only a summary of each workout
+ * (sport, start time, duration and distance); GPS tracks, heart rate and other health samples are
+ * read and discarded here. The activity form can also collect a single workout's track, which it
+ * trims and simplifies before uploading only if the person chooses to keep a route.
  */
 export type FileImportSource = 'garmin' | 'apple-health' | 'file';
 
@@ -124,25 +126,33 @@ function coordinates(point: Element): [number, number] | null {
   return position;
 }
 
-export function parseGpx(text: string): ParseResult {
+/** Read GPX tracks. Pass `track` to also collect the points of the first accepted track. */
+export function parseGpx(text: string, track?: TrackPoint[]): ParseResult {
   const document = xml(text);
   const garmin = /garmin/i.test(document.documentElement.getAttribute('creator') ?? '');
   const result: ParseResult = { activities: [], skipped: 0, ignoredFiles: 0 };
-  for (const track of byTag(document, 'trk')) {
+  for (const trk of byTag(document, 'trk')) {
+    const points: TrackPoint[] = [];
     let distance = 0;
     let first = NaN;
     let last = NaN;
     // Segments are separate recordings (e.g. a paused watch); no distance is added between them.
-    const segments = byTag(track, 'trkseg');
-    for (const segment of segments.length ? segments : [track]) {
+    const segments = byTag(trk, 'trkseg');
+    for (const segment of segments.length ? segments : [trk]) {
       let previous: [number, number] | null = null;
       for (const point of byTag(segment, 'trkpt')) {
         const position = coordinates(point);
+        const time = Date.parse(childText(point, 'time'));
         if (position) {
           if (previous) distance += haversineKm(previous, position);
           previous = position;
+          if (track)
+            points.push({
+              lat: position[0],
+              lng: position[1],
+              time: Number.isFinite(time) ? time : null,
+            });
         }
-        const time = Date.parse(childText(point, 'time'));
         if (Number.isFinite(time)) {
           if (!Number.isFinite(first)) first = time;
           last = time;
@@ -151,21 +161,25 @@ export function parseGpx(text: string): ParseResult {
     }
     const activity = Number.isFinite(first)
       ? finish({
-          title: childText(track, 'name'),
-          sport: sportFromText(childText(track, 'type')),
+          title: childText(trk, 'name'),
+          sport: sportFromText(childText(trk, 'type')),
           occurredAt: new Date(first).toISOString(),
           duration: (last - first) / 60_000,
           distance,
           source: garmin ? 'garmin' : 'file',
         })
       : null;
-    if (activity) result.activities.push(activity);
-    else result.skipped++;
+    if (activity) {
+      // Append one by one: spreading a long track would exceed the engine's argument limit.
+      if (track && !result.activities.length) for (const point of points) track.push(point);
+      result.activities.push(activity);
+    } else result.skipped++;
   }
   return result;
 }
 
-export function parseTcx(text: string): ParseResult {
+/** Read TCX activities. Pass `track` to also collect the points of the first accepted activity. */
+export function parseTcx(text: string, track?: TrackPoint[]): ParseResult {
   const document = xml(text);
   // TCX is Garmin's format, so the namespace says nothing; the creator names the device.
   const garmin = /garmin|forerunner|f[eē]nix|edge|venu|vivoactive|instinct|epix|enduro/i.test(
@@ -173,6 +187,21 @@ export function parseTcx(text: string): ParseResult {
   );
   const result: ParseResult = { activities: [], skipped: 0, ignoredFiles: 0 };
   for (const element of byTag(document, 'Activity')) {
+    const points: TrackPoint[] = [];
+    if (track)
+      for (const point of byTag(element, 'Trackpoint')) {
+        const lat = Number(childText(point, 'LatitudeDegrees') || NaN);
+        const lng = Number(childText(point, 'LongitudeDegrees') || NaN);
+        if (
+          !Number.isFinite(lat) ||
+          !Number.isFinite(lng) ||
+          Math.abs(lat) > 90 ||
+          Math.abs(lng) > 180
+        )
+          continue;
+        const time = Date.parse(childText(point, 'Time'));
+        points.push({ lat, lng, time: Number.isFinite(time) ? time : null });
+      }
     const laps = byTag(element, 'Lap');
     const seconds = laps.reduce((sum, lap) => sum + Number(childText(lap, 'TotalTimeSeconds')), 0);
     const meters = laps.reduce(
@@ -192,8 +221,11 @@ export function parseTcx(text: string): ParseResult {
       distance: meters / 1000,
       source: garmin ? 'garmin' : 'file',
     });
-    if (activity) result.activities.push(activity);
-    else result.skipped++;
+    if (activity) {
+      // Append one by one: spreading a long track would exceed the engine's argument limit.
+      if (track && !result.activities.length) for (const point of points) track.push(point);
+      result.activities.push(activity);
+    } else result.skipped++;
   }
   return result;
 }
@@ -226,8 +258,11 @@ function fitSport(sport: number, subSport: number): Sport {
   return 'Other';
 }
 
-/** Read session summaries from a FIT activity file. */
-export function parseFit(buffer: ArrayBuffer): ParseResult {
+/** Degrees per FIT position semicircle. */
+const SEMICIRCLE = 180 / 2 ** 31;
+
+/** Read session summaries from a FIT activity file. Pass `track` to also collect record positions. */
+export function parseFit(buffer: ArrayBuffer, track?: TrackPoint[]): ParseResult {
   const view = new DataView(buffer);
   const result: ParseResult = { activities: [], skipped: 0, ignoredFiles: 0 };
   if (view.byteLength < 12) throw new Error('This FIT file is too short.');
@@ -249,16 +284,10 @@ export function parseFit(buffer: ArrayBuffer): ParseResult {
 
   while (offset < end) {
     const header = view.getUint8(offset++);
-    if (header & 0x80) {
-      // Compressed timestamp header: a data message for local types 0-3.
-      const definition = definitions.get((header >> 5) & 0x03);
-      if (!definition) throw new Error('This FIT file is damaged.');
-      offset += definition.fields.reduce((sum, field) => sum + field.size, 0);
-      offset += definition.developerBytes;
-      continue;
-    }
-    const local = header & 0x0f;
-    if (header & 0x40) {
+    // A compressed timestamp header is a data message for local types 0-3.
+    const compressed = (header & 0x80) !== 0;
+    const local = compressed ? (header >> 5) & 0x03 : header & 0x0f;
+    if (!compressed && header & 0x40) {
       const littleEndian = view.getUint8(offset + 1) === 0;
       const global = view.getUint16(offset + 2, littleEndian);
       const count = view.getUint8(offset + 4);
@@ -284,6 +313,23 @@ export function parseFit(buffer: ArrayBuffer): ParseResult {
     }
     offset += definition.developerBytes;
     if (definition.global === 0) manufacturer = values.get(1) ?? -1;
+    if (definition.global === 20 && track) {
+      // Record positions are signed 32-bit semicircles; 0x7FFFFFFF marks a missing fix.
+      const rawLat = values.get(0);
+      const rawLng = values.get(1);
+      if (rawLat != null && rawLng != null && rawLat !== 0x7fffffff && rawLng !== 0x7fffffff) {
+        const lat = (rawLat | 0) * SEMICIRCLE;
+        const lng = (rawLng | 0) * SEMICIRCLE;
+        const timestamp = values.get(253);
+        if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180)
+          track.push({
+            lat,
+            lng,
+            time:
+              timestamp != null && timestamp !== 0xffffffff ? (timestamp + FIT_EPOCH) * 1000 : null,
+          });
+      }
+    }
     if (definition.global !== 18) continue;
     const valid = (value: number | undefined, invalid: number) =>
       value != null && value !== invalid && Number.isFinite(value) ? value : NaN;
@@ -600,4 +646,32 @@ async function parseArchive(
       result.ignoredFiles++;
     }
   }
+}
+
+/** A single workout read for the activity form, with its GPS track kept in memory. */
+export interface WorkoutWithTrack {
+  activity: ParsedActivity;
+  track: TrackPoint[];
+}
+
+/** Read one FIT, GPX or TCX workout (optionally gzipped) together with its track. */
+export async function readWorkoutWithTrack(file: File): Promise<WorkoutWithTrack> {
+  const match = /\.(fit|gpx|tcx)(\.gz)?$/i.exec(file.name);
+  if (!match) throw new Error(`${file.name} is not a FIT, GPX or TCX file.`);
+  const blob: Blob = match[2] ? await streamBlob(decompress(file.stream(), 'gzip')) : file;
+  const track: TrackPoint[] = [];
+  const type = match[1].toLowerCase();
+  const result =
+    type === 'fit'
+      ? parseFit(await blob.arrayBuffer(), track)
+      : type === 'gpx'
+        ? parseGpx(await blob.text(), track)
+        : parseTcx(await blob.text(), track);
+  if (result.activities.length > 1)
+    throw new Error(
+      'This file has several workouts. Use Import activities in your account settings instead.',
+    );
+  if (!result.activities.length)
+    throw new Error('No workout with a date and a duration of 1 minute to 24 hours was found.');
+  return { activity: result.activities[0], track };
 }

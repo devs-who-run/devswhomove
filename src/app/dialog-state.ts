@@ -7,6 +7,7 @@ import { conferenceLink } from './conference-link';
 import { localDate } from './date';
 import type { Club, ClubDetail, Profile, Sport, SportEvent, Visibility } from './models';
 import { preparePhoto } from './photo';
+import { RouteImport } from './route-import';
 
 interface DialogContext {
   viewer: () => Profile | null;
@@ -33,6 +34,7 @@ export class DialogState {
   readonly photo = signal<Blob | null>(null);
   readonly photoPreview = signal('');
   readonly photoBusy = signal(false);
+  readonly routeImport = new RouteImport();
   private photoRequest = 0;
   readonly publicDisclosure = signal(false);
   readonly editingEvent = signal<string | null>(null);
@@ -112,6 +114,7 @@ export class DialogState {
       this.activityForm = this.emptyActivity();
       if (this.context.viewer()?.provider === 'atproto') this.activityForm.visibility = 'public';
       this.removePhoto();
+      this.routeImport.reset();
     }
     if (modal === 'event') {
       this.eventForm = this.emptyEvent();
@@ -153,6 +156,7 @@ export class DialogState {
     this.photoRequest++;
     this.photoBusy.set(false);
     this.removePhoto();
+    this.routeImport.reset();
   }
 
   async choosePhoto(event: Event): Promise<void> {
@@ -220,17 +224,29 @@ export class DialogState {
           occurredAt: new Date(this.activityForm.occurredAt).toISOString(),
         });
         const photo = this.photo();
-        let photoError = '';
+        const failures: string[] = [];
         if (photo) {
           try {
             await this.uploadPhoto(id, photo);
           } catch (error) {
-            photoError = this.message(error);
+            failures.push(`the photo didn’t upload: ${this.message(error)}`);
+          }
+        }
+        const segments =
+          this.context.viewer()?.provider === 'atproto' ? null : this.routeImport.segments();
+        if (segments?.length) {
+          try {
+            await this.api(`/api/activities/${encodeURIComponent(id)}/route`, 'PUT', {
+              segments,
+              visibility: this.routeImport.visibility(),
+            });
+          } catch (error) {
+            failures.push(`the route didn’t save: ${this.message(error)}`);
           }
         }
         this.context.notice.set(
-          photoError
-            ? `Activity logged, but the photo didn’t upload: ${photoError}`
+          failures.length
+            ? `Activity logged, but ${failures.join(' and ')}`
             : 'Activity logged. Every little move counts.',
         );
       } else if (this.modal() === 'event') {

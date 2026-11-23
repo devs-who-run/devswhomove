@@ -43,3 +43,38 @@ export function date(value: unknown, future: boolean): string {
     throw new HttpError(400, 'Activities cannot be in the future.');
   return new Date(parsed).toISOString();
 }
+
+export type RouteSegments = [number, number][][];
+export const MAX_ROUTE_POINTS = 500;
+const MAX_ROUTE_SEGMENTS = 50;
+
+/** Validate an uploaded route and round its coordinates to about a metre. */
+export function routeSegments(value: unknown): RouteSegments {
+  const invalid = () =>
+    new HttpError(
+      400,
+      `Route must be 1–${MAX_ROUTE_SEGMENTS} segments of 2 or more [latitude, longitude] points, at most ${MAX_ROUTE_POINTS} points in total.`,
+    );
+  if (!Array.isArray(value) || !value.length || value.length > MAX_ROUTE_SEGMENTS) throw invalid();
+  let total = 0;
+  const round = (n: number) => Math.round(n * 1e5) / 1e5;
+  return value.map((segment) => {
+    if (!Array.isArray(segment) || segment.length < 2) throw invalid();
+    total += segment.length;
+    if (total > MAX_ROUTE_POINTS) throw invalid();
+    return segment.map((point) => {
+      if (!Array.isArray(point) || point.length !== 2) throw invalid();
+      const [lat, lng] = point as unknown[];
+      if (
+        typeof lat !== 'number' ||
+        typeof lng !== 'number' ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng) ||
+        Math.abs(lat) > 90 ||
+        Math.abs(lng) > 180
+      )
+        throw invalid();
+      return [round(lat), round(lng)] as [number, number];
+    });
+  });
+}

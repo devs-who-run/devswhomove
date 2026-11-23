@@ -1,6 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { ActivityRoute } from './activity-route';
 import { ActivitySocial, type Participation } from './activity-social';
 import { Icon } from './icon';
 import type { Activity } from './models';
@@ -13,7 +14,7 @@ const IMPORT_LABELS: Record<string, string> = {
 };
 
 @Component({
-  imports: [ActivitySocial, DatePipe, DecimalPipe, Icon, RouterLink],
+  imports: [ActivityRoute, ActivitySocial, DatePipe, DecimalPipe, Icon, RouterLink],
   selector: 'app-activity-card',
   styleUrl: './activity-card.css',
   template: `
@@ -60,6 +61,18 @@ const IMPORT_LABELS: Record<string, string> = {
           [alt]="'Photo from ' + activity().title"
           loading="lazy"
         />
+      }
+      @if (activity().routeVisibility) {
+        <figure class="activity-route">
+          @defer (on viewport) {
+            <app-activity-route [activityId]="activity().id" />
+          } @placeholder {
+            <div class="activity-route-placeholder"></div>
+          }
+          @if (activity().routeVisibility === 'hidden') {
+            <figcaption><app-icon name="lock" />Only you can see this route</figcaption>
+          }
+        </figure>
       }
       <div class="activity-metrics">
         @if (activity().distance !== null) {

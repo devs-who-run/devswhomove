@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './app';
 import { ActivityCalendar } from './activity-calendar';
+import { ActivityForm } from './activity-form';
 import { AdventCalendar } from './advent-calendar';
 import { By } from '@angular/platform-browser';
 import { NgForm } from '@angular/forms';
@@ -1282,6 +1283,89 @@ describe('App', () => {
     fixture.detectChanges();
     expect(calendar.completedDays()).toBe(0);
     localStorage.removeItem('devs-who-move:advent:2026:private-advent-user');
+  });
+
+  it('fills an activity from a workout file and uploads only the trimmed route', async () => {
+    HTMLDialogElement.prototype.close = vi.fn();
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    const viewer = { ...DEMO_PROFILE, id: 'me', username: 'me' };
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path === '/api/activities' && init?.method === 'POST')
+        return Response.json({ id: 'new' }, { status: 201 });
+      if (path === '/api/activities/new/route' && init?.method === 'PUT')
+        return Response.json({ routeVisibility: 'public' });
+      return Response.json({ ...bootstrap, viewer, activities: [] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    await fixture.whenStable();
+    app.editor.openModal('activity');
+    fixture.detectChanges();
+    const form = fixture.debugElement.query(By.directive(ActivityForm))
+      .componentInstance as ActivityForm;
+    // 3 km due north, a point every ~11 m and every 4.15 seconds (18.675 minutes in all).
+    const points = Array.from(
+      { length: 271 },
+      (_, index) =>
+        `<trkpt lat="${52 + index * 0.0001}" lon="0"><time>${new Date(
+          Date.UTC(2026, 10, 20, 7) + index * 4150,
+        ).toISOString()}</time></trkpt>`,
+    ).join('');
+    const input = document.createElement('input');
+    Object.defineProperty(input, 'files', {
+      value: [
+        new File(
+          [
+            `<gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><name>Canal loop</name><type>running</type><trkseg>${points}</trkseg></trk></gpx>`,
+          ],
+          'canal.gpx',
+        ),
+      ],
+    });
+    await form.importWorkout({ target: input } as unknown as Event);
+    expect(form.workoutError()).toBe('');
+    expect(app.editor.activityForm).toMatchObject({
+      title: 'Canal loop',
+      sport: 'Running',
+      duration: 18.7,
+    });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // The browser refuses to submit when a value doesn't match the field's step.
+    for (const id of ['#duration', '#distance'])
+      expect((fixture.nativeElement.querySelector(id) as HTMLInputElement).checkValidity()).toBe(
+        true,
+      );
+    expect(app.editor.activityForm.distance).toBeCloseTo(3, 1);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.route-preview svg path')).not.toBeNull();
+    app.editor.routeImport.visibility.set('public');
+    // Route controls are locked while the activity and its route are being saved.
+    app.saving.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const element = fixture.nativeElement as HTMLElement;
+    for (const selector of ['#route-trim', '#route-visibility', '.route-preview button'])
+      expect((element.querySelector(selector) as HTMLInputElement).disabled).toBe(true);
+    app.saving.set(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    for (const selector of ['#route-trim', '#route-visibility', '.route-preview button'])
+      expect((element.querySelector(selector) as HTMLInputElement).disabled).toBe(false);
+    await app.editor.save();
+    const upload = fetchMock.mock.calls.find(([path]) => path === '/api/activities/new/route');
+    const sent = JSON.parse(upload?.[1]?.body as string) as {
+      segments: [number, number][][];
+      visibility: string;
+    };
+    expect(sent.visibility).toBe('public');
+    // The default 500 m privacy zone removes both ends of the 3 km line.
+    const lats = sent.segments.flat().map(([lat]) => lat);
+    expect(Math.min(...lats)).toBeGreaterThanOrEqual(52.0045);
+    expect(Math.max(...lats)).toBeLessThanOrEqual(52.027 - 0.0045);
+    expect(app.notice()).toBe('Activity logged. Every little move counts.');
+    expect(app.editor.routeImport.fileName()).toBe('');
   });
 
   it('ignores photo preparation that finishes after the dialog closes', async () => {

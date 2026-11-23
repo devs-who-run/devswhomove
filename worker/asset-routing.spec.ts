@@ -51,6 +51,7 @@ describe('deployed asset routing', () => {
       '0002_activity_photos.sql',
       '0008_rate_limits.sql',
       '0013_activity_imports.sql',
+      '0010_activity_routes.sql',
     ]) {
       const sql = await readFile(new URL(`../migrations/${migration}`, import.meta.url), 'utf8');
       for (const statement of sql

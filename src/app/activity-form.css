@@ -98,3 +98,35 @@
   color: var(--muted);
   font-size: max(12px, 0.85em);
 }
+
+.route-preview {
+  margin: 0 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 8px 0;
+}
+.route-preview figcaption {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  color: var(--muted);
+  font-size: max(12px, 0.85em);
+}
+.route-preview figcaption > span {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+.route-empty {
+  margin: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.form-error {
+  margin: -8px 0 17px;
+  color: #a44938;
+  font-size: 13px;
+}

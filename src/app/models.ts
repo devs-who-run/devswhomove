@@ -9,6 +9,7 @@ export const SPORTS = [
 ] as const;
 export type Sport = (typeof SPORTS)[number];
 export type Visibility = 'public' | 'private';
+export type RouteVisibility = 'hidden' | 'public';
 export type AgentScope = 'activities:read' | 'activities:write' | 'events:read';
 
 export interface Profile {
@@ -39,6 +40,8 @@ export interface Activity {
   source: 'web' | 'agent';
   importSource?: 'strava' | 'garmin' | 'apple-health' | 'file' | null;
   photo?: string | null;
+  /** Set when a route exists that this viewer may see; only the owner ever sees 'hidden'. */
+  routeVisibility?: RouteVisibility | null;
   kudos?: number;
   kudoed?: boolean;
   comments?: number;

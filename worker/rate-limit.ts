@@ -18,6 +18,7 @@ const POLICIES: Record<string, RatePolicy> = {
   // Large exports (Apple Health, years of Strava history) arrive in many 200-activity batches.
   import: { name: 'import', windowSeconds: HOUR, accountLimit: 120, ipLimit: 240 },
   photo: { name: 'photo', windowSeconds: HOUR, accountLimit: 10, ipLimit: 30 },
+  route: { name: 'route', windowSeconds: HOUR, accountLimit: 30, ipLimit: 60 },
   comment: { name: 'comment', windowSeconds: HOUR, accountLimit: 30, ipLimit: 120 },
   social: { name: 'social', windowSeconds: HOUR, accountLimit: 120, ipLimit: 300 },
   activity: { name: 'activity', windowSeconds: HOUR, accountLimit: 60, ipLimit: 120 },
@@ -44,6 +45,7 @@ function policyFor(request: Request): RatePolicy | undefined {
   if (pathname === '/api/activities/bulk') return POLICIES['bulk'];
   if (pathname === '/api/imports' || pathname === '/api/strava/sync') return POLICIES['import'];
   if (/^\/api\/activities\/[^/]+\/photo$/.test(pathname)) return POLICIES['photo'];
+  if (/^\/api\/activities\/[^/]+\/route$/.test(pathname)) return POLICIES['route'];
   if (/^\/api\/activities\/[^/]+\/comments$/.test(pathname) && method === 'POST')
     return POLICIES['comment'];
   if (

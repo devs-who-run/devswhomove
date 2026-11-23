@@ -288,6 +288,7 @@ describe('Worker with real D1 storage', () => {
         '0014_strava_webhook_events.sql',
         '0015_strava_data_lifecycle.sql',
         '0016_strava_tombstones_and_retry.sql',
+        '0010_activity_routes.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -715,6 +716,120 @@ describe('Worker with real D1 storage', () => {
     ).toBe(200);
     expect(await storedPhotos()).toBe(0);
     expect((await request(url, 'GET', undefined, alice)).status).toBe(404);
+  });
+
+  it('stores trimmed routes and shows them only when the owner shares them', async () => {
+    const before = await db
+      .prepare(
+        `SELECT a.visibility AS activityVisibility, u.visibility AS profileVisibility
+        FROM activities a JOIN users u ON u.id = a.user_id WHERE a.id = ?`,
+      )
+      .bind(activityId)
+      .first<{ activityVisibility: string; profileVisibility: string }>();
+    const routeUrl = `/api/activities/${activityId}/route`;
+    const segments = [
+      [
+        [52.123456789, 0.987654321],
+        [52.2, 1],
+      ],
+    ];
+    const put = (data: unknown, session?: string) => request(routeUrl, 'PUT', data, session);
+    const routeFor = async (session?: string) =>
+      (
+        await (
+          await request('/api/bootstrap', 'GET', undefined, session)
+        ).json<{ activities: { id: string; routeVisibility: string | null }[] }>()
+      ).activities.find((item) => item.id === activityId);
+
+    expect((await put({ segments })).status).toBe(401);
+    expect((await put({ segments }, bob)).status).toBe(404);
+    for (const invalid of [
+      [],
+      [[[52, 0]]],
+      [
+        [
+          [91, 0],
+          [52, 0],
+        ],
+      ],
+      [
+        [
+          ['52', 0],
+          [52, 0],
+        ],
+      ],
+      [Array.from({ length: 501 }, () => [52, 0])],
+    ])
+      expect((await put({ segments: invalid }, alice)).status).toBe(400);
+    expect((await put({ segments, visibility: 'everyone' }, alice)).status).toBe(400);
+
+    const saved = await put({ segments }, alice);
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual({ routeVisibility: 'hidden' });
+    await db
+      .prepare(`UPDATE activities SET visibility = 'public' WHERE id = ?`)
+      .bind(activityId)
+      .run();
+    await db
+      .prepare(
+        `UPDATE users SET visibility = 'public' WHERE id = (SELECT user_id FROM activities WHERE id = ?)`,
+      )
+      .bind(activityId)
+      .run();
+
+    // A hidden route is visible to its owner, and other people cannot tell it exists.
+    expect((await routeFor(alice))?.routeVisibility).toBe('hidden');
+    const own = await request(routeUrl, 'GET', undefined, alice);
+    expect(own.headers.get('Cache-Control')).toContain('private');
+    expect(await own.json()).toEqual({
+      segments: [
+        [
+          [52.12346, 0.98765],
+          [52.2, 1],
+        ],
+      ],
+    });
+    expect((await routeFor(bob))?.routeVisibility).toBeNull();
+    expect((await routeFor())?.routeVisibility).toBeNull();
+    expect(
+      (
+        await (
+          await request(`/api/activities/${activityId}`, 'GET', undefined, bob)
+        ).json<{ activity: { routeVisibility: string | null } }>()
+      ).activity.routeVisibility,
+    ).toBeNull();
+    expect((await request(routeUrl, 'GET', undefined, bob)).status).toBe(404);
+    expect((await request(routeUrl)).status).toBe(404);
+
+    expect((await put({ segments, visibility: 'public' }, alice)).status).toBe(200);
+    expect((await routeFor(bob))?.routeVisibility).toBe('public');
+    expect((await request(routeUrl, 'GET', undefined, bob)).status).toBe(200);
+    expect((await request(routeUrl)).status).toBe(200);
+
+    // A public route on a private activity stays private.
+    await db
+      .prepare(`UPDATE activities SET visibility = 'private' WHERE id = ?`)
+      .bind(activityId)
+      .run();
+    expect((await request(routeUrl, 'GET', undefined, bob)).status).toBe(404);
+    expect((await request(routeUrl, 'GET', undefined, alice)).status).toBe(200);
+
+    expect((await request(routeUrl, 'DELETE', undefined, bob)).status).toBe(404);
+    const removed = await request(routeUrl, 'DELETE', undefined, alice);
+    expect(await removed.json()).toEqual({ routeVisibility: null });
+    expect((await request(routeUrl, 'GET', undefined, alice)).status).toBe(404);
+    expect((await routeFor(alice))?.routeVisibility).toBeNull();
+
+    await db
+      .prepare(`UPDATE activities SET visibility = ?, route_visibility = 'hidden' WHERE id = ?`)
+      .bind(before!.activityVisibility, activityId)
+      .run();
+    await db
+      .prepare(
+        `UPDATE users SET visibility = ? WHERE id = (SELECT user_id FROM activities WHERE id = ?)`,
+      )
+      .bind(before!.profileVisibility, activityId)
+      .run();
   });
 
   it('creates expiring scoped tokens and never returns their hashes in listings', async () => {
