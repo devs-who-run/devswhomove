@@ -151,7 +151,10 @@ export function parseGpx(text: string): ParseResult {
 
 export function parseTcx(text: string): ParseResult {
   const document = xml(text);
-  const garmin = /garmin/i.test(childText(document, 'Creator') || text.slice(0, 2000));
+  // TCX is Garmin's format, so the namespace says nothing; the creator names the device.
+  const garmin = /garmin|forerunner|f[eē]nix|edge|venu|vivoactive|instinct|epix|enduro/i.test(
+    childText(document, 'Creator'),
+  );
   const result: ParseResult = { activities: [], skipped: 0, ignoredFiles: 0 };
   for (const element of byTag(document, 'Activity')) {
     const laps = byTag(element, 'Lap');

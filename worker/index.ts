@@ -1342,6 +1342,7 @@ async function exportAccount(
       ['comments', data.comments],
       ['kudos', data.kudos],
       ['agentTokens', data.agentTokens],
+      ...(github ? ([['stravaConnection', []]] as [string, unknown][]) : []),
       ['photos', []],
       ['atprotoRecords', data.atprotoRecords],
     ];

@@ -416,6 +416,17 @@ describe('Activity imports and Strava sync', () => {
     );
   });
 
+  it('includes the Strava connection in the data export without tokens', async () => {
+    await connectAlice();
+    const exported = await request('/api/account/export', 'GET', undefined, sessions.alice);
+    const text = await exported.text();
+    const data = JSON.parse(text) as { stravaConnection: Record<string, unknown>[] };
+    expect(data.stravaConnection).toEqual([
+      expect.objectContaining({ athlete_id: 777, scope: 'read,activity:read_all' }),
+    ]);
+    expect(text).not.toMatch(/encrypted_tokens|refresh-token|access-authorization_code/);
+  });
+
   it('revokes Strava when the account is deleted', async () => {
     await connectAlice();
     const deleted = await request(

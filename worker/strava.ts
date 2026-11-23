@@ -9,6 +9,8 @@ export interface StravaEnv {
   STRAVA_TOKEN_KEY?: string;
   /** Shared secret Strava echoes back when the webhook subscription is created. */
   STRAVA_WEBHOOK_VERIFY_TOKEN?: string;
+  /** Local development only: point OAuth and API calls at a mock Strava server. */
+  STRAVA_API_ORIGIN?: string;
 }
 
 interface StravaTokens {
@@ -48,7 +50,7 @@ export interface StravaStatus {
   lastSyncedAt?: string | null;
 }
 
-const API = 'https://www.strava.com/api/v3';
+const stravaOrigin = (env: StravaEnv) => env.STRAVA_API_ORIGIN || 'https://www.strava.com';
 const PAGE_SIZE = 200;
 /** Re-read a few days before the newest cursor so late uploads are not skipped. */
 const NEWEST_OVERLAP_SECONDS = 3 * 86400;
@@ -130,7 +132,7 @@ async function decryptTokens(env: StravaEnv, value: string, userId: string) {
 
 /** Build the Strava consent URL. */
 export function stravaAuthorizeUrl(env: StravaEnv, redirectUri: string, state: string): string {
-  const url = new URL('https://www.strava.com/oauth/authorize');
+  const url = new URL('/oauth/authorize', stravaOrigin(env));
   url.search = new URLSearchParams({
     client_id: env.STRAVA_CLIENT_ID ?? '',
     redirect_uri: redirectUri,
@@ -143,7 +145,7 @@ export function stravaAuthorizeUrl(env: StravaEnv, redirectUri: string, state: s
 }
 
 async function tokenRequest(env: StravaEnv, params: Record<string, string>) {
-  const response = await fetch('https://www.strava.com/oauth/token', {
+  const response = await fetch(`${stravaOrigin(env)}/oauth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -244,8 +246,8 @@ async function accessToken(env: StravaEnv, db: D1Database, row: ConnectionRow): 
   return refreshed.tokens.accessToken;
 }
 
-async function stravaGet<T>(token: string, path: string): Promise<T | null> {
-  const response = await fetch(`${API}${path}`, {
+async function stravaGet<T>(env: StravaEnv, token: string, path: string): Promise<T | null> {
+  const response = await fetch(`${stravaOrigin(env)}/api/v3${path}`, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   });
   if (response.status === 404) return null;
@@ -308,6 +310,7 @@ export async function syncStrava(env: StravaEnv, db: D1Database, userId: string,
     pages++;
     const activities =
       (await stravaGet<StravaActivity[]>(
+        env,
         token,
         `/athlete/activities?after=${after}&per_page=${PAGE_SIZE}&page=${page}`,
       )) ?? [];
@@ -318,6 +321,7 @@ export async function syncStrava(env: StravaEnv, db: D1Database, userId: string,
     pages++;
     const activities =
       (await stravaGet<StravaActivity[]>(
+        env,
         token,
         `/athlete/activities?before=${oldest}&per_page=${PAGE_SIZE}&page=1`,
       )) ?? [];
@@ -342,7 +346,7 @@ export async function disconnectStrava(env: StravaEnv, db: D1Database, userId: s
   if (!row) return;
   try {
     const tokens = await decryptTokens(env, row.encrypted_tokens, userId);
-    await fetch('https://www.strava.com/oauth/deauthorize', {
+    await fetch(`${stravaOrigin(env)}/oauth/deauthorize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ access_token: tokens.accessToken }),
@@ -403,6 +407,7 @@ export async function applyStravaWebhook(
   const row = await connection(db, userId);
   if (!row) return;
   const activity = await stravaGet<StravaActivity>(
+    env,
     await accessToken(env, db, row),
     `/activities/${event.object_id}`,
   );

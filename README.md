@@ -276,6 +276,8 @@ curl -X POST https://www.strava.com/api/v3/push_subscriptions \
 
 Strava does not sign webhook events, so the Worker treats them as hints: new activities are re-read from Strava with the athlete's own token. Optionally set `STRAVA_SUBSCRIPTION_ID` to the returned subscription ID to reject events for any other subscription. Apply migration `0013_activity_imports.sql` before deploying.
 
+For local testing without a Strava app, set `STRAVA_API_ORIGIN` to a mock server that implements `/oauth/authorize`, `/oauth/token`, `/oauth/deauthorize`, `/api/v3/athlete/activities` and `/api/v3/activities/:id`. Leave it unset in production.
+
 ## Deploy
 
 ```sh
