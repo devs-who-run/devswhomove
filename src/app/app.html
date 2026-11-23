@@ -99,6 +99,16 @@
           />
         }
 
+        @if (page() === 'advent') {
+          <app-advent-calendar
+            [activities]="viewer() ? ownProfileActivities() : []"
+            [viewer]="viewer()"
+            [loading]="profileLoading()"
+            [error]="profileError()"
+            (logActivity)="logAdventActivity($event)"
+          />
+        }
+
         @if (page() === 'activity') {
           @if (sharedActivityLoading()) {
             <div class="loading-state" role="status">Loading activity…</div>

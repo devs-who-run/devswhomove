@@ -11,7 +11,7 @@ interface ThemeOption {
   icon: string;
 }
 
-export type Page = 'feed' | 'events' | 'clubs' | 'profile' | 'agents' | 'activity';
+export type Page = 'feed' | 'events' | 'clubs' | 'profile' | 'agents' | 'activity' | 'advent';
 
 export interface NavItem {
   page: Page;

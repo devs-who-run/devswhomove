@@ -1,0 +1,139 @@
+<section class="advent-page" aria-labelledby="advent-title">
+  <div class="advent-hero">
+    <header class="advent-heading">
+      <p class="hero-eyebrow">A little less sedentary · December {{ year() }}</p>
+      <h1 id="advent-title">25 days. A little more movement.</h1>
+      <p class="advent-intro">
+        A tiny daily invitation for developers to step away from the desk. Every pace, ability, and
+        kind of movement belongs here.
+      </p>
+    </header>
+
+    <section class="advent-progress" aria-label="Advent calendar progress">
+      <div>
+        <span class="progress-label">Your December progress</span>
+        <strong>{{ completedDays() }} <span>of 25 days</span></strong>
+      </div>
+      <div
+        class="progress-track"
+        role="progressbar"
+        [attr.aria-valuenow]="completedDays()"
+        aria-valuemin="0"
+        aria-valuemax="25"
+        [attr.aria-label]="completedDays() + ' of 25 days completed'"
+      >
+        <span [style.width.%]="completedDays() * 4"></span>
+      </div>
+      <p>{{ seasonStatus() }} Doors open on their date, using your local time.</p>
+    </section>
+  </div>
+
+  @if (error()) {
+    <p class="advent-error" role="alert">{{ error() }}</p>
+  }
+  @if (localError()) {
+    <p class="advent-error" role="alert">{{ localError() }}</p>
+  }
+  @if (loading()) {
+    <p class="advent-state" role="status">Loading your movement days…</p>
+  } @else {
+    <div class="advent-grid" aria-label="25 daily movement challenges">
+      @for (day of days(); track day.date) {
+        <button
+          class="advent-door"
+          type="button"
+          [class.open]="day.open"
+          [class.complete]="day.complete"
+          [disabled]="!day.open"
+          [attr.aria-label]="
+            day.open
+              ? 'Day ' + day.day + ': ' + day.title + (day.complete ? ', complete' : '')
+              : 'Day ' + day.day + ', locked until ' + day.dateLabel
+          "
+          [attr.aria-pressed]="day.open && selectedDay().date === day.date"
+          (click)="select(day)"
+        >
+          <span class="door-number">{{ day.day }}</span>
+          @if (!day.open) {
+            <span class="door-caption">Opens {{ day.dateLabel }}</span>
+          } @else {
+            <span class="door-caption">{{ day.complete ? 'Complete ✓' : day.title }}</span>
+          }
+        </button>
+      }
+    </div>
+
+    @if (selectedDay().open) {
+      <article class="advent-challenge">
+        <div class="challenge-number">
+          DAY {{ selectedDay().day }} <span>·</span> {{ selectedDay().dateLabel }}
+        </div>
+        <h2>{{ selectedDay().title }}</h2>
+        <p>{{ selectedDay().prompt }}</p>
+        <p class="gentle-option"><strong>Make it yours:</strong> {{ selectedDay().gentle }}</p>
+        @if (selectedDay().complete) {
+          @if (selectedDay().restDay && selectedDay().activityCount === 0) {
+            <p class="completion-note" role="status">
+              <app-icon name="check" /> Recovery check-in saved. Rest counts.
+            </p>
+          } @else {
+            <p class="completion-note" role="status">
+              <app-icon name="check" /> Movement logged. Nice work showing up.
+            </p>
+          }
+        }
+        @if (viewer()) {
+          <div class="challenge-actions">
+            <button
+              type="button"
+              class="button primary"
+              (click)="logActivity.emit(selectedDay().date)"
+            >
+              Log movement
+            </button>
+            @if (selectedDay().restDay && selectedDay().activityCount === 0) {
+              <button type="button" class="button outline" (click)="toggleRestDay(selectedDay())">
+                {{ selectedDay().complete ? 'Undo recovery check-in' : 'Count as recovery' }}
+              </button>
+            }
+          </div>
+          <p class="challenge-footnote">
+            Any activity logged for this day counts.
+            @if (viewer()?.provider === 'atproto') {
+              Photos are not available for AT Protocol accounts.
+            } @else {
+              You can add an optional photo when logging.
+            }
+            @if (selectedDay().restDay) {
+              Recovery check-ins are saved only in this browser.
+            }
+          </p>
+        } @else {
+          <p class="challenge-footnote">
+            Sign in to track your progress. Any logged activity counts.
+          </p>
+        }
+      </article>
+    } @else {
+      <article class="advent-challenge locked-message">
+        <div class="challenge-number">YOUR FIRST DOOR IS WAITING</div>
+        <h2>One day at a time.</h2>
+        <p>Daily prompts stay tucked away until their date. No spoilers, no early pressure.</p>
+      </article>
+    }
+  }
+
+  <footer class="advent-footer">
+    <p>Progress is personal. A gentle option is always enough, and recovery days count too.</p>
+    @if (viewer()) {
+      <div class="share-card">
+        <span>DEVS WHO MOVE · ADVENT {{ year() }}</span>
+        <strong>{{ completedDays() }}<small> / 25 days completed</small></strong>
+        <span>Every little move counts.</span>
+      </div>
+      <button type="button" class="button outline share-button" (click)="copyProgress()">
+        <app-icon name="share" /> {{ copied() ? 'Progress copied' : 'Copy progress' }}
+      </button>
+    }
+  </footer>
+</section>

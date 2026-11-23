@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './app';
 import { ActivityCalendar } from './activity-calendar';
+import { AdventCalendar } from './advent-calendar';
 import { By } from '@angular/platform-browser';
 import { NgForm } from '@angular/forms';
 import { DEMO_ACTIVITIES, DEMO_EVENTS, DEMO_PROFILE } from './demo';
@@ -137,8 +138,8 @@ describe('App', () => {
         fixture.nativeElement.querySelectorAll(selector) as NodeListOf<HTMLAnchorElement>,
         (link) => link.textContent?.trim(),
       );
-    expect(labels('.primary-nav a')).toEqual(['Feed', 'Events', 'Clubs', 'Agents']);
-    expect(labels('.tabbar a')).toEqual(['Feed', 'Events', 'Clubs', 'Agents']);
+    expect(labels('.primary-nav a')).toEqual(['Feed', 'Events', 'Clubs', 'Agents', 'Advent']);
+    expect(labels('.tabbar a')).toEqual(['Feed', 'Events', 'Clubs', 'Agents', 'Advent']);
     expect(
       fixture.nativeElement.querySelector('.primary-nav a.active')?.getAttribute('aria-current'),
     ).toBe('page');
@@ -1191,6 +1192,96 @@ describe('App', () => {
     fixture.detectChanges();
     const image = fixture.nativeElement.querySelector('.activity-photo') as HTMLImageElement;
     expect(image.getAttribute('src')).toBe(photoUrl);
+  });
+
+  it('lets an Advent recovery day be logged with an optional photo', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 11, 7, 8, 15));
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+    const viewer = { ...DEMO_PROFILE, id: 'advent-photo-user', provider: 'github' as const };
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path === '/api/activities' && init?.method === 'POST')
+        return Response.json({ id: 'advent-activity' }, { status: 201 });
+      if (path === '/api/activities/advent-activity/photo' && init?.method === 'PUT')
+        return Response.json({ photo: '/api/activities/advent-activity/photo?v=1' });
+      if (path.startsWith('/api/profiles/'))
+        return Response.json({ profile: viewer, activities: [] });
+      return Response.json({ ...bootstrap, viewer });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal(
+      'URL',
+      Object.assign(URL, { createObjectURL: () => 'blob:advent-photo', revokeObjectURL: vi.fn() }),
+    );
+
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    await TestBed.inject(Router).navigateByUrl('/advent');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const app = fixture.componentInstance;
+    const calendar = fixture.debugElement.query(By.directive(AdventCalendar))
+      .componentInstance as AdventCalendar;
+    calendar.now.set(new Date(2026, 11, 7, 8, 15));
+    fixture.detectChanges();
+    const html = fixture.nativeElement as HTMLElement;
+    expect(html.querySelector('.advent-challenge')?.textContent).toContain('Count as recovery');
+    expect(html.querySelector('.advent-challenge')?.textContent).toContain('optional photo');
+    html.querySelector<HTMLButtonElement>('.advent-challenge .button.primary')!.click();
+    fixture.detectChanges();
+    expect(app.editor.activityForm.occurredAt).toBe('2026-12-07T08:15');
+
+    const photo = new Blob(['jpeg'], { type: 'image/jpeg' });
+    app.editor.preparePhoto = vi.fn().mockResolvedValue(photo);
+    const input = html.querySelector<HTMLInputElement>('#activity-photo')!;
+    expect(input.accept).toBe('image/*');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['raw'], 'walk.jpg', { type: 'image/jpeg' })],
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.waitFor(() => expect(app.editor.photo()).toBe(photo));
+    fixture.detectChanges();
+    expect(html.querySelector('.photo-preview img')?.getAttribute('src')).toBe('blob:advent-photo');
+    app.editor.activityForm.title = 'Recovery walk';
+    await app.editor.save();
+
+    const activityRequest = fetchMock.mock.calls.find(([path]) => path === '/api/activities');
+    expect(JSON.parse(activityRequest![1]!.body as string).occurredAt).toBe(
+      new Date(2026, 11, 7, 8, 15).toISOString(),
+    );
+    const upload = fetchMock.mock.calls.find(
+      ([path]) => path === '/api/activities/advent-activity/photo',
+    );
+    expect(upload?.[1]).toMatchObject({ method: 'PUT', body: photo });
+    expect(app.notice()).toBe('Activity logged. Every little move counts.');
+    app.logAdventActivity('2026-12-06');
+    expect(app.editor.activityForm.occurredAt).toBe('2026-12-06T12:00');
+  });
+
+  it('does not show private Advent progress after the viewer signs out', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 11, 7, 12));
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const app = fixture.componentInstance;
+    app.page.set('advent');
+    app.viewer.set({ ...DEMO_PROFILE, id: 'private-advent-user', visibility: 'private' });
+    app.ownProfileActivities.set([
+      { ...DEMO_ACTIVITIES[0], occurredAt: new Date(2026, 11, 1, 12).toISOString() },
+    ]);
+    fixture.detectChanges();
+    const calendar = fixture.debugElement.query(By.directive(AdventCalendar))
+      .componentInstance as AdventCalendar;
+    expect(calendar.completedDays()).toBe(1);
+    calendar.toggleRestDay(calendar.days()[6]);
+    expect(calendar.completedDays()).toBe(2);
+
+    app.viewer.set(null);
+    fixture.detectChanges();
+    expect(calendar.completedDays()).toBe(0);
+    localStorage.removeItem('devs-who-move:advent:2026:private-advent-user');
   });
 
   it('ignores photo preparation that finishes after the dialog closes', async () => {
