@@ -1,10 +1,15 @@
 import { Component, computed, ElementRef, inject, input, output, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Icon } from './icon';
 import { Login } from './login';
 import type { Profile } from './models';
-import { Theme } from './theme';
+import { Theme, type ThemePreference } from './theme';
+
+interface ThemeOption {
+  value: ThemePreference;
+  label: string;
+  icon: string;
+}
 
 export type Page = 'feed' | 'events' | 'clubs' | 'profile' | 'agents' | 'activity';
 
@@ -16,7 +21,7 @@ export interface NavItem {
 
 @Component({
   selector: 'app-topbar',
-  imports: [FormsModule, Icon, Login, RouterLink],
+  imports: [Icon, Login, RouterLink],
   templateUrl: './app-topbar.html',
   styleUrls: ['./page-layout.css', './app-topbar.css'],
   host: {
@@ -36,6 +41,17 @@ export class AppTopbar {
   readonly signOut = output<void>();
   readonly logActivity = output<void>();
 
+  readonly themes: readonly ThemeOption[] = [
+    { value: 'light', label: 'Light theme', icon: 'sun' },
+    { value: 'system', label: 'Match system theme', icon: 'monitor' },
+    { value: 'dark', label: 'Dark theme', icon: 'moon' },
+  ];
+  readonly themeIndex = computed(() =>
+    this.themes.findIndex((option) => option.value === this.theme.preference()),
+  );
+  readonly currentTheme = computed(() => this.themes[this.themeIndex()]);
+  readonly nextTheme = computed(() => this.themes[(this.themeIndex() + 1) % this.themes.length]);
+
   readonly menuOpen = signal(false);
   readonly firstName = computed(() => this.viewer()?.name.split(' ')[0] || '');
   /** The mobile tab bar puts "Log activity" between the first and second halves of the nav. */
@@ -49,6 +65,29 @@ export class AppTopbar {
       .slice(0, 2)
       .join('')
       .toUpperCase();
+  }
+
+  /** Arrow keys move the selection within the radio group, as native radios do. */
+  moveTheme(event: KeyboardEvent): void {
+    const step =
+      event.key === 'ArrowRight' || event.key === 'ArrowDown'
+        ? 1
+        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+          ? -1
+          : 0;
+    const index =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? this.themes.length - 1
+          : step
+            ? (this.themeIndex() + step + this.themes.length) % this.themes.length
+            : -1;
+    if (index < 0) return;
+    event.preventDefault();
+    this.theme.setPreference(this.themes[index].value);
+    const group = (event.currentTarget as HTMLElement).parentElement;
+    group?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[index]?.focus();
   }
 
   toggleMenu(): void {

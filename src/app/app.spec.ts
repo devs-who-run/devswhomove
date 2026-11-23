@@ -67,23 +67,40 @@ describe('App', () => {
     vi.useRealTimers();
   });
 
-  it('offers an accessible theme control and applies the selected theme', async () => {
+  it('offers an accessible theme switch and applies the selected theme', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     fixture.detectChanges();
-    const select = fixture.nativeElement.querySelector(
-      '[aria-label="Color theme"]',
-    ) as HTMLSelectElement;
-    expect(select.options).toHaveLength(3);
-    const themeIcon = fixture.nativeElement.querySelector(
-      '.theme-control app-icon path',
-    ) as SVGPathElement;
-    const systemIcon = themeIcon.getAttribute('d');
-    select.value = 'dark';
-    select.dispatchEvent(new Event('change'));
+    const html = fixture.nativeElement as HTMLElement;
+    const group = html.querySelector('[role="radiogroup"][aria-label="Color theme"]')!;
+    const radios = Array.from(group.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+    expect(radios.map((radio) => radio.getAttribute('aria-label'))).toEqual([
+      'Light theme',
+      'Match system theme',
+      'Dark theme',
+    ]);
+    const checked = () => radios.filter((radio) => radio.getAttribute('aria-checked') === 'true');
+    expect(checked()).toEqual([radios[1]]);
+    expect(radios.map((radio) => radio.tabIndex)).toEqual([-1, 0, -1]);
+
+    radios[2].click();
     fixture.detectChanges();
     expect(document.documentElement.dataset['theme']).toBe('dark');
-    expect(themeIcon.getAttribute('d')).not.toBe(systemIcon);
+    expect(checked()).toEqual([radios[2]]);
+    expect(radios.map((radio) => radio.tabIndex)).toEqual([-1, -1, 0]);
+
+    radios[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    fixture.detectChanges();
+    expect(document.documentElement.dataset['theme']).toBe('light');
+    expect(document.activeElement).toBe(radios[0]);
+
+    const cycle = html.querySelector<HTMLButtonElement>('.theme-cycle')!;
+    expect(cycle.getAttribute('aria-label')).toBe(
+      'Color theme: Light theme. Switch to Match system theme',
+    );
+    cycle.click();
+    fixture.detectChanges();
+    expect(document.documentElement.dataset['themePreference']).toBe('system');
     localStorage.removeItem('dwm-theme');
   });
 
