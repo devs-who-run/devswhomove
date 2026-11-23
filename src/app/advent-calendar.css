@@ -7,133 +7,161 @@
   margin: 0 auto;
 }
 
-.advent-heading {
-  max-width: 720px;
-  margin: 8px 0 25px;
+/* Hero banner — mirrors the feed's "your week" banner. */
+.advent-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 24px 44px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  border-radius: 20px;
+  background: var(--hero);
+  color: #fff;
 }
 
-.eyebrow,
-.challenge-number,
+.advent-heading {
+  flex: 1 1 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hero-eyebrow,
 .progress-label {
-  color: var(--muted);
+  color: var(--lime);
   font-size: 12px;
-  font-weight: 650;
-  letter-spacing: 1.15px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .advent-heading h1 {
-  margin: 10px 0;
-  font: 750 clamp(28px, 4vw, 42px)/1.15 var(--heading);
-  letter-spacing: -1.5px;
+  margin: 0;
+  font: 800 clamp(24px, 2.6vw, 32px) / 1.15 var(--heading);
+  letter-spacing: -0.02em;
 }
 
-.advent-intro,
-.advent-progress p,
-.advent-footer p,
-.challenge-footnote {
-  color: var(--muted);
-  line-height: 1.7;
-}
-
-.advent-progress,
-.advent-challenge {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 22px 24px;
+.advent-intro {
+  color: var(--hero-muted);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .advent-progress {
-  margin-bottom: 20px;
+  flex: 1 1 260px;
+  max-width: 380px;
 }
 
 .advent-progress > div:first-child {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .advent-progress strong {
-  font: 750 20px var(--heading);
+  font: 800 30px var(--heading);
+  letter-spacing: -0.02em;
 }
 
 .advent-progress strong span {
+  color: var(--hero-muted);
   font:
-    500 13px 'DM Sans',
+    600 14px 'DM Sans',
     sans-serif;
-  color: var(--muted);
+  letter-spacing: 0;
 }
 
 .progress-track {
   height: 8px;
-  background: var(--surface-soft);
-  border-radius: 20px;
-  margin: 13px 0 9px;
+  margin: 12px 0 10px;
   overflow: hidden;
+  border-radius: 4px;
+  background: var(--hero-track);
 }
 
 .progress-track > span {
   display: block;
   height: 100%;
-  background: #729553;
   border-radius: inherit;
+  background: var(--lime);
   transition: width 180ms ease;
 }
 
 .advent-progress p {
   margin: 0;
+  color: var(--hero-muted);
   font-size: 13px;
+  line-height: 1.5;
 }
 
+/* Doors */
 .advent-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
 .advent-door {
   min-width: 0;
-  min-height: 100px;
+  min-height: 104px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px;
+  padding: 14px 16px;
   text-align: left;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 16px;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.15s;
 }
 
 .advent-door.open {
   cursor: pointer;
-  border-color: #c9d8b7;
 }
 
-.advent-door.open:hover,
+.advent-door.open:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+
 .advent-door[aria-pressed='true'] {
-  background: var(--surface-soft);
-  border-color: #8fa878;
+  border-color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand);
 }
 
 .advent-door:disabled {
   cursor: not-allowed;
   color: var(--muted);
-  background: var(--surface-raised);
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--border-strong);
   opacity: 1;
 }
 
 .advent-door.complete {
-  background: #edf4e5;
-  border-color: #adc894;
-  color: #355635;
+  background: #e3f1c4;
+  border-color: #c3dc94;
+}
+
+:host-context([data-theme='dark']) .advent-door.complete {
+  background: #25391f;
+  border-color: #3d5a30;
 }
 
 .door-number {
-  font: 750 25px var(--heading);
+  font: 800 24px var(--heading);
+  letter-spacing: -0.02em;
+}
+
+.advent-door.complete .door-number {
+  color: var(--brand-text);
 }
 
 .door-caption {
@@ -142,43 +170,54 @@
   overflow-wrap: anywhere;
 }
 
+.advent-door.open:not(.complete) .door-caption {
+  color: var(--text-soft);
+}
+
+/* Selected challenge */
 .advent-challenge {
-  margin-top: 20px;
+  margin-top: 24px;
+  padding: 24px 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
 }
 
 .challenge-number {
-  font-size: 11px;
+  color: var(--brand-text);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .challenge-number span {
   padding: 0 5px;
+  color: var(--muted);
 }
 
 .advent-challenge h2 {
-  margin: 10px 0 7px;
-  font: 700 23px var(--heading);
+  margin: 10px 0 8px;
+  font: 800 22px var(--heading);
+  letter-spacing: -0.02em;
 }
 
 .advent-challenge > p {
-  line-height: 1.7;
+  color: var(--text-soft);
+  font-size: 15px;
+  line-height: 1.6;
 }
 
-.gentle-option {
-  color: var(--muted);
-  font-size: 13px;
+.advent-challenge > .gentle-option {
+  margin: 12px 0 18px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  font-size: 14px;
 }
 
 .gentle-option strong {
   color: var(--text);
-}
-
-.button.primary,
-.button.outline,
-.share-button {
-  min-height: 44px;
-  border-radius: 7px;
-  padding: 10px 15px;
-  font-weight: 650;
 }
 
 .challenge-actions {
@@ -187,40 +226,39 @@
   gap: 10px;
 }
 
-.button.primary {
-  color: #fff;
-  background: var(--green);
-}
-
-.button.outline {
-  color: var(--green);
-  background: transparent;
-  border: 1px solid var(--border-hover);
-}
-
-.completion-note {
+.advent-challenge > .completion-note {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--text);
-  font-weight: 650;
+  margin-bottom: 16px;
+  color: var(--brand-text);
+  font-weight: 700;
 }
 
-.challenge-footnote {
-  margin: 8px 0 0;
+.advent-challenge > .challenge-footnote {
+  margin: 12px 0 0;
+  color: var(--muted);
   font-size: 12px;
 }
 
 .locked-message {
   text-align: center;
-  padding: 30px 24px;
+  padding: 36px 24px;
+  border-style: dashed;
+  border-color: var(--border-strong);
 }
 
 .advent-error {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
   color: #973f2e;
   background: #fff0eb;
-  padding: 10px 13px;
-  border-radius: 7px;
+}
+
+:host-context([data-theme='dark']) .advent-error {
+  color: #f3b5a5;
+  background: #3a201a;
 }
 
 .advent-state {
@@ -228,84 +266,103 @@
   color: var(--muted);
 }
 
+/* Footer and share */
 .advent-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 15px;
-  margin-top: 18px;
+  gap: 16px;
+  margin-top: 24px;
 }
 
 .advent-footer p {
+  flex: 1 1 260px;
+  color: var(--muted);
   font-size: 13px;
-}
-
-.share-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--border-hover);
-  white-space: nowrap;
+  line-height: 1.6;
 }
 
 .share-card {
   display: grid;
-  gap: 5px;
-  min-width: 190px;
-  padding: 12px 15px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface-soft);
-  color: var(--text);
+  gap: 4px;
+  min-width: 200px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: var(--hero);
+  color: #fff;
 }
 
 .share-card span {
-  color: var(--muted);
+  color: var(--hero-muted);
   font-size: 11px;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.06em;
+}
+
+.share-card span:first-child {
+  color: var(--lime);
+  font-weight: 600;
 }
 
 .share-card strong {
-  font: 750 22px var(--heading);
+  font: 800 24px var(--heading);
+  letter-spacing: -0.02em;
 }
 
 .share-card small {
-  color: var(--muted);
+  color: var(--hero-muted);
   font:
-    500 12px 'DM Sans',
+    600 12px 'DM Sans',
     sans-serif;
+  letter-spacing: 0;
 }
 
 @media (max-width: 700px) {
+  .advent-hero {
+    padding: 20px;
+    gap: 18px;
+    border-radius: 18px;
+  }
+  .advent-progress {
+    max-width: none;
+  }
+  .advent-progress strong {
+    font-size: 22px;
+  }
   .advent-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
   }
   .advent-door {
     min-height: 90px;
-    padding: 11px;
+    padding: 12px;
+    border-radius: 14px;
+  }
+  .advent-challenge {
+    padding: 20px;
+    border-radius: 18px;
   }
 }
 
 @media (max-width: 520px) {
-  .advent-progress,
-  .advent-challenge {
-    padding: 18px;
-  }
   .advent-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 7px;
+    gap: 8px;
   }
   .advent-door {
     min-height: 82px;
-    padding: 9px;
-  }
-  .door-caption {
-    font-size: 12px;
+    padding: 10px;
   }
   .advent-footer {
-    align-items: flex-start;
+    align-items: stretch;
     flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .advent-door.open:hover {
+    transform: none;
+  }
+  .progress-track > span {
+    transition: none;
   }
 }

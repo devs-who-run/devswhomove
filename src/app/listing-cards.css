@@ -1,18 +1,18 @@
 .event-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 20px;
 }
 .event-card {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 .event-body {
-  padding: 22px;
+  padding: 18px 20px 20px;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -26,21 +26,21 @@
   margin: 0 5px;
 }
 .event-body h2 {
-  font: 700 19px/1.4 var(--heading);
-  letter-spacing: -0.6px;
-  margin: 11px 0;
+  font: 800 18px/1.35 var(--heading);
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
 }
 .event-description {
-  font-size: 13px;
-  line-height: 1.8;
-  color: #7b8673;
-  margin-bottom: 20px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-soft);
+  margin-bottom: 14px;
   flex: 1;
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
 .event-body > .button {
-  margin-top: 13px;
+  margin-top: 16px;
 }
 .attendee {
   display: flex;
@@ -54,9 +54,6 @@
   object-fit: cover;
 }
 @media (max-width: 1250px) {
-  .event-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .event-body {
     padding: 20px;
   }
@@ -82,11 +79,8 @@
     grid-template-columns: 1fr;
     gap: 20px;
   }
-  .event-body {
-    padding: 23px;
-  }
   .event-body h2 {
-    font-size: 21px;
+    font-size: 18px;
   }
   .event-description,
   .event-body .button {

@@ -157,7 +157,7 @@ interface AdventDay {
   selector: 'app-advent-calendar',
   imports: [Icon],
   templateUrl: './advent-calendar.html',
-  styleUrl: './advent-calendar.css',
+  styleUrls: ['./page-layout.css', './advent-calendar.css'],
 })
 export class AdventCalendar {
   readonly activities = input.required<Activity[]>();
@@ -226,7 +226,7 @@ export class AdventCalendar {
     const end = new Date(now.getFullYear(), 11, 25, 23, 59, 59, 999);
     if (now < start) return `The first door opens December 1, ${this.year()}.`;
     if (now > end) return `This year's calendar has ended. See you next December.`;
-    return `Day ${now.getDate()} of 25`;
+    return `Day ${now.getDate()} of 25.`;
   });
 
   constructor() {

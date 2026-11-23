@@ -28,8 +28,8 @@ import { ClubActions } from './club-actions';
 import { ProfileActivities } from './profile-activities';
 import { ProfileHeader } from './profile-header';
 import { AccountSettings } from './account-settings';
-import { AppSidebar, type Page } from './app-sidebar';
-import { AppTopbar } from './app-topbar';
+import { ActivityImports } from './activity-imports';
+import { AppTopbar, type NavItem, type Page } from './app-topbar';
 import { AuthState } from './auth-state';
 import { localDate } from './date';
 import { ProfileSummary } from './profile-summary';
@@ -42,6 +42,11 @@ import {
   type Sport,
   type SportEvent,
 } from './models';
+
+type ProfileTab = 'activity' | 'progress' | 'account';
+
+/** Top-level routes. Profile is reached from the account menu, so it is not in the nav. */
+const ROUTED_PAGES: readonly Page[] = ['feed', 'events', 'clubs', 'profile', 'agents', 'advent'];
 
 @Component({
   imports: [
@@ -64,7 +69,7 @@ import {
     ProfileActivities,
     ProfileHeader,
     AccountSettings,
-    AppSidebar,
+    ActivityImports,
     AppTopbar,
     ProfileBadges,
   ],
@@ -74,13 +79,12 @@ import {
 })
 export class App {
   private readonly router = inject(Router);
-  readonly nav: { page: Page; label: string; mobileLabel: string; icon: string }[] = [
-    { page: 'feed', label: 'The community', mobileLabel: 'Feed', icon: 'grid' },
-    { page: 'events', label: 'Move together', mobileLabel: 'Events', icon: 'calendar' },
-    { page: 'clubs', label: 'Clubs', mobileLabel: 'Clubs', icon: 'people' },
-    { page: 'profile', label: 'Your profile', mobileLabel: 'Profile', icon: 'user' },
-    { page: 'agents', label: 'Your agents', mobileLabel: 'Agents', icon: 'terminal' },
-    { page: 'advent', label: 'Advent calendar', mobileLabel: 'Advent', icon: 'calendar' },
+  readonly nav: NavItem[] = [
+    { page: 'feed', label: 'Feed', icon: 'grid' },
+    { page: 'events', label: 'Events', icon: 'calendar' },
+    { page: 'clubs', label: 'Clubs', icon: 'people' },
+    { page: 'agents', label: 'Agents', icon: 'terminal' },
+    { page: 'advent', label: 'Advent', icon: 'spark' },
   ];
   readonly page = signal<Page>('feed');
   readonly loading = signal(true);
@@ -98,6 +102,12 @@ export class App {
   readonly remoteActivities = signal<Activity[]>([]);
   readonly ownProfileActivities = signal<Activity[]>([]);
   readonly profileMonth = signal('All');
+  // Returning from Strava OAuth lands on the Account tab, where the import status is shown.
+  readonly activeProfileTab = signal<ProfileTab>(
+    typeof location !== 'undefined' && new URLSearchParams(location.search).has('strava')
+      ? 'account'
+      : 'activity',
+  );
   readonly profileSport = signal<Sport | 'All'>('All');
   readonly heatmapYear = signal('last-12-months');
   readonly profileLoading = signal(false);
@@ -135,6 +145,12 @@ export class App {
     sport: () => this.profileSport(),
     month: () => this.profileMonth(),
   });
+  readonly profileTab = computed(() =>
+    this.activeProfileTab() === 'account' &&
+    (!this.viewer() || this.remoteProfile() || this.preview())
+      ? 'activity'
+      : this.activeProfileTab(),
+  );
   readonly feed = new FeedState({
     activities: () => this.activities(),
     viewer: () => this.viewer(),
@@ -175,6 +191,29 @@ export class App {
     error: this.error,
     notice: this.notice,
   });
+
+  selectProfileTab(tab: ProfileTab): void {
+    // The sport filter lives on the Progress tab; don't let it silently filter the Activity list.
+    if (this.profileTab() === 'progress' && tab !== 'progress') this.profileSport.set('All');
+    this.activeProfileTab.set(tab);
+  }
+
+  onProfileTabKeydown(event: KeyboardEvent, current: ProfileTab): void {
+    const tabs: ProfileTab[] = ['activity', 'progress'];
+    if (this.viewer() && !this.remoteProfile() && !this.preview()) tabs.push('account');
+    let index = tabs.indexOf(current);
+    if (event.key === 'ArrowRight') index = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') index = (index + tabs.length - 1) % tabs.length;
+    else if (event.key === 'Home') index = 0;
+    else if (event.key === 'End') index = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    const next = tabs[index];
+    this.selectProfileTab(next);
+    (event.currentTarget as HTMLElement).parentElement
+      ?.querySelector<HTMLButtonElement>(`[data-profile-tab="${next}"]`)
+      ?.focus();
+  }
 
   readonly editor = new DialogState({
     viewer: () => this.viewer(),
@@ -267,7 +306,7 @@ export class App {
     this.page.set(
       page === 'activities' && username
         ? 'activity'
-        : this.nav.some((item) => item.page === page)
+        : ROUTED_PAGES.includes(page as Page)
           ? (page as Page)
           : 'feed',
     );
@@ -354,9 +393,36 @@ export class App {
     }
   }
 
-  private async loadOwnProfileActivities(request: number, viewer: Profile): Promise<void> {
-    this.profileLoading.set(true);
-    this.profileError.set('');
+  /** Refresh activity lists after an import without unmounting the profile page. */
+  async activitiesImported(): Promise<void> {
+    // Any navigation while the bootstrap request is in flight bumps routeRequest, which makes the
+    // profile refresh below discard its result instead of writing into another page.
+    const request = this.routeRequest;
+    try {
+      this.liveActivities.set((await this.api<Bootstrap>('/api/bootstrap')).activities);
+      const viewer = this.viewer();
+      if (
+        request === this.routeRequest &&
+        this.page() === 'profile' &&
+        viewer &&
+        !this.remoteProfile()
+      )
+        await this.loadOwnProfileActivities(request, viewer, true);
+    } catch (error) {
+      this.error.set(this.message(error));
+    }
+  }
+
+  private async loadOwnProfileActivities(
+    request: number,
+    viewer: Profile,
+    quiet = false,
+  ): Promise<void> {
+    // A quiet refresh keeps the page mounted so in-progress UI such as import status survives.
+    if (!quiet) {
+      this.profileLoading.set(true);
+      this.profileError.set('');
+    }
     try {
       const identifier = viewer.provider === 'atproto' ? viewer.id : viewer.username;
       const data = await this.api<{ activities: Activity[]; social?: ProfileSocial }>(
@@ -367,9 +433,12 @@ export class App {
         this.socialCounts.set(data.social ?? null);
       }
     } catch (error) {
-      if (request === this.routeRequest) this.profileError.set(this.message(error));
+      if (request !== this.routeRequest) return;
+      // A failed background refresh keeps the profile on screen and reports in the banner.
+      if (quiet) this.error.set(this.message(error));
+      else this.profileError.set(this.message(error));
     } finally {
-      if (request === this.routeRequest) this.profileLoading.set(false);
+      if (request === this.routeRequest && !quiet) this.profileLoading.set(false);
     }
   }
 

@@ -3,27 +3,18 @@
   >Skip to content</a
 >
 <div class="app-shell">
-  <app-sidebar
+  <app-topbar
     [nav]="nav"
     [page]="page()"
     [viewer]="viewer()"
     [saving]="saving()"
-    (navigate)="navigate($event)"
     (githubLogin)="auth.login()"
     (atprotoLogin)="auth.loginAtproto()"
     (signOut)="auth.logout()"
+    (logActivity)="editor.openModal('activity')"
   />
 
   <div class="main-shell">
-    <app-topbar
-      [viewer]="viewer()"
-      [saving]="saving()"
-      (githubLogin)="auth.login()"
-      (atprotoLogin)="auth.loginAtproto()"
-      (signOut)="auth.logout()"
-      (logActivity)="editor.openModal('activity')"
-    />
-
     <main #main id="main" tabindex="-1">
       @if (error() && !editor.modal()) {
         <div class="banner error" role="alert">
@@ -188,45 +179,133 @@
               (copyLink)="copyProfileLink($event)"
               (makePublic)="editor.makeProfilePublic()"
             />
-            <app-profile-badges [activities]="profileActivities()" />
-            @if (!remoteProfile() && !preview()) {
-              @if (viewer(); as ownProfile) {
-                <app-account-settings [profile]="ownProfile" (deleted)="accountDeleted()" />
-                <app-developer-insights [profile]="ownProfile" />
-                <app-period-recaps [profile]="ownProfile" />
+            <div class="profile-tabs" role="tablist" aria-label="Profile sections">
+              <button
+                id="profile-activity-tab"
+                class="profile-tab"
+                type="button"
+                role="tab"
+                data-profile-tab="activity"
+                [attr.aria-selected]="profileTab() === 'activity'"
+                [attr.tabindex]="profileTab() === 'activity' ? 0 : -1"
+                aria-controls="profile-activity-panel"
+                (click)="selectProfileTab('activity')"
+                (keydown)="onProfileTabKeydown($event, 'activity')"
+              >
+                Activity
+              </button>
+              <button
+                id="profile-progress-tab"
+                class="profile-tab"
+                type="button"
+                role="tab"
+                data-profile-tab="progress"
+                [attr.aria-selected]="profileTab() === 'progress'"
+                [attr.tabindex]="profileTab() === 'progress' ? 0 : -1"
+                aria-controls="profile-progress-panel"
+                (click)="selectProfileTab('progress')"
+                (keydown)="onProfileTabKeydown($event, 'progress')"
+              >
+                Progress
+              </button>
+              @if (!remoteProfile() && !preview() && viewer()) {
+                <button
+                  id="profile-account-tab"
+                  class="profile-tab"
+                  type="button"
+                  role="tab"
+                  data-profile-tab="account"
+                  [attr.aria-selected]="profileTab() === 'account'"
+                  [attr.tabindex]="profileTab() === 'account' ? 0 : -1"
+                  aria-controls="profile-account-panel"
+                  (click)="selectProfileTab('account')"
+                  (keydown)="onProfileTabKeydown($event, 'account')"
+                >
+                  Account
+                </button>
               }
-            }
-            <app-activity-calendar
-              [activities]="profileActivities()"
-              [(sport)]="profileSport"
-              [(year)]="heatmapYear"
-            />
-            @if (!remoteProfile() && !preview()) {
-              @if (viewer(); as ownProfile) {
-                <app-code-movement-challenge [profile]="ownProfile" />
-              }
-            }
-            <div class="profile-filters">
-              <label>
-                Recent movement month
-                <select [ngModel]="profileMonth()" (ngModelChange)="profileMonth.set($event)">
-                  <option value="All">All months</option>
-                  @for (month of profileSummary.months(); track month.value) {
-                    <option [value]="month.value">{{ month.label }}</option>
-                  }
-                </select>
-              </label>
             </div>
-            <app-profile-activities
-              [actions]="activityActions"
-              [activities]="profileSummary.filteredActivities()"
-              [totalActivities]="profileActivities()"
-              [profile]="profile"
-              [viewer]="viewer()"
-              [remote]="!!remoteProfile()"
-              [saving]="saving()"
-              (logActivity)="editor.openModal('activity')"
-            />
+            <section
+              id="profile-activity-panel"
+              role="tabpanel"
+              aria-labelledby="profile-activity-tab"
+              [hidden]="profileTab() !== 'activity'"
+            >
+              <div class="profile-filters">
+                <label>
+                  Recent movement month
+                  <select [ngModel]="profileMonth()" (ngModelChange)="profileMonth.set($event)">
+                    <option value="All">All months</option>
+                    @for (month of profileSummary.months(); track month.value) {
+                      <option [value]="month.value">{{ month.label }}</option>
+                    }
+                  </select>
+                </label>
+              </div>
+              <app-profile-activities
+                [actions]="activityActions"
+                [activities]="profileSummary.filteredActivities()"
+                [totalActivities]="profileActivities()"
+                [profile]="profile"
+                [viewer]="viewer()"
+                [remote]="!!remoteProfile()"
+                [saving]="saving()"
+                (logActivity)="editor.openModal('activity')"
+              />
+            </section>
+            <section
+              id="profile-progress-panel"
+              role="tabpanel"
+              aria-labelledby="profile-progress-tab"
+              [hidden]="profileTab() !== 'progress'"
+            >
+              <app-activity-calendar
+                [activities]="profileActivities()"
+                [(sport)]="profileSport"
+                [(year)]="heatmapYear"
+              />
+              <details class="progress-detail">
+                <summary>Badges and milestones</summary>
+                <div class="progress-detail-content">
+                  <app-profile-badges [activities]="profileActivities()" />
+                </div>
+              </details>
+              @if (!remoteProfile() && !preview()) {
+                @if (viewer(); as ownProfile) {
+                  <details class="progress-detail">
+                    <summary>Weekly recap and GitHub comparison</summary>
+                    <div class="progress-detail-content">
+                      <app-developer-insights [profile]="ownProfile" />
+                    </div>
+                  </details>
+                  <details class="progress-detail">
+                    <summary>Monthly digest and Wrapped</summary>
+                    <div class="progress-detail-content">
+                      <app-period-recaps [profile]="ownProfile" />
+                    </div>
+                  </details>
+                  <details class="progress-detail">
+                    <summary>Code and movement challenge</summary>
+                    <div class="progress-detail-content">
+                      <app-code-movement-challenge [profile]="ownProfile" />
+                    </div>
+                  </details>
+                }
+              }
+            </section>
+            @if (!remoteProfile() && !preview()) {
+              @if (viewer(); as ownProfile) {
+                <section
+                  id="profile-account-panel"
+                  role="tabpanel"
+                  aria-labelledby="profile-account-tab"
+                  [hidden]="profileTab() !== 'account'"
+                >
+                  <app-activity-imports [profile]="ownProfile" (imported)="activitiesImported()" />
+                  <app-account-settings [profile]="ownProfile" (deleted)="accountDeleted()" />
+                </section>
+              }
+            }
           } @else {
             <div class="empty-state">
               <app-icon name="user" />

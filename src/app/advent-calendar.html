@@ -1,30 +1,32 @@
 <section class="advent-page" aria-labelledby="advent-title">
-  <header class="advent-heading">
-    <p class="eyebrow">A LITTLE LESS SEDENTARY · DECEMBER {{ year() }}</p>
-    <h1 id="advent-title">25 days. A little more movement.</h1>
-    <p class="advent-intro">
-      A tiny daily invitation for developers to step away from the desk. Every pace, ability, and
-      kind of movement belongs here.
-    </p>
-  </header>
+  <div class="advent-hero">
+    <header class="advent-heading">
+      <p class="hero-eyebrow">A little less sedentary · December {{ year() }}</p>
+      <h1 id="advent-title">25 days. A little more movement.</h1>
+      <p class="advent-intro">
+        A tiny daily invitation for developers to step away from the desk. Every pace, ability, and
+        kind of movement belongs here.
+      </p>
+    </header>
 
-  <section class="advent-progress" aria-label="Advent calendar progress">
-    <div>
-      <span class="progress-label">YOUR DECEMBER PROGRESS</span>
-      <strong>{{ completedDays() }} <span>of 25 days</span></strong>
-    </div>
-    <div
-      class="progress-track"
-      role="progressbar"
-      [attr.aria-valuenow]="completedDays()"
-      aria-valuemin="0"
-      aria-valuemax="25"
-      [attr.aria-label]="completedDays() + ' of 25 days completed'"
-    >
-      <span [style.width.%]="completedDays() * 4"></span>
-    </div>
-    <p>{{ seasonStatus() }} Doors open on their date, using your local time.</p>
-  </section>
+    <section class="advent-progress" aria-label="Advent calendar progress">
+      <div>
+        <span class="progress-label">Your December progress</span>
+        <strong>{{ completedDays() }} <span>of 25 days</span></strong>
+      </div>
+      <div
+        class="progress-track"
+        role="progressbar"
+        [attr.aria-valuenow]="completedDays()"
+        aria-valuemin="0"
+        aria-valuemax="25"
+        [attr.aria-label]="completedDays() + ' of 25 days completed'"
+      >
+        <span [style.width.%]="completedDays() * 4"></span>
+      </div>
+      <p>{{ seasonStatus() }} Doors open on their date, using your local time.</p>
+    </section>
+  </div>
 
   @if (error()) {
     <p class="advent-error" role="alert">{{ error() }}</p>
@@ -129,7 +131,7 @@
         <strong>{{ completedDays() }}<small> / 25 days completed</small></strong>
         <span>Every little move counts.</span>
       </div>
-      <button type="button" class="share-button" (click)="copyProgress()">
+      <button type="button" class="button outline share-button" (click)="copyProgress()">
         <app-icon name="share" /> {{ copied() ? 'Progress copied' : 'Copy progress' }}
       </button>
     }

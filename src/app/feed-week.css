@@ -1,0 +1,137 @@
+:host {
+  display: block;
+}
+
+.week-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px 44px;
+  padding: 28px 32px;
+  border-radius: 20px;
+  background: var(--hero);
+  color: #fff;
+}
+
+.week-copy {
+  flex: 1 1 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.week-eyebrow {
+  color: var(--lime);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font: 800 clamp(24px, 2.6vw, 32px) / 1.15 var(--heading);
+  letter-spacing: -0.02em;
+}
+
+h1 span {
+  color: inherit;
+}
+
+.week-copy > p:last-child {
+  color: var(--hero-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.week-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  margin: 0;
+}
+
+.week-stats > div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+}
+
+dt {
+  color: var(--hero-muted);
+  font-size: 12px;
+}
+
+dd {
+  margin: 0;
+  font: 800 30px var(--heading);
+  letter-spacing: -0.02em;
+}
+
+dd span {
+  color: var(--hero-muted);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.week-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.chart-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.bar-track {
+  position: relative;
+  width: 14px;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--hero-track);
+}
+
+.bar-track > span {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 7px;
+  background: var(--lime);
+}
+
+.bar-track > span.has-value {
+  min-height: 8px;
+}
+
+.chart-day small {
+  color: var(--hero-muted);
+  font-size: 11px;
+}
+
+@media (max-width: 700px) {
+  .week-banner {
+    padding: 20px;
+    gap: 18px;
+    border-radius: 18px;
+  }
+
+  .week-stats {
+    gap: 20px;
+  }
+
+  dd {
+    font-size: 22px;
+  }
+
+  .bar-track {
+    width: 10px;
+    height: 44px;
+  }
+}

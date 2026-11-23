@@ -1,0 +1,99 @@
+.activity-imports {
+  margin: 1.5rem 0;
+  padding: 1.25rem;
+  border: 1px solid var(--line, #deded8);
+  border-radius: 1rem;
+  background: var(--surface, #fff);
+}
+
+.activity-imports h2 {
+  margin: 0 0 0.35rem;
+}
+
+.activity-imports p {
+  margin: 0;
+  color: var(--muted, #666);
+  line-height: 1.55;
+}
+
+.import-sources {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.import-source {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--line, #deded8);
+  border-radius: 0.75rem;
+}
+
+.import-source h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.import-source ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--muted, #666);
+  line-height: 1.55;
+}
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.activity-imports .fine-print {
+  margin-top: auto;
+  font-size: 0.85rem;
+}
+
+.strava {
+  border-color: #fc5200;
+  background: #fc5200;
+  color: #fff;
+}
+
+.file-button {
+  position: relative;
+  align-self: flex-start;
+  cursor: pointer;
+}
+
+.file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.file-button:focus-within {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.file-button.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.activity-imports .status {
+  margin-top: 1rem;
+  color: var(--ink, #20231f);
+}
+
+.activity-imports .error {
+  margin-top: 1rem;
+  color: #b42318;
+}
+
+.activity-imports .note {
+  margin-top: 1rem;
+}

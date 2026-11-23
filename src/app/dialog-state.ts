@@ -2,7 +2,7 @@ import { signal, type WritableSignal } from '@angular/core';
 import { errorMessage, request } from './api';
 import type { Participation } from './activity-social';
 import type { Modal } from './app-dialog';
-import type { Page } from './app-sidebar';
+import type { Page } from './app-topbar';
 import { conferenceLink } from './conference-link';
 import { localDate } from './date';
 import type { Club, ClubDetail, Profile, Sport, SportEvent, Visibility } from './models';

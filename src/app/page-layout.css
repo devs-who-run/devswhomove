@@ -3,41 +3,42 @@
 }
 .page-heading {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 22px;
-  margin: 12px 0 31px;
+  gap: 16px;
+  margin: 4px 0 24px;
 }
 .eyebrow {
   font-size: 12px;
-  letter-spacing: 1.8px;
+  letter-spacing: 0.08em;
   font-weight: 650;
-  color: #77826a;
-  margin-bottom: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
 }
 h1 {
-  font: 750 clamp(28px, 2.7vw, 39px)/1.2 var(--heading);
-  letter-spacing: -1.65px;
+  font: 800 clamp(26px, 2.6vw, 34px)/1.2 var(--heading);
+  letter-spacing: -0.02em;
 }
 h1 span {
-  color: #7b8866;
+  color: var(--muted);
 }
 .page-heading > div > p:last-child {
-  color: #7c857c;
-  font-size: 13px;
-  margin-top: 13px;
-  line-height: 1.6;
+  color: var(--text-soft);
+  font-size: 15px;
+  margin-top: 6px;
+  line-height: 1.5;
 }
 .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  min-height: 43px;
-  padding: 11px 18px;
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: 7px;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 12px;
   line-height: 1.4;
   transition:
     background 0.15s,
@@ -48,18 +49,19 @@ h1 span {
   transform: translateY(-1px);
 }
 .primary {
-  background: var(--green);
-  color: #fff;
+  background: var(--brand);
+  color: var(--on-brand);
 }
 .primary:hover:not(:disabled) {
   background: #153b2b;
 }
 .outline {
-  border: 1px solid #d9e1d3;
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
 }
 .outline:hover:not(:disabled) {
-  background: #f0f5e9;
+  background: var(--surface-soft);
 }
 .full {
   width: 100%;
@@ -67,9 +69,9 @@ h1 span {
 .empty-state {
   text-align: center;
   padding: 50px 20px;
-  background: #fdfefa;
-  border: 1px dashed #dce3d0;
-  border-radius: 11px;
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: 16px;
   margin-top: 20px;
   grid-column: 1/-1;
 }
@@ -84,7 +86,7 @@ h1 span {
   margin: 17px 0 12px;
 }
 .empty-state p {
-  color: #8e9a80;
+  color: var(--text-soft);
   font-size: 13px;
   line-height: 1.8;
   margin-bottom: 22px;
