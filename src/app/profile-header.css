@@ -50,12 +50,12 @@
   color: #bacf9e;
 }
 
-.profile-cover > app-icon {
-  font-size: 115px;
+.profile-cover > .cover-mark {
+  width: 115px;
+  height: 115px;
   position: absolute;
   right: 80px;
   top: 45px;
-  color: #b7d98f;
   transform: rotate(-8deg);
 }
 
@@ -205,7 +205,7 @@
   }
 }
 @media (max-width: 850px) {
-  .profile-cover > app-icon {
+  .profile-cover > .cover-mark {
     right: 45px;
   }
 }
@@ -244,8 +244,9 @@
     letter-spacing: 1px;
   }
 
-  .profile-cover > app-icon {
-    font-size: 90px;
+  .profile-cover > .cover-mark {
+    width: 90px;
+    height: 90px;
     right: 30px;
     top: 40px;
   }
