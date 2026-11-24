@@ -139,8 +139,15 @@ describe('App', () => {
         fixture.nativeElement.querySelectorAll(selector) as NodeListOf<HTMLAnchorElement>,
         (link) => link.textContent?.trim(),
       );
-    expect(labels('.primary-nav a')).toEqual(['Feed', 'Events', 'Clubs', 'Agents', 'Advent']);
-    expect(labels('.tabbar a')).toEqual(['Feed', 'Events', 'Clubs', 'Agents', 'Advent']);
+    expect(labels('.primary-nav a')).toEqual([
+      'Feed',
+      'Explore',
+      'Events',
+      'Clubs',
+      'Agents',
+      'Advent',
+    ]);
+    expect(labels('.tabbar a')).toEqual(['Feed', 'Explore', 'Events', 'Clubs', 'Agents', 'Advent']);
     expect(
       fixture.nativeElement.querySelector('.primary-nav a.active')?.getAttribute('aria-current'),
     ).toBe('page');

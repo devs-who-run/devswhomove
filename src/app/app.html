@@ -81,6 +81,16 @@
           />
         }
 
+        @if (page() === 'explore') {
+          <app-explore-page
+            #explore
+            [viewer]="viewer()"
+            [saving]="saving()"
+            (joinEvent)="joinFromExplore($event, explore)"
+            (logActivity)="editor.openModal('activity')"
+          />
+        }
+
         @if (page() === 'events') {
           <app-events-page
             [events]="filteredEvents()"

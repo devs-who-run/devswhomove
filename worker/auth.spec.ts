@@ -100,6 +100,7 @@ describe('GitHub OAuth protocol with mocked GitHub responses', () => {
           '0015_strava_data_lifecycle.sql',
           '0016_strava_tombstones_and_retry.sql',
           '0010_activity_routes.sql',
+          '0017_route_centers.sql',
         ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
       )
     ).join(';');
