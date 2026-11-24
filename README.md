@@ -242,6 +242,71 @@ validation, idempotency and token revocation use the same API and storage as
 other agents. MCP connections use the existing bearer tokens; MCP OAuth
 authorization is not implemented.
 
+### Garmin import skill
+
+The repository ships a shareable agent skill at
+[`.claude/skills/garmin-import/SKILL.md`](.claude/skills/garmin-import/SKILL.md).
+It is a plain Markdown file with `name` / `description` front matter, so it is
+not tied to one agent.
+
+Each run imports **yesterday's local calendar day** from Garmin Connect through
+the `create_activities` MCP tool, using `garmin-<activityId>` as the
+idempotency key so re-runs report items as already present instead of
+duplicating them. It does not backfill missed days, and can be run on demand
+or scheduled daily.
+
+Requirements:
+
+- The MCP server above, configured with an agent token that has
+  `activities:write`, for a **GitHub account** (AT Protocol activities reject
+  idempotency keys).
+- Node 18 or later.
+- A Garmin Personal API key, supplied through the environment's secret manager
+  as `GARMIN_API_KEY`, or a 1Password secret reference in
+  `GARMIN_OP_REFERENCE` (for example `op://<vault>/<item>/credential`, read
+  with the `op` CLI). `GARMIN_API_KEY` takes precedence.
+- The agent's local timezone set to the user's timezone.
+
+Imported activities are public, so only run it, especially unattended, once
+the user has authorized public uploads. The skill only creates activities: it
+never edits or deletes existing ones, and sends no notes, routes or other
+health data.
+
+#### Use it with any agent
+
+The agent needs three things: the DevsWhoRun MCP server, a shell that can run
+`node`, and the Garmin secret in its environment.
+
+1. **Connect the MCP server.** Add the `devs-who-move` server from
+   [MCP server](#mcp-server) to your agent's MCP configuration, with an agent
+   token created in **Your agents** with the `activities:write` scope. The
+   JSON shape above works for most clients; agents that only support local
+   (stdio) servers need an HTTP-to-stdio bridge.
+2. **Provide the secret.** Set `GARMIN_API_KEY` (or `GARMIN_OP_REFERENCE`) in
+   the environment the agent's shell runs in, using its secret or
+   environment-variable settings. Do not paste the key into a prompt, chat or
+   file.
+3. **Load the instructions.**
+   - **Claude Code** loads the skill automatically in this repo; run
+     `/garmin-import`. To use it in other projects, copy the `garmin-import`
+     folder into `~/.claude/skills/`.
+   - **Agents that support skills (`SKILL.md` folders)**: copy the
+     `garmin-import` folder into that agent's skills directory, then ask it to
+     run the `garmin-import` skill.
+   - **Any other agent**: point it at the file or paste its contents as the
+     task, for example: *"Follow the instructions in
+     `.claude/skills/garmin-import/SKILL.md` to import yesterday's Garmin
+     activities, and report the counts."* Add the file to the agent's project
+     instructions (such as `AGENTS.md`) if it should always know about it.
+4. **Schedule it (optional).** Use the agent's scheduled or recurring task
+   feature, or a cron job that starts the agent non-interactively with the
+   prompt above, once a day after midnight in your timezone. Confirm the user
+   has authorized unattended public uploads first. Missed days are not
+   backfilled.
+
+Check the agent's report after each run: it lists the date and how many
+activities were imported, already present, or failed.
+
 ## VS Code movement nudges
 
 The local extension in `vscode-extension/` suggests a walk after sustained editing in a focused VS Code window. It counts time between edits to visible documents, resets after five minutes without edits or when the window loses focus, and starts a fresh session after each reminder. It does not monitor terminal activity or record code, filenames, or timing data remotely. Each window tracks its own session. Adjust or disable reminders in VS Code settings (`devsWhoMove.reminderMinutes`, `devsWhoMove.idleMinutes`, and `devsWhoMove.enabled`).
