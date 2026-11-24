@@ -242,6 +242,37 @@ validation, idempotency and token revocation use the same API and storage as
 other agents. MCP connections use the existing bearer tokens; MCP OAuth
 authorization is not implemented.
 
+### Garmin import skill
+
+The repository ships a shareable agent skill at
+[`.claude/skills/garmin-import/SKILL.md`](.claude/skills/garmin-import/SKILL.md).
+Claude Code picks it up automatically in this repo (invoke it as
+`/garmin-import`); to use it elsewhere, copy the `garmin-import` folder into
+`~/.claude/skills/` or another agent's skills directory.
+
+Each run imports **yesterday's local calendar day** from Garmin Connect through
+the `create_activities` MCP tool, using `garmin-<activityId>` as the
+idempotency key so re-runs report items as already present instead of
+duplicating them. It does not backfill missed days, and can be run on demand
+or scheduled daily.
+
+Requirements:
+
+- The MCP server above, configured with an agent token that has
+  `activities:write`, for a **GitHub account** (AT Protocol activities reject
+  idempotency keys).
+- Node 18 or later.
+- A Garmin Personal API key, supplied through the environment's secret manager
+  as `GARMIN_API_KEY`, or a 1Password secret reference in
+  `GARMIN_OP_REFERENCE` (for example `op://<vault>/<item>/credential`, read
+  with the `op` CLI). `GARMIN_API_KEY` takes precedence.
+- The agent's local timezone set to the user's timezone.
+
+Imported activities are public, so only run it, especially unattended, once
+the user has authorized public uploads. The skill only creates activities: it
+never edits or deletes existing ones, and sends no notes, routes or other
+health data.
+
 ## VS Code movement nudges
 
 The local extension in `vscode-extension/` suggests a walk after sustained editing in a focused VS Code window. It counts time between edits to visible documents, resets after five minutes without edits or when the window loses focus, and starts a fresh session after each reminder. It does not monitor terminal activity or record code, filenames, or timing data remotely. Each window tracks its own session. Adjust or disable reminders in VS Code settings (`devsWhoMove.reminderMinutes`, `devsWhoMove.idleMinutes`, and `devsWhoMove.enabled`).
