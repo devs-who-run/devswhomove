@@ -245,12 +245,28 @@ export async function mappedRoutes(
     changed = true;
   };
 
-  // Refresh the candidate list weekly, unless a lookup failed moments ago.
+  // The routes in a stored list nearest this searcher.
+  const nearestIn = (list: Stored | null) =>
+    (list?.candidates ?? [])
+      .map((candidate) => ({ candidate, distance: distanceKm(origin, candidate.center) }))
+      .filter(({ distance }) => distance <= radiusKm)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, MAX_ROUTES);
+
+  // Refresh weekly, unless a lookup failed moments ago. The new list and its outlines are staged
+  // and only replace the stored ones once both lookups succeed, so a failure part-way keeps the
+  // last good routes showing.
   let stale = age(fetchedAt) > FRESH_MS;
   if (stale && mayRetry()) {
     try {
-      // Outlines are dropped with the old list, since the routes themselves may have changed.
-      stored = { candidates: await listCandidates(cell, radiusKm, group, userAgent), outlines: {} };
+      // Outlines are not carried over, since the routes themselves may have changed.
+      const next: Stored = {
+        candidates: await listCandidates(cell, radiusKm, group, userAgent),
+        outlines: {},
+      };
+      const wanted = nearestIn(next).map(({ candidate }) => candidate.id);
+      if (wanted.length) next.outlines = await fetchOutlines(wanted, userAgent);
+      stored = next;
       fetchedAt = stamp;
       failedAt = null;
       stale = false;
@@ -260,12 +276,8 @@ export async function mappedRoutes(
     }
   }
 
-  // Choose the routes nearest this searcher, then fetch any outlines not stored yet.
-  const nearest = (stored?.candidates ?? [])
-    .map((candidate) => ({ candidate, distance: distanceKm(origin, candidate.center) }))
-    .filter(({ distance }) => distance <= radiusKm)
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, MAX_ROUTES);
+  // Fetch any outlines this searcher needs that are not stored yet.
+  const nearest = nearestIn(stored);
   const missing = nearest.filter(({ candidate }) => !stored!.outlines[candidate.id]);
   if (stored && missing.length && mayRetry()) {
     try {

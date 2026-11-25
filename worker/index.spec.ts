@@ -27,6 +27,8 @@ describe('Worker with real D1 storage', () => {
   let remarkingOverpassHosts: string[] = [];
   /** Overrides the route relations Overpass lists, as [id, name, latitude, longitude]. */
   let overpassCandidates: [number, string, number, number][] | null = null;
+  /** Fail only outline (geometry) queries, after the route list succeeded. */
+  let failingOverpassOutlines = false;
   let failAtprotoListRecords = false;
   let failAtprotoRevocation = false;
   let omitAtprotoRevocationEndpoint = false;
@@ -193,6 +195,8 @@ describe('Worker with real D1 storage', () => {
             const query = new URLSearchParams(await request.text()).get('data') ?? '';
             overpassCalls.push({ host: url.host, query });
             if (failingOverpassHosts.includes(url.host))
+              return new WorkerResponse('At capacity', { status: 504 });
+            if (failingOverpassOutlines && !query.includes('out tags bb'))
               return new WorkerResponse('At capacity', { status: 504 });
             if (remarkingOverpassHosts.includes(url.host))
               return WorkerResponse.json({
@@ -1507,6 +1511,46 @@ describe('Worker with real D1 storage', () => {
     expect((await mapped('lat=52.16&lng=0.99&radius=10')).stale).toBe(true);
     expect(overpassCalls).toHaveLength(callsAfterFailure);
     failingOverpassHosts = [];
+
+    // A weekly refresh only replaces stored routes once both lookups succeed.
+    const row = () =>
+      db
+        .prepare(
+          'SELECT routes_json, fetched_at, failed_at FROM osm_route_cache WHERE cache_key = ?',
+        )
+        .bind('v2/foot/10/48.85/2.35')
+        .first<{ routes_json: string; fetched_at: string; failed_at: string | null }>();
+    const age = (column: 'fetched_at' | 'failed_at') =>
+      db
+        .prepare(`UPDATE osm_route_cache SET ${column} = ? WHERE cache_key = ?`)
+        .bind('2000-01-01T00:00:00.000Z', 'v2/foot/10/48.85/2.35')
+        .run();
+    const paris = 'lat=48.85&lng=2.35&radius=10&sport=Walking';
+    overpassCandidates = [[400, 'Seine walk', 48.85, 2.35]];
+    expect((await mapped(paris)).routes.map((route) => route.name)).toEqual(['Seine walk']);
+    // The list now has a different route, but its outline cannot be fetched.
+    await age('fetched_at');
+    overpassCandidates = [[401, 'Canal walk', 48.85, 2.36]];
+    failingOverpassOutlines = true;
+    const partial = await mapped(paris);
+    expect(partial).toMatchObject({ status: 'ok', stale: true });
+    expect(partial.routes.map((route) => route.name)).toEqual(['Seine walk']);
+    const previous = await row();
+    expect(previous?.fetched_at).toBe('2000-01-01T00:00:00.000Z');
+    expect(previous?.routes_json).toContain('Seine walk');
+    expect(previous?.failed_at).not.toBeNull();
+    // Once outlines load again, the new list replaces the old one.
+    failingOverpassOutlines = false;
+    await age('failed_at');
+    const refreshed = await mapped(paris);
+    expect(refreshed.routes.map((route) => route.name)).toEqual(['Canal walk']);
+    expect(refreshed).not.toHaveProperty('stale');
+    // A refresh that finds no routes at all is stored as a real, empty answer.
+    await age('fetched_at');
+    overpassCandidates = [];
+    expect(await mapped(paris)).toEqual({ status: 'ok', routes: [] });
+    expect((await row())?.fetched_at).not.toBe('2000-01-01T00:00:00.000Z');
+    overpassCandidates = null;
 
     // The cron forgets areas nobody has looked up for months, and keeps ones still in use, even
     // when their last good result is old.
