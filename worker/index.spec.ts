@@ -20,6 +20,9 @@ describe('Worker with real D1 storage', () => {
   const publishedAtprotoRecords: Record<string, unknown>[] = [];
   let remoteAtprotoEvents: { uri: string; cid: string; value: Record<string, unknown> }[] = [];
   let failAtprotoEventUpdate = false;
+  /** Overpass requests the Worker made, and which hosts should fail. */
+  const overpassCalls: { host: string; query: string }[] = [];
+  let failingOverpassHosts: string[] = [];
   let failAtprotoListRecords = false;
   let failAtprotoRevocation = false;
   let omitAtprotoRevocationEndpoint = false;
@@ -182,6 +185,52 @@ describe('Worker with real D1 storage', () => {
         },
         outboundService: async (request) => {
           const url = new URL(request.url);
+          if (url.pathname.endsWith('/api/interpreter')) {
+            const query = new URLSearchParams(await request.text()).get('data') ?? '';
+            overpassCalls.push({ host: url.host, query });
+            if (failingOverpassHosts.includes(url.host))
+              return new WorkerResponse('At capacity', { status: 504 });
+            if (query.includes('out tags bb'))
+              return WorkerResponse.json({
+                elements: [
+                  {
+                    id: 101,
+                    tags: { type: 'route', route: 'hiking', name: 'River loop' },
+                    bounds: { minlat: 52.15, minlon: 0.98, maxlat: 52.17, maxlon: 1.0 },
+                  },
+                  {
+                    id: 102,
+                    tags: { type: 'route', route: 'hiking', name: 'Long-distance way' },
+                    bounds: { minlat: 50, minlon: -2, maxlat: 54, maxlon: 3 },
+                  },
+                  { id: 103, tags: { type: 'route', route: 'foot' } },
+                ],
+              });
+            return WorkerResponse.json({
+              elements: [
+                {
+                  id: 101,
+                  members: [
+                    {
+                      type: 'way',
+                      geometry: [
+                        { lat: 52.15, lon: 0.98 },
+                        { lat: 52.16, lon: 0.99 },
+                      ],
+                    },
+                    {
+                      type: 'way',
+                      geometry: [
+                        { lat: 52.17, lon: 0.98 },
+                        { lat: 52.16, lon: 0.99 },
+                      ],
+                    },
+                    { type: 'node' },
+                  ],
+                },
+              ],
+            });
+          }
           if (
             url.origin === 'https://pds.example' &&
             url.pathname.endsWith('/com.atproto.repo.describeRepo')
@@ -1350,6 +1399,57 @@ describe('Worker with real D1 storage', () => {
       await db.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind(did).run();
       await db.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(did).run();
     }
+  });
+
+  it('finds OpenStreetMap routes through Overpass, caches them and survives outages', async () => {
+    const mapped = async (query: string) =>
+      (await request(`/api/explore/mapped?${query}`)).json<{
+        status: string;
+        routes: { id: string; name: string; kind: string; segments: unknown; url: string }[];
+      }>();
+    overpassCalls.length = 0;
+    const found = await mapped('lat=52.16&lng=0.99&radius=10');
+    expect(found.status).toBe('ok');
+    // Unnamed and long-distance relations are skipped; connected ways join into one line.
+    expect(found.routes).toMatchObject([
+      {
+        id: 'osm:relation/101',
+        name: 'River loop',
+        kind: 'hiking',
+        url: 'https://www.openstreetmap.org/relation/101',
+        segments: [
+          [
+            [52.15, 0.98],
+            [52.16, 0.99],
+            [52.17, 0.98],
+          ],
+        ],
+      },
+    ]);
+    // Overpass only sees a location snapped to a ~5 km grid.
+    expect(overpassCalls[0].query).toContain('(around:15000,52.15,1)');
+    expect(overpassCalls[1].query).toContain('relation(id:101)');
+
+    // A nearby search in the same grid cell is served from the cache.
+    expect((await mapped('lat=52.17&lng=1.01&radius=10')).routes).toHaveLength(1);
+    expect(overpassCalls).toHaveLength(2);
+
+    // Sports OpenStreetMap does not cover make no request.
+    expect(await mapped('lat=48.1&lng=11.5&sport=Tennis')).toEqual({ status: 'ok', routes: [] });
+    expect(overpassCalls).toHaveLength(2);
+
+    // When the main server is at capacity, the next instance answers.
+    failingOverpassHosts = ['overpass-api.de'];
+    expect((await mapped('lat=40.4&lng=-3.7&radius=25')).status).toBe('ok');
+    expect(overpassCalls.at(-1)?.host).toBe('maps.mail.ru');
+
+    // When every instance fails, Explore still answers and reports the outage.
+    failingOverpassHosts = ['overpass-api.de', 'maps.mail.ru'];
+    expect(await mapped('lat=35.7&lng=139.7')).toEqual({ status: 'unavailable', routes: [] });
+    failingOverpassHosts = [];
+
+    for (const invalid of ['lat=91&lng=0', 'lat=52&lng=0&radius=7', 'sport=Golf'])
+      expect((await request(`/api/explore/mapped?${invalid}`)).status).toBe(400);
   });
 
   it('creates public events and counts the host as an attendee', async () => {

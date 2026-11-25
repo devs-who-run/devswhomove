@@ -56,6 +56,7 @@ import {
   queryText,
   routeCenter,
 } from './explore';
+import { mappedRoutes } from './osm-routes';
 import {
   FILE_IMPORT_SOURCES,
   importActivities,
@@ -481,7 +482,6 @@ async function explore(request: Request, env: Env, params: URLSearchParams, view
   const query = queryText(params);
   const rawSport = params.get('sport');
   const chosen = rawSport && rawSport !== 'All' ? sport(rawSport) : null;
-
   let routes: (Activity & { distanceKm: number; segments: RouteSegments })[] = [];
   if (origin) {
     const box = boundingBox(origin, radius);
@@ -2736,6 +2736,19 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
         githubConfigured: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
         atprotoConfigured: Boolean(env.ATPROTO_OAUTH_PRIVATE_KEY && env.ATPROTO_SESSION_KEY),
       });
+    }
+    // OpenStreetMap routes load separately because Overpass can take several seconds.
+    if (url.pathname === '/api/explore/mapped' && method === 'GET') {
+      if (auth?.agent) throw new HttpError(403, 'Agent tokens cannot search the community.');
+      const origin = queryOrigin(url.searchParams) ?? networkOrigin(request);
+      const rawSport = url.searchParams.get('sport');
+      const chosen = rawSport && rawSport !== 'All' ? sport(rawSport) : null;
+      const radius = queryRadius(url.searchParams);
+      return json(
+        origin
+          ? await mappedRoutes(origin, radius, chosen, env.APP_URL)
+          : { status: 'ok', routes: [] },
+      );
     }
     if (url.pathname === '/api/explore' && method === 'GET') {
       if (auth?.agent) throw new HttpError(403, 'Agent tokens cannot search the community.');
