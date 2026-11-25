@@ -39,17 +39,43 @@ export function distanceKm(a: ExploreOrigin, b: ExploreOrigin): number {
   return 2 * 6371.0088 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+export interface BoundingBox {
+  minLat: number;
+  maxLat: number;
+  /** One longitude interval, or two when the box crosses the antimeridian. */
+  lngRanges: [number, number][];
+}
+
 /** Latitude/longitude box that contains every point within `radiusKm` of `origin`. */
-export function boundingBox(origin: ExploreOrigin, radiusKm: number) {
+export function boundingBox(origin: ExploreOrigin, radiusKm: number): BoundingBox {
   const dLat = radiusKm / 111.32;
-  const cos = Math.cos((origin.lat * Math.PI) / 180);
-  const dLng = cos < 0.01 ? 180 : Math.min(180, radiusKm / (111.32 * cos));
-  return {
-    minLat: origin.lat - dLat,
-    maxLat: origin.lat + dLat,
-    minLng: origin.lng - dLng,
-    maxLng: origin.lng + dLng,
-  };
+  const minLat = Math.max(-90, origin.lat - dLat);
+  const maxLat = Math.min(90, origin.lat + dLat);
+  // Near a pole, or when the radius spans a whole latitude circle, every longitude is in range.
+  const cos = Math.cos((Math.max(Math.abs(minLat), Math.abs(maxLat)) * Math.PI) / 180);
+  const dLng = cos < 0.01 ? 180 : radiusKm / (111.32 * cos);
+  if (dLng >= 180) return { minLat, maxLat, lngRanges: [[-180, 180]] };
+  const west = origin.lng - dLng;
+  const east = origin.lng + dLng;
+  if (west < -180)
+    return {
+      minLat,
+      maxLat,
+      lngRanges: [
+        [west + 360, 180],
+        [-180, east],
+      ],
+    };
+  if (east > 180)
+    return {
+      minLat,
+      maxLat,
+      lngRanges: [
+        [west, 180],
+        [-180, east - 360],
+      ],
+    };
+  return { minLat, maxLat, lngRanges: [[west, east]] };
 }
 
 /** Read an optional coordinate pair from the query string. */

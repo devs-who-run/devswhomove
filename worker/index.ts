@@ -485,15 +485,35 @@ async function explore(request: Request, env: Env, params: URLSearchParams, view
   let routes: (Activity & { distanceKm: number; segments: RouteSegments })[] = [];
   if (origin) {
     const box = boundingBox(origin, radius);
+    const lngFilter = box.lngRanges.map(() => 'a.route_lng BETWEEN ? AND ?').join(' OR ');
+    // Order candidates by an equirectangular distance (longitude wrapped at the antimeridian)
+    // so the LIMIT keeps the nearest routes; the exact great-circle check runs below.
+    const lngScale = Math.cos((origin.lat * Math.PI) / 180);
     const result = await env.DB.prepare(
       `${ROUTE_SELECT}
       WHERE a.route_json IS NOT NULL AND a.route_visibility = 'public'
         AND a.visibility = 'public' AND u.visibility = 'public'
-        AND a.route_lat BETWEEN ? AND ? AND a.route_lng BETWEEN ? AND ?
+        AND a.route_lat BETWEEN ? AND ? AND (${lngFilter})
         ${chosen ? 'AND a.sport = ?' : ''}
-      ORDER BY a.occurred_at DESC LIMIT 200`,
+      ORDER BY (a.route_lat - ?) * (a.route_lat - ?) +
+        (min(abs(a.route_lng - ?), 360 - abs(a.route_lng - ?)) * ?) *
+        (min(abs(a.route_lng - ?), 360 - abs(a.route_lng - ?)) * ?)
+      LIMIT 200`,
     )
-      .bind(box.minLat, box.maxLat, box.minLng, box.maxLng, ...(chosen ? [chosen] : []))
+      .bind(
+        box.minLat,
+        box.maxLat,
+        ...box.lngRanges.flat(),
+        ...(chosen ? [chosen] : []),
+        origin.lat,
+        origin.lat,
+        origin.lng,
+        origin.lng,
+        lngScale,
+        origin.lng,
+        origin.lng,
+        lngScale,
+      )
       .all<Activity & { route: string; routeLat: number; routeLng: number }>();
     routes = result.results
       .map(({ route, routeLat, routeLng, ...activity }) => ({
@@ -507,11 +527,9 @@ async function explore(request: Request, env: Env, params: URLSearchParams, view
   }
 
   const place = query || network?.label?.split(',')[0] || '';
-  const matches = (...values: (string | null | undefined)[]) =>
-    !query || values.some((value) => value?.toLowerCase().includes(query.toLowerCase()));
-  const upcoming = (await events(env, viewerId || undefined))
-    .filter((event) => (!chosen || event.sport === chosen) && matches(event.location, event.title))
-    .slice(0, 24);
+  const upcoming = (
+    await events(env, viewerId || undefined, undefined, { sport: chosen, query })
+  ).slice(0, 24);
 
   let people: Pick<Profile, 'id' | 'username' | 'name' | 'avatar' | 'location' | 'sports'>[] = [];
   if (place) {
@@ -674,7 +692,20 @@ async function profileActivities(
 }
 
 /** Combine upcoming GitHub and AT Protocol events without exposing attendee identities. */
-async function events(env: Env, userId?: string, clubId?: string): Promise<SportEvent[]> {
+async function events(
+  env: Env,
+  userId?: string,
+  clubId?: string,
+  filter: { sport?: Sport | null; query?: string } = {},
+): Promise<SportEvent[]> {
+  // Sport and place filters run in SQL so the limits below apply to matching events only.
+  const filterSql =
+    (filter.sport ? ' AND e.sport = ?' : '') +
+    (filter.query ? " AND (e.location LIKE ? ESCAPE '\\' OR e.title LIKE ? ESCAPE '\\')" : '');
+  const filterBindings = [
+    ...(filter.sport ? [filter.sport] : []),
+    ...(filter.query ? [likePattern(filter.query), likePattern(filter.query)] : []),
+  ];
   const [github, atproto] = await Promise.all([
     env.DB.prepare(
       `SELECT e.id, e.host_id AS hostId, u.name AS hostName,
@@ -687,7 +718,7 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
     EXISTS(SELECT 1 FROM atproto_external_event_attendees
       WHERE event_id = e.id AND attendee_id = ?) AS joined
     FROM events e JOIN users u ON u.id = e.host_id LEFT JOIN clubs c ON c.id = e.club_id
-    WHERE e.cancelled = 0 AND e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}
+    WHERE e.cancelled = 0 AND e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}${filterSql}
     ORDER BY e.starts_at LIMIT 100`,
     )
       .bind(
@@ -695,6 +726,7 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
         userId ? `${userId.startsWith('did:') ? 'atproto' : 'github'}:${userId}` : '',
         new Date().toISOString(),
         ...(clubId ? [clubId] : []),
+        ...filterBindings,
       )
       .all<SportEvent>(),
     env.DB.prepare(
@@ -707,13 +739,14 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
           WHERE event_uri = e.uri AND attendee_id = ?) AS joined
       FROM atproto_events e JOIN atproto_accounts u ON u.did = e.did
       LEFT JOIN clubs c ON c.id = e.club_id
-      WHERE e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}
+      WHERE e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}${filterSql}
       ORDER BY e.starts_at LIMIT 100`,
     )
       .bind(
         userId ? `${userId.startsWith('did:') ? 'atproto' : 'github'}:${userId}` : '',
         new Date().toISOString(),
         ...(clubId ? [clubId] : []),
+        ...filterBindings,
       )
       .all<SportEvent>(),
   ]);
@@ -3643,7 +3676,7 @@ export default {
       secured.headers.set('X-Content-Type-Options', 'nosniff');
       secured.headers.set('Referrer-Policy', 'same-origin');
       secured.headers.set('X-Frame-Options', 'DENY');
-      secured.headers.set('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+      secured.headers.set('Permissions-Policy', 'geolocation=(self), camera=(), microphone=()');
       const nonce = secured.headers.get('Content-Type')?.includes('text/html')
         ? secret()
         : undefined;

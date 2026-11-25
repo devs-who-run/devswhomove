@@ -40,6 +40,8 @@ export class ExplorePage {
   readonly error = signal('');
   readonly locationNote = signal('');
   readonly result = signal<ExploreResult | null>(null);
+  /** Announced after every completed search, even when earlier results stay on screen. */
+  readonly summary = signal('');
   private request = 0;
 
   readonly areaLabel = computed(() => {
@@ -108,6 +110,7 @@ export class ExplorePage {
       const result = await request<ExploreResult>(`/api/explore?${params}`);
       if (current === this.request) {
         this.result.set(result);
+        this.summary.set(this.describe(result));
         this.error.set('');
       }
     } catch (error) {
@@ -115,6 +118,16 @@ export class ExplorePage {
     } finally {
       if (current === this.request) this.loading.set(false);
     }
+  }
+
+  private describe(result: ExploreResult): string {
+    const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+    const parts = [
+      result.origin ? count(result.routes.length, 'route', 'routes') : 'no location for routes',
+      count(result.events.length, 'event', 'events'),
+      ...(result.place ? [count(result.people.length, 'person', 'people')] : []),
+    ];
+    return `Found ${parts.join(', ')}.`;
   }
 
   pace(distance: number | null, duration: number): string {

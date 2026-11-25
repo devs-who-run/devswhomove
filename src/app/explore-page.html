@@ -54,6 +54,8 @@
   <p class="explore-note error" role="alert">{{ error() }}</p>
 }
 
+<p class="sr-only" role="status" aria-live="polite">{{ summary() }}</p>
+
 @if (result(); as found) {
   <section class="explore-section" aria-labelledby="routes-heading" [attr.aria-busy]="loading()">
     <header>
