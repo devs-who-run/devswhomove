@@ -61,7 +61,7 @@
     <header>
       <h2 id="routes-heading">
         <app-icon name="pin" />
-        {{ sport() === 'All' ? 'Routes' : sport() + ' routes' }}
+        {{ sport() === 'All' ? 'Routes' : sport() + ' routes' }} shared by members
         @if (areaLabel(); as area) {
           <small>within {{ found.radius }} km of {{ area }}</small>
         }
@@ -126,25 +126,115 @@
             </div>
           </article>
         } @empty {
-          <div class="empty-state full">
-            <app-icon name="pin" />
-            <h3>
-              No shared {{ sport() === 'All' ? '' : sport().toLowerCase() + ' ' }}routes here yet.
-            </h3>
-            <p>
-              Try a wider distance, or import a GPX file and share its route outline to put this
-              area on the map.
+          @if (mapped()?.routes?.length || mappedLoading()) {
+            <p class="empty-line full">
+              No one has shared a
+              {{ sport() === 'All' ? '' : sport().toLowerCase() + ' ' }}route within
+              {{ found.radius }} km yet. Routes show up here when someone adds a GPX file to an
+              activity and shares its outline.
             </p>
-            @if (viewer()) {
-              <button class="button primary" (click)="logActivity.emit()">
-                <app-icon name="plus" /> Log an activity
-              </button>
-            }
-          </div>
+          } @else {
+            <div class="empty-state full">
+              <app-icon name="pin" />
+              <h3>
+                No one has shared a
+                {{ sport() === 'All' ? '' : sport().toLowerCase() + ' ' }}route within
+                {{ found.radius }} km yet.
+              </h3>
+              <p>
+                Routes show up here when someone adds a GPX file to an activity and chooses to share
+                its outline.
+              </p>
+              @if (widerRadius(); as wider) {
+                <button class="button outline" (click)="setRadius(wider)">
+                  Search within {{ wider }} km
+                </button>
+              }
+            </div>
+          }
         }
       </div>
     }
   </section>
+
+  @if (found.origin && mappedApplies()) {
+    <section
+      class="explore-section"
+      aria-labelledby="mapped-heading"
+      [attr.aria-busy]="mappedLoading()"
+    >
+      <header>
+        <h2 id="mapped-heading">
+          <app-icon name="globe" /> Mapped routes nearby
+          <small>from OpenStreetMap</small>
+        </h2>
+      </header>
+      @if (mappedLoading()) {
+        <p class="empty-line" role="status">Looking up mapped routes…</p>
+      } @else if (mapped(); as mappedResult) {
+        @if (mappedResult.status === 'unavailable') {
+          <p class="empty-line">
+            OpenStreetMap routes aren’t available right now. Try again later.
+          </p>
+        } @else {
+          <div class="route-grid">
+            @for (route of mappedResult.routes; track route.id) {
+              <article class="route-card">
+                <a
+                  class="route-drawing"
+                  [href]="route.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <app-activity-route
+                    [segments]="route.segments"
+                    [label]="'Outline of ' + route.name + ' from OpenStreetMap'"
+                  />
+                </a>
+                <div class="route-body">
+                  <p class="route-meta">
+                    <span class="sport-label"
+                      ><app-icon [name]="kind(route.kind).icon" />{{ kind(route.kind).label }}</span
+                    >
+                    <span
+                      >{{
+                        route.distanceKm < 1 ? 'Under 1' : (route.distanceKm | number: '1.0-0')
+                      }}
+                      km away</span
+                    >
+                  </p>
+                  <h3>
+                    <a [href]="route.url" target="_blank" rel="noopener noreferrer">{{
+                      route.name
+                    }}</a>
+                  </h3>
+                  <p class="route-stats">
+                    <span
+                      ><strong>{{ route.lengthKm | number: '1.0-1' }}</strong> km mapped</span
+                    >
+                  </p>
+                </div>
+              </article>
+            } @empty {
+              <p class="empty-line full">No mapped routes within {{ found.radius }} km.</p>
+            }
+          </div>
+          @if (mappedResult.stale) {
+            <p class="osm-attribution">
+              Showing routes saved from an earlier lookup, because OpenStreetMap couldn’t be reached
+              just now.
+            </p>
+          }
+          <p class="osm-attribution">
+            Route data ©
+            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener"
+              >OpenStreetMap contributors</a
+            >, available under the ODbL.
+          </p>
+        }
+      }
+    </section>
+  }
 
   <section class="explore-section" aria-labelledby="events-heading">
     <header>
@@ -239,4 +329,6 @@
 <p class="privacy-note">
   <app-icon name="lock" /> Your location is rounded to about 1 km in your browser and is never
   saved. Only routes their owners chose to share appear here, already trimmed at the start and end.
+  Mapped routes are looked up by our server, so OpenStreetMap never sees your IP address or exact
+  location.
 </p>

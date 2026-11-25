@@ -65,16 +65,22 @@ function offsetMeters(p: [number, number], a: [number, number], b: [number, numb
   return Math.hypot(px - t * dx, py - t * dy);
 }
 
-/** Ramer–Douglas–Peucker line simplification. */
-function simplifyLine(line: [number, number][], tolerance: number): [number, number][] {
-  if (line.length <= 2) return line;
-  const keep = new Uint8Array(line.length);
-  keep[0] = keep[line.length - 1] = 1;
-  const stack: [number, number][] = [[0, line.length - 1]];
+/**
+ * One Ramer–Douglas–Peucker pass that records, for every point, the largest tolerance at which
+ * RDP would still keep it: its offset when it splits a line, capped by the split above it. End
+ * points keep at any tolerance. Keeping the points whose value is above `t` gives exactly the
+ * RDP result for tolerance `t`, so trying several tolerances needs this pass only once.
+ */
+function rdpImportance(line: [number, number][], minTolerance: number): Float64Array {
+  const importance = new Float64Array(line.length);
+  if (!line.length) return importance;
+  importance[0] = importance[line.length - 1] = Infinity;
+  const stack: [number, number, number][] = [[0, line.length - 1, Infinity]];
   while (stack.length) {
-    const [first, last] = stack.pop()!;
+    const [first, last, cap] = stack.pop()!;
     let furthest = -1;
-    let furthestDistance = tolerance;
+    // Points this close to the line are never kept, so smaller splits are not worth finding.
+    let furthestDistance = minTolerance;
     for (let index = first + 1; index < last; index++) {
       const distance = offsetMeters(line[index], line[first], line[last]);
       if (distance > furthestDistance) {
@@ -83,11 +89,12 @@ function simplifyLine(line: [number, number][], tolerance: number): [number, num
       }
     }
     if (furthest !== -1) {
-      keep[furthest] = 1;
-      stack.push([first, furthest], [furthest, last]);
+      const value = Math.min(cap, furthestDistance);
+      importance[furthest] = value;
+      stack.push([first, furthest, value], [furthest, last, value]);
     }
   }
-  return line.filter((_, index) => keep[index]);
+  return importance;
 }
 
 /**
@@ -116,9 +123,12 @@ export function simplifyRoute(
   const fits = (candidate: RouteSegments) =>
     candidate.length <= maxSegments &&
     candidate.reduce((sum, segment) => sum + segment.length, 0) <= maxPoints;
+  const importance = rounded.map((segment) => rdpImportance(segment, 2));
   let result = rounded;
   for (let tolerance = 2; tolerance <= 10_000; tolerance *= 2) {
-    result = rounded.map((segment) => simplifyLine(segment, tolerance));
+    result = rounded.map((segment, index) =>
+      segment.filter((_, point) => importance[index][point] > tolerance),
+    );
     if (fits(result)) return result;
   }
   // Only reachable when segments alone exceed the point budget: keep each one's end points.

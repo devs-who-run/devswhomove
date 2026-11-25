@@ -20,6 +20,15 @@ describe('Worker with real D1 storage', () => {
   const publishedAtprotoRecords: Record<string, unknown>[] = [];
   let remoteAtprotoEvents: { uri: string; cid: string; value: Record<string, unknown> }[] = [];
   let failAtprotoEventUpdate = false;
+  /** Overpass requests the Worker made, and which hosts should fail. */
+  const overpassCalls: { host: string; query: string }[] = [];
+  let failingOverpassHosts: string[] = [];
+  /** Hosts that answer 200 with an Overpass runtime-error remark. */
+  let remarkingOverpassHosts: string[] = [];
+  /** Overrides the route relations Overpass lists, as [id, name, latitude, longitude]. */
+  let overpassCandidates: [number, string, number, number][] | null = null;
+  /** Fail only outline (geometry) queries, after the route list succeeded. */
+  let failingOverpassOutlines = false;
   let failAtprotoListRecords = false;
   let failAtprotoRevocation = false;
   let omitAtprotoRevocationEndpoint = false;
@@ -182,6 +191,94 @@ describe('Worker with real D1 storage', () => {
         },
         outboundService: async (request) => {
           const url = new URL(request.url);
+          if (url.pathname.endsWith('/api/interpreter')) {
+            const query = new URLSearchParams(await request.text()).get('data') ?? '';
+            overpassCalls.push({ host: url.host, query });
+            if (failingOverpassHosts.includes(url.host))
+              return new WorkerResponse('At capacity', { status: 504 });
+            if (failingOverpassOutlines && !query.includes('out tags bb'))
+              return new WorkerResponse('At capacity', { status: 504 });
+            if (remarkingOverpassHosts.includes(url.host))
+              return WorkerResponse.json({
+                elements: [],
+                remark: 'runtime error: Query timed out in "query" at line 1 after 15 seconds.',
+              });
+            if (query.includes('out tags bb') && overpassCandidates)
+              return WorkerResponse.json({
+                elements: overpassCandidates.map(([id, name, lat, lon]) => ({
+                  id,
+                  tags: { type: 'route', route: 'foot', name },
+                  bounds: {
+                    minlat: lat - 0.001,
+                    minlon: lon - 0.001,
+                    maxlat: lat + 0.001,
+                    maxlon: lon + 0.001,
+                  },
+                })),
+              });
+            if (!query.includes('out tags bb') && overpassCandidates) {
+              const ids = /relation\(id:([\d,]+)\)/.exec(query)![1].split(',').map(Number);
+              return WorkerResponse.json({
+                elements: overpassCandidates
+                  .filter(([id]) => ids.includes(id))
+                  .map(([id, , lat, lon]) => ({
+                    id,
+                    members: [
+                      {
+                        type: 'way',
+                        // A position Overpass could not resolve splits the way.
+                        geometry: [
+                          { lat: lat - 0.001, lon },
+                          { lat, lon: lon + 0.001 },
+                          null,
+                          { lat: lat + 0.001, lon },
+                        ],
+                      },
+                    ],
+                  })),
+              });
+            }
+            if (query.includes('out tags bb'))
+              return WorkerResponse.json({
+                elements: [
+                  {
+                    id: 101,
+                    tags: { type: 'route', route: 'hiking', name: 'River loop' },
+                    bounds: { minlat: 52.15, minlon: 0.98, maxlat: 52.17, maxlon: 1.0 },
+                  },
+                  {
+                    id: 102,
+                    tags: { type: 'route', route: 'hiking', name: 'Long-distance way' },
+                    bounds: { minlat: 50, minlon: -2, maxlat: 54, maxlon: 3 },
+                  },
+                  { id: 103, tags: { type: 'route', route: 'foot' } },
+                ],
+              });
+            return WorkerResponse.json({
+              elements: [
+                {
+                  id: 101,
+                  members: [
+                    {
+                      type: 'way',
+                      geometry: [
+                        { lat: 52.15, lon: 0.98 },
+                        { lat: 52.16, lon: 0.99 },
+                      ],
+                    },
+                    {
+                      type: 'way',
+                      geometry: [
+                        { lat: 52.17, lon: 0.98 },
+                        { lat: 52.16, lon: 0.99 },
+                      ],
+                    },
+                    { type: 'node' },
+                  ],
+                },
+              ],
+            });
+          }
           if (
             url.origin === 'https://pds.example' &&
             url.pathname.endsWith('/com.atproto.repo.describeRepo')
@@ -290,6 +387,7 @@ describe('Worker with real D1 storage', () => {
         '0016_strava_tombstones_and_retry.sql',
         '0010_activity_routes.sql',
         '0011_route_centers.sql',
+        '0017_osm_route_cache.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -1350,6 +1448,157 @@ describe('Worker with real D1 storage', () => {
       await db.prepare('DELETE FROM atproto_accounts WHERE did = ?').bind(did).run();
       await db.prepare('DELETE FROM atproto_oauth_sessions WHERE did = ?').bind(did).run();
     }
+  });
+
+  it('finds OpenStreetMap routes through Overpass, caches them and survives outages', async () => {
+    const mapped = async (query: string) =>
+      (await request(`/api/explore/mapped?${query}`)).json<{
+        status: string;
+        routes: { id: string; name: string; kind: string; segments: unknown; url: string }[];
+      }>();
+    overpassCalls.length = 0;
+    const found = await mapped('lat=52.16&lng=0.99&radius=10');
+    expect(found.status).toBe('ok');
+    // Unnamed and long-distance relations are skipped; connected ways join into one line.
+    expect(found.routes).toMatchObject([
+      {
+        id: 'osm:relation/101',
+        name: 'River loop',
+        kind: 'hiking',
+        url: 'https://www.openstreetmap.org/relation/101',
+        segments: [
+          [
+            [52.15, 0.98],
+            [52.16, 0.99],
+            [52.17, 0.98],
+          ],
+        ],
+      },
+    ]);
+    // Overpass only sees a location snapped to a ~5 km grid.
+    expect(overpassCalls[0].query).toContain('(around:15000,52.15,1)');
+    expect(overpassCalls[1].query).toContain('relation(id:101)');
+
+    // A nearby search in the same grid cell is served from D1.
+    expect((await mapped('lat=52.17&lng=1.01&radius=10')).routes).toHaveLength(1);
+    expect(overpassCalls).toHaveLength(2);
+
+    // Sports OpenStreetMap does not cover make no request.
+    expect(await mapped('lat=48.1&lng=11.5&sport=Tennis')).toEqual({ status: 'ok', routes: [] });
+    expect(overpassCalls).toHaveLength(2);
+
+    // When the main server is at capacity, the next instance answers.
+    failingOverpassHosts = ['overpass-api.de'];
+    expect((await mapped('lat=40.4&lng=-3.7&radius=25')).status).toBe('ok');
+    expect(overpassCalls.at(-1)?.host).toBe('maps.mail.ru');
+
+    // When every instance fails and nothing is stored, Explore reports the outage.
+    failingOverpassHosts = ['overpass-api.de', 'maps.mail.ru'];
+    expect(await mapped('lat=35.7&lng=139.7')).toEqual({ status: 'unavailable', routes: [] });
+
+    // When a week-old result cannot be refreshed, the last good routes keep showing.
+    const outdated = await db
+      .prepare(`UPDATE osm_route_cache SET fetched_at = ? WHERE cache_key = ?`)
+      .bind('2000-01-01T00:00:00.000Z', 'v2/all/10/52.15/1')
+      .run();
+    expect(outdated.meta.changes).toBe(1);
+    const callsBefore = overpassCalls.length;
+    const stale = await mapped('lat=52.16&lng=0.99&radius=10');
+    expect(stale).toMatchObject({ status: 'ok', stale: true, routes: [{ name: 'River loop' }] });
+    expect(overpassCalls.length).toBeGreaterThan(callsBefore);
+    // A failed refresh is not retried on every view.
+    const callsAfterFailure = overpassCalls.length;
+    expect((await mapped('lat=52.16&lng=0.99&radius=10')).stale).toBe(true);
+    expect(overpassCalls).toHaveLength(callsAfterFailure);
+    failingOverpassHosts = [];
+
+    // A weekly refresh only replaces stored routes once both lookups succeed.
+    const row = () =>
+      db
+        .prepare(
+          'SELECT routes_json, fetched_at, failed_at FROM osm_route_cache WHERE cache_key = ?',
+        )
+        .bind('v2/foot/10/48.85/2.35')
+        .first<{ routes_json: string; fetched_at: string; failed_at: string | null }>();
+    const age = (column: 'fetched_at' | 'failed_at') =>
+      db
+        .prepare(`UPDATE osm_route_cache SET ${column} = ? WHERE cache_key = ?`)
+        .bind('2000-01-01T00:00:00.000Z', 'v2/foot/10/48.85/2.35')
+        .run();
+    const paris = 'lat=48.85&lng=2.35&radius=10&sport=Walking';
+    overpassCandidates = [[400, 'Seine walk', 48.85, 2.35]];
+    expect((await mapped(paris)).routes.map((route) => route.name)).toEqual(['Seine walk']);
+    // The list now has a different route, but its outline cannot be fetched.
+    await age('fetched_at');
+    overpassCandidates = [[401, 'Canal walk', 48.85, 2.36]];
+    failingOverpassOutlines = true;
+    const partial = await mapped(paris);
+    expect(partial).toMatchObject({ status: 'ok', stale: true });
+    expect(partial.routes.map((route) => route.name)).toEqual(['Seine walk']);
+    const previous = await row();
+    expect(previous?.fetched_at).toBe('2000-01-01T00:00:00.000Z');
+    expect(previous?.routes_json).toContain('Seine walk');
+    expect(previous?.failed_at).not.toBeNull();
+    // Once outlines load again, the new list replaces the old one.
+    failingOverpassOutlines = false;
+    await age('failed_at');
+    const refreshed = await mapped(paris);
+    expect(refreshed.routes.map((route) => route.name)).toEqual(['Canal walk']);
+    expect(refreshed).not.toHaveProperty('stale');
+    // A refresh that finds no routes at all is stored as a real, empty answer.
+    await age('fetched_at');
+    overpassCandidates = [];
+    expect(await mapped(paris)).toEqual({ status: 'ok', routes: [] });
+    expect((await row())?.fetched_at).not.toBe('2000-01-01T00:00:00.000Z');
+    overpassCandidates = null;
+
+    // The cron forgets areas nobody has looked up for months, and keeps ones still in use, even
+    // when their last good result is old.
+    const aged = await db
+      .prepare(`UPDATE osm_route_cache SET fetched_at = ?, failed_at = NULL WHERE cache_key = ?`)
+      .bind('2000-01-01T00:00:00.000Z', 'v2/all/25/40.4/-3.7')
+      .run();
+    expect(aged.meta.changes).toBe(1);
+    await (await runtime.getWorker()).scheduled();
+    const kept = await db
+      .prepare(`SELECT cache_key FROM osm_route_cache ORDER BY cache_key`)
+      .all<{ cache_key: string }>();
+    expect(kept.results.map((row) => row.cache_key)).not.toContain('v2/all/25/40.4/-3.7');
+    expect(kept.results.map((row) => row.cache_key)).toContain('v2/all/10/52.15/1');
+
+    // A 200 response carrying an Overpass runtime error counts as a failure, not as no routes.
+    remarkingOverpassHosts = ['overpass-api.de'];
+    const remarkCalls = overpassCalls.length;
+    expect((await mapped('lat=-33.9&lng=151.2&radius=5')).status).toBe('ok');
+    expect(overpassCalls.slice(remarkCalls).map((call) => call.host)).toEqual([
+      'overpass-api.de',
+      'maps.mail.ru',
+    ]);
+    remarkingOverpassHosts = [];
+
+    // Routes are chosen nearest the searcher, not the grid point shared by the whole cell.
+    // Twelve routes sit just east of the cell centre; one sits west, next to this searcher.
+    overpassCandidates = [
+      ...Array.from(
+        { length: 12 },
+        (_, index) =>
+          [200 + index, `East ${index}`, 52.15, 1.02] as [number, string, number, number],
+      ),
+      [300, 'West meadow', 52.15, 0.95],
+    ];
+    const west = await mapped('lat=52.15&lng=0.98&radius=5&sport=Running');
+    expect(west.routes[0]).toMatchObject({ id: 'osm:relation/300', name: 'West meadow' });
+    expect(west.routes).toHaveLength(12);
+    // The null position split the way; the lone point after it was dropped, not joined across.
+    expect(west.routes[0].segments).toHaveLength(1);
+    // The same cell searched from its east side gets the east routes, fetching only new outlines.
+    const east = await mapped('lat=52.15&lng=1.02&radius=5&sport=Running');
+    expect(east.routes.map((route) => route.id)).toContain('osm:relation/211');
+    expect(overpassCalls.at(-1)?.query).toMatch(/relation\(id:211\)/);
+    overpassCandidates = null;
+
+    for (const invalid of ['lat=91&lng=0', 'lat=52&lng=0&radius=7', 'sport=Golf'])
+      expect((await request(`/api/explore/mapped?${invalid}`)).status).toBe(400);
   });
 
   it('creates public events and counts the host as an attendee', async () => {

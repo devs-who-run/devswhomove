@@ -135,6 +135,28 @@ export interface Bootstrap {
   clubs?: Club[];
 }
 
+/** A named walking, running or cycling route mapped in OpenStreetMap. */
+export interface MappedRoute {
+  /** `osm:relation/<id>` */
+  id: string;
+  name: string;
+  /** The OpenStreetMap route type, such as hiking, running or bicycle. */
+  kind: string;
+  lengthKm: number;
+  distanceKm: number;
+  segments: [number, number][][];
+  /** The route's page on openstreetmap.org. */
+  url: string;
+}
+
+/** OpenStreetMap routes; `unavailable` when Overpass could not be reached. */
+export interface MappedRoutesResult {
+  status: 'ok' | 'unavailable';
+  /** Set when these are the last good routes because a refresh just failed. */
+  stale?: boolean;
+  routes: MappedRoute[];
+}
+
 /** A public route near the searched area, with its trimmed outline. */
 export interface NearbyRoute extends Activity {
   distanceKm: number;

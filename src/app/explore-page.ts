@@ -5,10 +5,24 @@ import { RouterLink } from '@angular/router';
 import { ActivityRoute } from './activity-route';
 import { errorMessage, request } from './api';
 import { Icon } from './icon';
-import type { ExploreResult, Profile, Sport, SportEvent } from './models';
+import type { ExploreResult, MappedRoutesResult, Profile, Sport, SportEvent } from './models';
 import { SportFilter } from './sport-filter';
 
 export const EXPLORE_RADII = [5, 10, 25, 50, 100] as const;
+
+/** Plain names and icons for OpenStreetMap route types. */
+const ROUTE_KINDS: Record<string, { label: string; icon: string }> = {
+  running: { label: 'Running route', icon: 'Running' },
+  fitness_trail: { label: 'Fitness trail', icon: 'Running' },
+  hiking: { label: 'Hiking route', icon: 'Walking' },
+  foot: { label: 'Walking route', icon: 'Walking' },
+  walking: { label: 'Walking route', icon: 'Walking' },
+  bicycle: { label: 'Cycling route', icon: 'Cycling' },
+  mtb: { label: 'Mountain bike route', icon: 'Cycling' },
+};
+
+/** Sports that OpenStreetMap route types cover. */
+const MAPPED_SPORTS: readonly (Sport | 'All')[] = ['All', 'Running', 'Walking', 'Cycling'];
 
 /** Round to about 1 km before a position leaves the browser. */
 const coarse = (value: number) => Math.round(value * 100) / 100;
@@ -28,7 +42,6 @@ export class ExplorePage {
   readonly viewer = input<Profile | null>(null);
   readonly saving = input(false);
   readonly joinEvent = output<SportEvent>();
-  readonly logActivity = output<void>();
 
   readonly radii = EXPLORE_RADII;
   readonly sport = signal<Sport | 'All'>('All');
@@ -42,7 +55,16 @@ export class ExplorePage {
   readonly result = signal<ExploreResult | null>(null);
   /** Announced after every completed search, even when earlier results stay on screen. */
   readonly summary = signal('');
+  /** OpenStreetMap routes, loaded after the main results because Overpass can be slow. */
+  readonly mapped = signal<MappedRoutesResult | null>(null);
+  readonly mappedLoading = signal(false);
+  readonly mappedApplies = computed(() => MAPPED_SPORTS.includes(this.sport()));
   private request = 0;
+
+  /** The next distance up, offered when nothing is shared nearby. */
+  readonly widerRadius = computed(
+    () => EXPLORE_RADII.find((option) => option > (this.result()?.radius ?? this.radius())) ?? null,
+  );
 
   readonly areaLabel = computed(() => {
     const origin = this.result()?.origin;
@@ -97,6 +119,8 @@ export class ExplorePage {
 
   async search(): Promise<void> {
     const current = ++this.request;
+    // An earlier mapped lookup can no longer clear its own flag once this search starts.
+    this.mappedLoading.set(false);
     const params = new URLSearchParams({ radius: String(this.radius()) });
     const device = this.device();
     if (device) {
@@ -112,12 +136,37 @@ export class ExplorePage {
         this.result.set(result);
         this.summary.set(this.describe(result));
         this.error.set('');
+        void this.loadMapped(current, result);
       }
     } catch (error) {
       if (current === this.request) this.error.set(errorMessage(error));
     } finally {
       if (current === this.request) this.loading.set(false);
     }
+  }
+
+  private async loadMapped(current: number, result: ExploreResult): Promise<void> {
+    this.mapped.set(null);
+    if (!result.origin || !this.mappedApplies()) return;
+    const params = new URLSearchParams({
+      lat: String(result.origin.lat),
+      lng: String(result.origin.lng),
+      radius: String(result.radius),
+    });
+    if (this.sport() !== 'All') params.set('sport', this.sport());
+    this.mappedLoading.set(true);
+    try {
+      const mapped = await request<MappedRoutesResult>(`/api/explore/mapped?${params}`);
+      if (current === this.request) this.mapped.set(mapped);
+    } catch {
+      if (current === this.request) this.mapped.set({ status: 'unavailable', routes: [] });
+    } finally {
+      if (current === this.request) this.mappedLoading.set(false);
+    }
+  }
+
+  kind(kind: string): { label: string; icon: string } {
+    return ROUTE_KINDS[kind] ?? { label: 'Route', icon: 'Other' };
   }
 
   private describe(result: ExploreResult): string {
