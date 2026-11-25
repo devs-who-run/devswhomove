@@ -134,3 +134,31 @@ export interface Bootstrap {
   atprotoConfigured?: boolean;
   clubs?: Club[];
 }
+
+/** A public route near the searched area, with its trimmed outline. */
+export interface NearbyRoute extends Activity {
+  distanceKm: number;
+  segments: [number, number][][];
+}
+
+export type ExplorePerson = Pick<
+  Profile,
+  'id' | 'username' | 'name' | 'avatar' | 'location' | 'sports'
+>;
+
+export interface ExploreResult {
+  /** Coarse (about 1 km) centre of the search, or null when no location is known. */
+  origin: {
+    lat: number;
+    lng: number;
+    label: string | null;
+    source: 'device' | 'network';
+  } | null;
+  radius: number;
+  query: string;
+  /** The place name events and people were matched against. */
+  place: string;
+  routes: NearbyRoute[];
+  events: SportEvent[];
+  people: ExplorePerson[];
+}

@@ -1,0 +1,242 @@
+<div class="page-heading">
+  <div>
+    <h1>Explore near you</h1>
+    <p>Routes people have shared, events coming up, and people who move where you do.</p>
+  </div>
+</div>
+
+<form class="explore-search" role="search" (submit)="$event.preventDefault(); search()">
+  <label class="place-field">
+    <span class="sr-only">Place</span>
+    <app-icon name="search" />
+    <input
+      type="search"
+      name="place"
+      maxlength="80"
+      autocomplete="address-level2"
+      placeholder="City or neighbourhood, e.g. Berlin"
+      [ngModel]="place()"
+      (ngModelChange)="place.set($event)"
+    />
+  </label>
+  <label class="radius-field">
+    <span class="sr-only">Distance</span>
+    <select name="radius" [ngModel]="radius()" (ngModelChange)="setRadius($event)">
+      @for (option of radii; track option) {
+        <option [ngValue]="option">Within {{ option }} km</option>
+      }
+    </select>
+  </label>
+  <button class="button primary" type="submit" [disabled]="loading()">Search</button>
+  @if (device()) {
+    <button class="button outline" type="button" (click)="clearLocation()">
+      <app-icon name="close" /> Stop using my location
+    </button>
+  } @else {
+    <button class="button outline" type="button" (click)="useMyLocation()" [disabled]="locating()">
+      <app-icon name="locate" /> {{ locating() ? 'Finding you…' : 'Use my location' }}
+    </button>
+  }
+</form>
+
+<app-sport-filter
+  class="explore-filters"
+  ariaLabel="Filter by sport"
+  allLabel="All sports"
+  [selected]="sport()"
+  (selectedChange)="setSport($event)"
+/>
+
+@if (locationNote()) {
+  <p class="explore-note" role="status">{{ locationNote() }}</p>
+}
+@if (error()) {
+  <p class="explore-note error" role="alert">{{ error() }}</p>
+}
+
+<p class="sr-only" role="status" aria-live="polite">{{ summary() }}</p>
+
+@if (result(); as found) {
+  <section class="explore-section" aria-labelledby="routes-heading" [attr.aria-busy]="loading()">
+    <header>
+      <h2 id="routes-heading">
+        <app-icon name="pin" />
+        {{ sport() === 'All' ? 'Routes' : sport() + ' routes' }}
+        @if (areaLabel(); as area) {
+          <small>within {{ found.radius }} km of {{ area }}</small>
+        }
+      </h2>
+    </header>
+    @if (!found.origin) {
+      <div class="empty-state">
+        <app-icon name="locate" />
+        <h3>Where are you moving?</h3>
+        <p>We couldn’t tell your area. Share your location to see routes nearby.</p>
+        <button class="button primary" (click)="useMyLocation()">Use my location</button>
+      </div>
+    } @else {
+      <div class="route-grid">
+        @for (route of found.routes; track route.id) {
+          <article class="route-card">
+            <a class="route-drawing" [routerLink]="['/activities', route.id]">
+              <app-activity-route
+                [segments]="route.segments"
+                [label]="
+                  'Outline of ' + route.title + ', with the start and end trimmed for privacy'
+                "
+              />
+            </a>
+            <div class="route-body">
+              <p class="route-meta">
+                <span class="sport-label"><app-icon [name]="route.sport" />{{ route.sport }}</span>
+                <span
+                  >{{ route.distanceKm < 1 ? 'Under 1' : (route.distanceKm | number: '1.0-1') }} km
+                  away</span
+                >
+              </p>
+              <h3>
+                <a [routerLink]="['/activities', route.id]">{{ route.title }}</a>
+              </h3>
+              <p class="route-stats">
+                @if (route.distance) {
+                  <span
+                    ><strong>{{ route.distance | number: '1.0-1' }}</strong> km</span
+                  >
+                }
+                <span
+                  ><strong>{{ route.duration | number: '1.0-0' }}</strong> min</span
+                >
+                @if (route.sport === 'Running' || route.sport === 'Walking') {
+                  @if (pace(route.distance, route.duration); as pace) {
+                    <span
+                      ><strong>{{ pace }}</strong></span
+                    >
+                  }
+                }
+              </p>
+              <p class="route-author">
+                <a [routerLink]="['/profile', route.username]">
+                  @if (route.avatar) {
+                    <img [src]="route.avatar" alt="" referrerpolicy="no-referrer" />
+                  }
+                  {{ route.name }}
+                </a>
+                <span>· {{ route.occurredAt | date: 'MMM d' }}</span>
+              </p>
+            </div>
+          </article>
+        } @empty {
+          <div class="empty-state full">
+            <app-icon name="pin" />
+            <h3>
+              No shared {{ sport() === 'All' ? '' : sport().toLowerCase() + ' ' }}routes here yet.
+            </h3>
+            <p>
+              Try a wider distance, or import a GPX file and share its route outline to put this
+              area on the map.
+            </p>
+            @if (viewer()) {
+              <button class="button primary" (click)="logActivity.emit()">
+                <app-icon name="plus" /> Log an activity
+              </button>
+            }
+          </div>
+        }
+      </div>
+    }
+  </section>
+
+  <section class="explore-section" aria-labelledby="events-heading">
+    <header>
+      <h2 id="events-heading">
+        <app-icon name="calendar" /> Upcoming events
+        @if (found.query) {
+          <small>matching “{{ found.query }}”</small>
+        }
+      </h2>
+      <a routerLink="/events">All events <app-icon name="arrow" /></a>
+    </header>
+    <ul class="event-list">
+      @for (event of found.events; track event.id) {
+        <li>
+          <span class="date-tile">
+            <small>{{ event.startsAt | date: 'MMM' }}</small>
+            <strong>{{ event.startsAt | date: 'dd' }}</strong>
+          </span>
+          <div>
+            <strong>{{ event.title }}</strong>
+            <span class="event-line">
+              <app-icon [name]="event.sport" />{{ event.sport }} ·
+              {{ event.startsAt | date: 'EEE h:mm a' }} · <app-icon name="pin" />{{
+                event.location
+              }}
+            </span>
+          </div>
+          @if (event.hostId !== viewer()?.id) {
+            <button
+              class="button"
+              [class.primary]="!event.joined"
+              [class.outline]="event.joined"
+              [disabled]="saving() || (!event.joined && event.attendees >= event.capacity)"
+              (click)="joinEvent.emit(event)"
+            >
+              {{ event.joined ? 'Going' : capacityLeft(event) === 'Full' ? 'Full' : 'Join' }}
+            </button>
+          }
+        </li>
+      } @empty {
+        <li class="empty-line">
+          No upcoming events{{ found.query ? ' match “' + found.query + '”' : '' }}.
+        </li>
+      }
+    </ul>
+  </section>
+
+  <section class="explore-section" aria-labelledby="people-heading">
+    <header>
+      <h2 id="people-heading">
+        <app-icon name="people" /> People
+        @if (found.place) {
+          <small>in {{ found.place }}</small>
+        }
+      </h2>
+    </header>
+    @if (!found.place) {
+      <p class="empty-line">Search a place to find people who move there.</p>
+    } @else {
+      <ul class="people-list">
+        @for (person of found.people; track person.id) {
+          <li>
+            <a [routerLink]="['/profile', person.username]">
+              <span class="avatar">
+                @if (person.avatar) {
+                  <img [src]="person.avatar" alt="" referrerpolicy="no-referrer" />
+                } @else {
+                  <app-icon name="user" />
+                }
+              </span>
+              <span class="person">
+                <strong>{{ person.name }}</strong>
+                <small>{{ person.location }}</small>
+              </span>
+              <span class="person-sports">
+                @for (sport of person.sports; track sport) {
+                  <app-icon [name]="sport" [attr.title]="sport" />
+                }
+              </span>
+            </a>
+          </li>
+        } @empty {
+          <li class="empty-line">No public profiles list {{ found.place }} yet.</li>
+        }
+      </ul>
+    }
+  </section>
+} @else if (loading()) {
+  <div class="loading-state" role="status">Looking around…</div>
+}
+
+<p class="privacy-note">
+  <app-icon name="lock" /> Your location is rounded to about 1 km in your browser and is never
+  saved. Only routes their owners chose to share appear here, already trimmed at the start and end.
+</p>

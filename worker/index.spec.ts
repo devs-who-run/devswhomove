@@ -289,6 +289,7 @@ describe('Worker with real D1 storage', () => {
         '0015_strava_data_lifecycle.sql',
         '0016_strava_tombstones_and_retry.sql',
         '0010_activity_routes.sql',
+        '0011_route_centers.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -806,6 +807,39 @@ describe('Worker with real D1 storage', () => {
     expect((await request(routeUrl, 'GET', undefined, bob)).status).toBe(200);
     expect((await request(routeUrl)).status).toBe(200);
 
+    // Shared routes show up for searches near their centre, and nowhere else.
+    type Explore = {
+      origin: { lat: number; lng: number; source: string } | null;
+      routes: { id: string; distanceKm: number; segments: unknown }[];
+    };
+    const explore = async (query: string, session?: string) =>
+      (await request(`/api/explore?${query}`, 'GET', undefined, session)).json<Explore>();
+    const near = await explore('lat=52.1612345&lng=0.99&radius=10', bob);
+    expect(near.origin).toEqual({ lat: 52.16, lng: 0.99, label: null, source: 'device' });
+    const found = near.routes.find((item) => item.id === activityId);
+    expect(found?.distanceKm).toBeLessThan(1);
+    expect(found?.segments).toEqual([
+      [
+        [52.12346, 0.98765],
+        [52.2, 1],
+      ],
+    ]);
+    expect((await explore('lat=52.16&lng=0.99&sport=Tennis')).routes).toEqual([]);
+    expect((await explore('lat=48.85&lng=2.35&radius=50')).routes).toEqual([]);
+    await db
+      .prepare(`UPDATE activities SET route_lat = -16.5, route_lng = -179.95 WHERE id = ?`)
+      .bind(activityId)
+      .run();
+    expect(
+      (await explore('lat=-16.5&lng=179.95&radius=25')).routes.map((item) => item.id),
+    ).toContain(activityId);
+    await db
+      .prepare(`UPDATE activities SET route_lat = 52.161, route_lng = 0.994 WHERE id = ?`)
+      .bind(activityId)
+      .run();
+    for (const invalid of ['lat=91&lng=0', 'lat=52', 'lat=52&lng=0&radius=7', 'sport=Golf'])
+      expect((await request(`/api/explore?${invalid}`)).status).toBe(400);
+
     // A public route on a private activity stays private.
     await db
       .prepare(`UPDATE activities SET visibility = 'private' WHERE id = ?`)
@@ -813,6 +847,10 @@ describe('Worker with real D1 storage', () => {
       .run();
     expect((await request(routeUrl, 'GET', undefined, bob)).status).toBe(404);
     expect((await request(routeUrl, 'GET', undefined, alice)).status).toBe(200);
+
+    expect(
+      (await explore('lat=52.16&lng=0.99')).routes.some((item) => item.id === activityId),
+    ).toBe(false);
 
     expect((await request(routeUrl, 'DELETE', undefined, bob)).status).toBe(404);
     const removed = await request(routeUrl, 'DELETE', undefined, alice);
@@ -1335,6 +1373,15 @@ describe('Worker with real D1 storage', () => {
       await request('/api/events', 'GET', undefined, alice)
     ).json<{ events: { attendees: number; joined: boolean }[] }>();
     expect(result.events[0]).toMatchObject({ attendees: 1, joined: true });
+
+    // Explore filters events by sport and place in SQL, matching place names literally.
+    const explored = async (query: string) =>
+      (
+        await (await request(`/api/explore?${query}`)).json<{ events: { id: string }[] }>()
+      ).events.map((event) => event.id);
+    expect(await explored('q=city%20PARK&sport=Tennis')).toContain(eventId);
+    expect(await explored('q=city%20park&sport=Running')).not.toContain(eventId);
+    expect(await explored('q=city%25')).not.toContain(eventId);
   });
 
   it('rate limits event mutations and returns a retry delay', async () => {

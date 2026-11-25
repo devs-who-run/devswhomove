@@ -19,6 +19,7 @@ import { Login } from './login';
 import { AgentPage } from './agent-page';
 import { AgentTokens } from './agent-tokens';
 import { EventsPage } from './events-page';
+import { ExplorePage } from './explore-page';
 import { AppDialog } from './app-dialog';
 import { DialogState } from './dialog-state';
 import { ClubsPage } from './clubs-page';
@@ -46,7 +47,15 @@ import {
 type ProfileTab = 'activity' | 'progress' | 'account';
 
 /** Top-level routes. Profile is reached from the account menu, so it is not in the nav. */
-const ROUTED_PAGES: readonly Page[] = ['feed', 'events', 'clubs', 'profile', 'agents', 'advent'];
+const ROUTED_PAGES: readonly Page[] = [
+  'feed',
+  'explore',
+  'events',
+  'clubs',
+  'profile',
+  'agents',
+  'advent',
+];
 
 @Component({
   imports: [
@@ -64,6 +73,7 @@ const ROUTED_PAGES: readonly Page[] = ['feed', 'events', 'clubs', 'profile', 'ag
     Login,
     AgentPage,
     EventsPage,
+    ExplorePage,
     AppDialog,
     ClubsPage,
     ProfileActivities,
@@ -81,6 +91,7 @@ export class App {
   private readonly router = inject(Router);
   readonly nav: NavItem[] = [
     { page: 'feed', label: 'Feed', icon: 'grid' },
+    { page: 'explore', label: 'Explore', icon: 'search' },
     { page: 'events', label: 'Events', icon: 'calendar' },
     { page: 'clubs', label: 'Clubs', icon: 'people' },
     { page: 'agents', label: 'Agents', icon: 'terminal' },
@@ -358,6 +369,12 @@ export class App {
     if (page === 'clubs' && username) await this.clubActions.load(request, username);
     if (this.page() === 'feed' && this.feed.mode() === 'following')
       await this.feed.setMode('following');
+  }
+
+  /** Join from Explore, then refresh its results so the button reflects the new RSVP. */
+  async joinFromExplore(event: SportEvent, explore: ExplorePage): Promise<void> {
+    await this.eventActions.join(event);
+    await explore.search();
   }
 
   async toggleFollow(profile: Profile): Promise<void> {

@@ -36,7 +36,26 @@ import {
   getPeriodRecap,
 } from './insights';
 import { deleteAccountRateLimits, enforceRateLimit } from './rate-limit';
-import { date, HttpError, number, routeSegments, sport, text, visibility } from './validation';
+import {
+  date,
+  HttpError,
+  number,
+  routeSegments,
+  type RouteSegments,
+  sport,
+  text,
+  visibility,
+} from './validation';
+import {
+  boundingBox,
+  distanceKm,
+  likePattern,
+  networkOrigin,
+  queryOrigin,
+  queryRadius,
+  queryText,
+  routeCenter,
+} from './explore';
 import {
   FILE_IMPORT_SOURCES,
   importActivities,
@@ -445,6 +464,110 @@ async function atprotoActivitiesByDid(
   return result.results;
 }
 
+const ROUTE_SELECT = ACTIVITY_SELECT.replace(
+  /\s+FROM activities a/,
+  ', a.route_json AS route, a.route_lat AS routeLat, a.route_lng AS routeLng FROM activities a',
+);
+
+/**
+ * Public routes near a coarse location, with upcoming events and public people that match a
+ * place name. Without a location in the query, Cloudflare's approximate IP location is used.
+ */
+async function explore(request: Request, env: Env, params: URLSearchParams, viewerId: string) {
+  const requested = queryOrigin(params);
+  const network = requested ? null : networkOrigin(request);
+  const origin = requested ?? network;
+  const radius = queryRadius(params);
+  const query = queryText(params);
+  const rawSport = params.get('sport');
+  const chosen = rawSport && rawSport !== 'All' ? sport(rawSport) : null;
+
+  let routes: (Activity & { distanceKm: number; segments: RouteSegments })[] = [];
+  if (origin) {
+    const box = boundingBox(origin, radius);
+    const lngFilter = box.lngRanges.map(() => 'a.route_lng BETWEEN ? AND ?').join(' OR ');
+    // Order candidates by an equirectangular distance (longitude wrapped at the antimeridian)
+    // so the LIMIT keeps the nearest routes; the exact great-circle check runs below.
+    const lngScale = Math.cos((origin.lat * Math.PI) / 180);
+    const result = await env.DB.prepare(
+      `${ROUTE_SELECT}
+      WHERE a.route_json IS NOT NULL AND a.route_visibility = 'public'
+        AND a.visibility = 'public' AND u.visibility = 'public'
+        AND a.route_lat BETWEEN ? AND ? AND (${lngFilter})
+        ${chosen ? 'AND a.sport = ?' : ''}
+      ORDER BY (a.route_lat - ?) * (a.route_lat - ?) +
+        (min(abs(a.route_lng - ?), 360 - abs(a.route_lng - ?)) * ?) *
+        (min(abs(a.route_lng - ?), 360 - abs(a.route_lng - ?)) * ?)
+      LIMIT 200`,
+    )
+      .bind(
+        box.minLat,
+        box.maxLat,
+        ...box.lngRanges.flat(),
+        ...(chosen ? [chosen] : []),
+        origin.lat,
+        origin.lat,
+        origin.lng,
+        origin.lng,
+        lngScale,
+        origin.lng,
+        origin.lng,
+        lngScale,
+      )
+      .all<Activity & { route: string; routeLat: number; routeLng: number }>();
+    routes = result.results
+      .map(({ route, routeLat, routeLng, ...activity }) => ({
+        ...activity,
+        distanceKm: Math.round(distanceKm(origin, { lat: routeLat, lng: routeLng }) * 10) / 10,
+        segments: JSON.parse(route) as RouteSegments,
+      }))
+      .filter((item) => item.distanceKm <= radius)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, 24);
+  }
+
+  const place = query || network?.label?.split(',')[0] || '';
+  const upcoming = (
+    await events(env, viewerId || undefined, undefined, { sport: chosen, query })
+  ).slice(0, 24);
+
+  let people: Pick<Profile, 'id' | 'username' | 'name' | 'avatar' | 'location' | 'sports'>[] = [];
+  if (place) {
+    const rows = await env.DB.prepare(
+      `SELECT id, username, name, avatar, location, sports FROM users
+      WHERE visibility = 'public' AND id != ?
+        AND (location LIKE ? ESCAPE '\\'${query ? " OR name LIKE ? ESCAPE '\\'" : ''})
+        ${chosen ? 'AND EXISTS (SELECT 1 FROM json_each(users.sports) WHERE value = ?)' : ''}
+      ORDER BY name LIMIT 24`,
+    )
+      .bind(
+        viewerId,
+        likePattern(place),
+        ...(query ? [likePattern(query)] : []),
+        ...(chosen ? [chosen] : []),
+      )
+      .all<Omit<UserRow, 'bio' | 'visibility'>>();
+    people = rows.results.map((row) => ({ ...row, sports: JSON.parse(row.sports) }));
+  }
+
+  return {
+    origin: origin
+      ? {
+          lat: origin.lat,
+          lng: origin.lng,
+          label: network?.label ?? null,
+          source: requested ? 'device' : 'network',
+        }
+      : null,
+    radius,
+    query,
+    place,
+    routes,
+    events: upcoming,
+    people,
+  };
+}
+
 /** Return one activity the viewer may see: their own, or public on a public profile. */
 async function visibleActivity(env: Env, id: string, viewerId: string): Promise<Activity | null> {
   if (id.startsWith('at://'))
@@ -569,7 +692,20 @@ async function profileActivities(
 }
 
 /** Combine upcoming GitHub and AT Protocol events without exposing attendee identities. */
-async function events(env: Env, userId?: string, clubId?: string): Promise<SportEvent[]> {
+async function events(
+  env: Env,
+  userId?: string,
+  clubId?: string,
+  filter: { sport?: Sport | null; query?: string } = {},
+): Promise<SportEvent[]> {
+  // Sport and place filters run in SQL so the limits below apply to matching events only.
+  const filterSql =
+    (filter.sport ? ' AND e.sport = ?' : '') +
+    (filter.query ? " AND (e.location LIKE ? ESCAPE '\\' OR e.title LIKE ? ESCAPE '\\')" : '');
+  const filterBindings = [
+    ...(filter.sport ? [filter.sport] : []),
+    ...(filter.query ? [likePattern(filter.query), likePattern(filter.query)] : []),
+  ];
   const [github, atproto] = await Promise.all([
     env.DB.prepare(
       `SELECT e.id, e.host_id AS hostId, u.name AS hostName,
@@ -582,7 +718,7 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
     EXISTS(SELECT 1 FROM atproto_external_event_attendees
       WHERE event_id = e.id AND attendee_id = ?) AS joined
     FROM events e JOIN users u ON u.id = e.host_id LEFT JOIN clubs c ON c.id = e.club_id
-    WHERE e.cancelled = 0 AND e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}
+    WHERE e.cancelled = 0 AND e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}${filterSql}
     ORDER BY e.starts_at LIMIT 100`,
     )
       .bind(
@@ -590,6 +726,7 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
         userId ? `${userId.startsWith('did:') ? 'atproto' : 'github'}:${userId}` : '',
         new Date().toISOString(),
         ...(clubId ? [clubId] : []),
+        ...filterBindings,
       )
       .all<SportEvent>(),
     env.DB.prepare(
@@ -602,13 +739,14 @@ async function events(env: Env, userId?: string, clubId?: string): Promise<Sport
           WHERE event_uri = e.uri AND attendee_id = ?) AS joined
       FROM atproto_events e JOIN atproto_accounts u ON u.did = e.did
       LEFT JOIN clubs c ON c.id = e.club_id
-      WHERE e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}
+      WHERE e.starts_at > ?${clubId ? ' AND e.club_id = ?' : ''}${filterSql}
       ORDER BY e.starts_at LIMIT 100`,
     )
       .bind(
         userId ? `${userId.startsWith('did:') ? 'atproto' : 'github'}:${userId}` : '',
         new Date().toISOString(),
         ...(clubId ? [clubId] : []),
+        ...filterBindings,
       )
       .all<SportEvent>(),
   ]);
@@ -2599,6 +2737,10 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
         atprotoConfigured: Boolean(env.ATPROTO_OAUTH_PRIVATE_KEY && env.ATPROTO_SESSION_KEY),
       });
     }
+    if (url.pathname === '/api/explore' && method === 'GET') {
+      if (auth?.agent) throw new HttpError(403, 'Agent tokens cannot search the community.');
+      return json(await explore(request, env, url.searchParams, auth?.user.id || ''));
+    }
     if (url.pathname === '/api/logout' && method === 'POST') {
       const identity = requireIdentity(auth, undefined, true);
       const session = cookie(request, 'dwm_session');
@@ -2838,19 +2980,30 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
       if (actor.provider === 'atproto')
         throw new HttpError(400, 'Activity routes are not supported for AT Protocol accounts.');
       let route: string | null = null;
+      let center: { lat: number; lng: number } | null = null;
       let routeVisibility = 'hidden';
       if (method === 'PUT') {
         const data = await body(request, 32_768);
-        route = JSON.stringify(routeSegments(data['segments']));
+        const segments = routeSegments(data['segments']);
+        route = JSON.stringify(segments);
+        center = routeCenter(segments);
         const requested = data['visibility'] ?? 'hidden';
         if (requested !== 'hidden' && requested !== 'public')
           throw new HttpError(400, 'Route visibility must be hidden or public.');
         routeVisibility = requested;
       }
       const result = await env.DB.prepare(
-        'UPDATE activities SET route_json = ?, route_visibility = ? WHERE id = ? AND user_id = ?',
+        `UPDATE activities SET route_json = ?, route_visibility = ?, route_lat = ?, route_lng = ?
+        WHERE id = ? AND user_id = ?`,
       )
-        .bind(route, routeVisibility, decodedPathPart(routeMatch[1]), actor.user.id)
+        .bind(
+          route,
+          routeVisibility,
+          center?.lat ?? null,
+          center?.lng ?? null,
+          decodedPathPart(routeMatch[1]),
+          actor.user.id,
+        )
         .run();
       if (!result.meta.changes) throw new HttpError(404, 'Activity not found.');
       return json({ routeVisibility: route ? routeVisibility : null });
@@ -3523,7 +3676,7 @@ export default {
       secured.headers.set('X-Content-Type-Options', 'nosniff');
       secured.headers.set('Referrer-Policy', 'same-origin');
       secured.headers.set('X-Frame-Options', 'DENY');
-      secured.headers.set('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+      secured.headers.set('Permissions-Policy', 'geolocation=(self), camera=(), microphone=()');
       const nonce = secured.headers.get('Content-Type')?.includes('text/html')
         ? secret()
         : undefined;
