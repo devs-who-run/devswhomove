@@ -119,6 +119,8 @@ export class ExplorePage {
 
   async search(): Promise<void> {
     const current = ++this.request;
+    // An earlier mapped lookup can no longer clear its own flag once this search starts.
+    this.mappedLoading.set(false);
     const params = new URLSearchParams({ radius: String(this.radius()) });
     const device = this.device();
     if (device) {

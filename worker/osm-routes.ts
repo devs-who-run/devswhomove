@@ -45,14 +45,28 @@ interface OverpassElement {
   id: number;
   tags?: Record<string, string>;
   bounds?: { minlat: number; minlon: number; maxlat: number; maxlon: number };
-  members?: { type: string; geometry?: { lat: number; lon: number }[] }[];
+  /** Positions can be null where Overpass could not resolve a node. */
+  members?: { type: string; geometry?: unknown[] }[];
 }
 
+/** A route relation near a grid cell, before its outline is fetched. */
 interface Candidate {
   id: number;
   name: string;
   kind: string;
   center: ExploreOrigin;
+}
+
+interface Outline {
+  lengthKm: number;
+  segments: RouteSegments;
+}
+
+/** What one `osm_route_cache` row holds for a grid cell, radius and route group. */
+interface Stored {
+  candidates: Candidate[];
+  /** Outlines fetched so far, by relation id. Fetched lazily for the routes people look at. */
+  outlines: Record<string, Outline>;
 }
 
 async function overpass(query: string, userAgent: string): Promise<OverpassElement[]> {
@@ -65,8 +79,14 @@ async function overpass(query: string, userAgent: string): Promise<OverpassEleme
         body: new URLSearchParams({ data: query }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-      if (!response.ok) throw new Error(`${new URL(url).host} responded ${response.status}`);
-      return ((await response.json()) as { elements?: OverpassElement[] }).elements ?? [];
+      const host = new URL(url).host;
+      if (!response.ok) throw new Error(`${host} responded ${response.status}`);
+      const result = (await response.json()) as { elements?: OverpassElement[]; remark?: string };
+      // Overpass reports timeouts and memory limits as a remark on a 200 response with partial
+      // elements; treat those as failures so they are retried rather than stored.
+      if (result.remark && /runtime error/i.test(result.remark))
+        throw new Error(`${host}: ${result.remark.slice(0, 200)}`);
+      return result.elements ?? [];
     } catch (error) {
       failure = error;
     }
@@ -94,15 +114,41 @@ export function joinWays(ways: [number, number][][]): RouteSegments {
   return joined;
 }
 
-type Found = Awaited<ReturnType<typeof lookup>>;
+/**
+ * Turn a way's geometry into runs of valid positions. A missing or malformed position splits the
+ * way, so a line is never drawn across the gap; runs shorter than two points are dropped.
+ */
+export function validRuns(geometry: unknown[]): [number, number][][] {
+  const runs: [number, number][][] = [];
+  let run: [number, number][] = [];
+  const close = () => {
+    if (run.length >= 2) runs.push(run);
+    run = [];
+  };
+  for (const position of geometry) {
+    const { lat, lon } = (position ?? {}) as { lat?: unknown; lon?: unknown };
+    if (
+      typeof lat === 'number' &&
+      typeof lon === 'number' &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lon) &&
+      Math.abs(lat) <= 90 &&
+      Math.abs(lon) <= 180
+    )
+      run.push([lat, lon]);
+    else close();
+  }
+  close();
+  return runs;
+}
 
-/** Find routes for one grid cell: first small tag and bounds results, then geometry for the nearest. */
-async function lookup(
+/** List the named, local route relations around a grid cell (tags and bounds only). */
+async function listCandidates(
   cell: ExploreOrigin,
   radiusKm: number,
   group: Group,
   userAgent: string,
-): Promise<(Candidate & { lengthKm: number; segments: RouteSegments })[]> {
+): Promise<Candidate[]> {
   // Cover every point within the radius of any origin that rounds to this cell.
   const aroundMeters = Math.round((radiusKm + 5) * 1000);
   const pattern = kinds(group).join('|');
@@ -132,23 +178,23 @@ async function lookup(
       },
     });
   }
-  const nearest = candidates
-    .sort((a, b) => distanceKm(cell, a.center) - distanceKm(cell, b.center))
-    .slice(0, MAX_ROUTES);
-  if (!nearest.length) return [];
+  return candidates;
+}
 
+/** Fetch, join and simplify the outlines of some route relations. */
+async function fetchOutlines(ids: number[], userAgent: string): Promise<Record<string, Outline>> {
   const detailed = await overpass(
-    `[out:json][timeout:20];relation(id:${nearest.map((item) => item.id).join(',')});out geom qt;`,
+    `[out:json][timeout:20];relation(id:${ids.join(',')});out geom qt;`,
     userAgent,
   );
-  const byId = new Map(detailed.map((element) => [element.id, element]));
-  return nearest.flatMap((candidate) => {
+  const outlines: Record<string, Outline> = {};
+  for (const element of detailed) {
     const segments = joinWays(
-      (byId.get(candidate.id)?.members ?? [])
-        .filter((member) => member.type === 'way' && (member.geometry?.length ?? 0) >= 2)
-        .map((member) => member.geometry!.map(({ lat, lon }) => [lat, lon] as [number, number])),
+      (element.members ?? [])
+        .filter((member) => member.type === 'way' && Array.isArray(member.geometry))
+        .flatMap((member) => validRuns(member.geometry!)),
     );
-    if (!segments.length) return [];
+    if (!segments.length) continue;
     let meters = 0;
     for (const segment of segments)
       for (let index = 1; index < segment.length; index++)
@@ -156,14 +202,12 @@ async function lookup(
           { lat: segment[index - 1][0], lng: segment[index - 1][1] },
           { lat: segment[index][0], lng: segment[index][1] },
         );
-    return [
-      {
-        ...candidate,
-        lengthKm: Math.round(meters / 100) / 10,
-        segments: simplifyRoute(segments, 300, 50),
-      },
-    ];
-  });
+    outlines[element.id] = {
+      lengthKm: Math.round(meters / 100) / 10,
+      segments: simplifyRoute(segments, 300, 50),
+    };
+  }
+  return outlines;
 }
 
 /** Routes mapped in OpenStreetMap within `radiusKm` of `origin`, nearest first. */
@@ -182,61 +226,93 @@ export async function mappedRoutes(
     lat: Number(snap(origin.lat).toFixed(2)),
     lng: Number(snap(origin.lng).toFixed(2)),
   };
-  const key = `v1/${group}/${radiusKm}/${cell.lat}/${cell.lng}`;
+  const userAgent = `DevsWhoMove/1.0 (+${new URL(appUrl).origin})`;
+  const stamp = new Date(now).toISOString();
+  const key = `v2/${group}/${radiusKm}/${cell.lat}/${cell.lng}`;
   const row = await db
     .prepare('SELECT routes_json, fetched_at, failed_at FROM osm_route_cache WHERE cache_key = ?')
     .bind(key)
     .first<{ routes_json: string | null; fetched_at: string | null; failed_at: string | null }>();
   const age = (value: string | null) => (value ? now - Date.parse(value) : Infinity);
-  let found: Found | null = row?.routes_json ? JSON.parse(row.routes_json) : null;
-  let stale = age(row?.fetched_at ?? null) > FRESH_MS;
+  let stored: Stored | null = row?.routes_json ? JSON.parse(row.routes_json) : null;
+  let fetchedAt = row?.fetched_at ?? null;
+  let failedAt = row?.failed_at ?? null;
+  let changed = false;
+  const mayRetry = () => age(failedAt) > RETRY_AFTER_MS;
+  const fail = (error: unknown) => {
+    console.warn('OpenStreetMap route lookup failed', error);
+    failedAt = stamp;
+    changed = true;
+  };
 
-  // Refresh when nothing fresh is stored, unless a refresh failed moments ago.
-  if (stale && age(row?.failed_at ?? null) > RETRY_AFTER_MS) {
-    const stamp = new Date(now).toISOString();
+  // Refresh the candidate list weekly, unless a lookup failed moments ago.
+  let stale = age(fetchedAt) > FRESH_MS;
+  if (stale && mayRetry()) {
     try {
-      found = await lookup(cell, radiusKm, group, `DevsWhoMove/1.0 (+${new URL(appUrl).origin})`);
+      // Outlines are dropped with the old list, since the routes themselves may have changed.
+      stored = { candidates: await listCandidates(cell, radiusKm, group, userAgent), outlines: {} };
+      fetchedAt = stamp;
+      failedAt = null;
       stale = false;
-      await db
-        .prepare(
-          `INSERT INTO osm_route_cache (cache_key, routes_json, fetched_at, failed_at)
-          VALUES (?, ?, ?, NULL)
-          ON CONFLICT (cache_key) DO UPDATE SET
-            routes_json = excluded.routes_json, fetched_at = excluded.fetched_at, failed_at = NULL`,
-        )
-        .bind(key, JSON.stringify(found), stamp)
-        .run();
+      changed = true;
     } catch (error) {
-      console.warn('OpenStreetMap route lookup failed', error);
-      // Keep the last good routes; only record when this refresh failed.
-      await db
-        .prepare(
-          `INSERT INTO osm_route_cache (cache_key, failed_at) VALUES (?, ?)
-          ON CONFLICT (cache_key) DO UPDATE SET failed_at = excluded.failed_at`,
-        )
-        .bind(key, stamp)
-        .run();
+      fail(error);
     }
   }
-  if (!found) return { status: 'unavailable', routes: [] };
 
-  return {
-    status: 'ok',
-    ...(stale ? { stale: true } : {}),
-    routes: found
-      .map(({ center, ...route }) => ({
-        id: `osm:relation/${route.id}`,
-        name: route.name,
-        kind: route.kind,
-        lengthKm: route.lengthKm,
-        distanceKm: Math.round(distanceKm(origin, center) * 10) / 10,
-        segments: route.segments,
-        url: `https://www.openstreetmap.org/relation/${route.id}`,
-      }))
-      .filter((route) => route.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, MAX_ROUTES),
-  };
+  // Choose the routes nearest this searcher, then fetch any outlines not stored yet.
+  const nearest = (stored?.candidates ?? [])
+    .map((candidate) => ({ candidate, distance: distanceKm(origin, candidate.center) }))
+    .filter(({ distance }) => distance <= radiusKm)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, MAX_ROUTES);
+  const missing = nearest.filter(({ candidate }) => !stored!.outlines[candidate.id]);
+  if (stored && missing.length && mayRetry()) {
+    try {
+      Object.assign(
+        stored.outlines,
+        await fetchOutlines(
+          missing.map(({ candidate }) => candidate.id),
+          userAgent,
+        ),
+      );
+      changed = true;
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  if (changed)
+    await db
+      .prepare(
+        `INSERT INTO osm_route_cache (cache_key, routes_json, fetched_at, failed_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT (cache_key) DO UPDATE SET routes_json = excluded.routes_json,
+          fetched_at = excluded.fetched_at, failed_at = excluded.failed_at`,
+      )
+      .bind(key, stored ? JSON.stringify(stored) : null, fetchedAt, failedAt)
+      .run();
+
+  if (!stored) return { status: 'unavailable', routes: [] };
+  const routes = nearest.flatMap(({ candidate, distance }) => {
+    const outline = stored!.outlines[candidate.id];
+    return outline
+      ? [
+          {
+            id: `osm:relation/${candidate.id}`,
+            name: candidate.name,
+            kind: candidate.kind,
+            lengthKm: outline.lengthKm,
+            distanceKm: Math.round(distance * 10) / 10,
+            segments: outline.segments,
+            url: `https://www.openstreetmap.org/relation/${candidate.id}`,
+          },
+        ]
+      : [];
+  });
+  // Nearby routes exist but none of their outlines could be fetched.
+  if (nearest.length && !routes.length) return { status: 'unavailable', routes: [] };
+  return { status: 'ok', ...(stale ? { stale: true } : {}), routes };
 }
 
 /** Drop areas whose last lookup, successful or not, was months ago. */

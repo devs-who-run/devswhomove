@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { joinWays, routeGroup } from './osm-routes';
+import { joinWays, routeGroup, validRuns } from './osm-routes';
 
 describe('OpenStreetMap routes', () => {
   it('joins ways that share end points, flipping reversed ways', () => {
@@ -42,5 +42,31 @@ describe('OpenStreetMap routes', () => {
     expect(routeGroup('Walking')).toBe('foot');
     expect(routeGroup('Cycling')).toBe('bike');
     expect(routeGroup('Tennis')).toBeNull();
+  });
+});
+
+describe('OpenStreetMap way geometry', () => {
+  it('splits ways at missing or malformed positions and drops runs too short to draw', () => {
+    expect(
+      validRuns([
+        { lat: 1, lon: 1 },
+        { lat: 1, lon: 2 },
+        null,
+        { lat: 2, lon: 2 },
+        { lat: 'x', lon: 3 },
+        { lat: 3, lon: 3 },
+        { lat: 3, lon: 4 },
+        { lat: 95, lon: 4 },
+      ]),
+    ).toEqual([
+      [
+        [1, 1],
+        [1, 2],
+      ],
+      [
+        [3, 3],
+        [3, 4],
+      ],
+    ]);
   });
 });
