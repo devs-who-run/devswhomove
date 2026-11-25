@@ -129,15 +129,17 @@
           <div class="empty-state full">
             <app-icon name="pin" />
             <h3>
-              No shared {{ sport() === 'All' ? '' : sport().toLowerCase() + ' ' }}routes here yet.
+              No one has shared a
+              {{ sport() === 'All' ? '' : sport().toLowerCase() + ' ' }}route within
+              {{ found.radius }} km yet.
             </h3>
             <p>
-              Try a wider distance, or import a GPX file and share its route outline to put this
-              area on the map.
+              Routes show up here when someone adds a GPX file to an activity and chooses to share
+              its outline.
             </p>
-            @if (viewer()) {
-              <button class="button primary" (click)="logActivity.emit()">
-                <app-icon name="plus" /> Log an activity
+            @if (widerRadius(); as wider) {
+              <button class="button outline" (click)="setRadius(wider)">
+                Search within {{ wider }} km
               </button>
             }
           </div>

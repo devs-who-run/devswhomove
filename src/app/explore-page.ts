@@ -28,7 +28,6 @@ export class ExplorePage {
   readonly viewer = input<Profile | null>(null);
   readonly saving = input(false);
   readonly joinEvent = output<SportEvent>();
-  readonly logActivity = output<void>();
 
   readonly radii = EXPLORE_RADII;
   readonly sport = signal<Sport | 'All'>('All');
@@ -43,6 +42,11 @@ export class ExplorePage {
   /** Announced after every completed search, even when earlier results stay on screen. */
   readonly summary = signal('');
   private request = 0;
+
+  /** The next distance up, offered when nothing is shared nearby. */
+  readonly widerRadius = computed(
+    () => EXPLORE_RADII.find((option) => option > (this.result()?.radius ?? this.radius())) ?? null,
+  );
 
   readonly areaLabel = computed(() => {
     const origin = this.result()?.origin;
