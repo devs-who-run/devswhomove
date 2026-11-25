@@ -152,6 +152,8 @@ export interface MappedRoute {
 /** OpenStreetMap routes; `unavailable` when Overpass could not be reached. */
 export interface MappedRoutesResult {
   status: 'ok' | 'unavailable';
+  /** Set when these are the last good routes because a refresh just failed. */
+  stale?: boolean;
   routes: MappedRoute[];
 }
 

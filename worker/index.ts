@@ -56,7 +56,7 @@ import {
   queryText,
   routeCenter,
 } from './explore';
-import { mappedRoutes } from './osm-routes';
+import { mappedRoutes, pruneMappedRoutes } from './osm-routes';
 import {
   FILE_IMPORT_SOURCES,
   importActivities,
@@ -2746,7 +2746,7 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
       const radius = queryRadius(url.searchParams);
       return json(
         origin
-          ? await mappedRoutes(origin, radius, chosen, env.APP_URL)
+          ? await mappedRoutes(env.DB, origin, radius, chosen, env.APP_URL)
           : { status: 'ok', routes: [] },
       );
     }
@@ -3735,6 +3735,7 @@ export default {
       retryAtprotoDeletion(env),
       retryStravaWebhookEvents(env),
       runStravaLifecycle(env),
+      pruneMappedRoutes(env.DB),
     ]);
   },
 } satisfies ExportedHandler<Env>;

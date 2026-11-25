@@ -219,6 +219,12 @@
               <p class="empty-line full">No mapped routes within {{ found.radius }} km.</p>
             }
           </div>
+          @if (mappedResult.stale) {
+            <p class="osm-attribution">
+              Showing routes saved from an earlier lookup, because OpenStreetMap couldn’t be reached
+              just now.
+            </p>
+          }
           <p class="osm-attribution">
             Route data ©
             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener"

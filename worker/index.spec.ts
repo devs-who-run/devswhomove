@@ -339,6 +339,7 @@ describe('Worker with real D1 storage', () => {
         '0016_strava_tombstones_and_retry.sql',
         '0010_activity_routes.sql',
         '0011_route_centers.sql',
+        '0017_osm_route_cache.sql',
       ].map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
     );
     for (const migration of migrations.slice(0, 3)) {
@@ -1430,7 +1431,7 @@ describe('Worker with real D1 storage', () => {
     expect(overpassCalls[0].query).toContain('(around:15000,52.15,1)');
     expect(overpassCalls[1].query).toContain('relation(id:101)');
 
-    // A nearby search in the same grid cell is served from the cache.
+    // A nearby search in the same grid cell is served from D1.
     expect((await mapped('lat=52.17&lng=1.01&radius=10')).routes).toHaveLength(1);
     expect(overpassCalls).toHaveLength(2);
 
@@ -1443,10 +1444,39 @@ describe('Worker with real D1 storage', () => {
     expect((await mapped('lat=40.4&lng=-3.7&radius=25')).status).toBe('ok');
     expect(overpassCalls.at(-1)?.host).toBe('maps.mail.ru');
 
-    // When every instance fails, Explore still answers and reports the outage.
+    // When every instance fails and nothing is stored, Explore reports the outage.
     failingOverpassHosts = ['overpass-api.de', 'maps.mail.ru'];
     expect(await mapped('lat=35.7&lng=139.7')).toEqual({ status: 'unavailable', routes: [] });
+
+    // When a week-old result cannot be refreshed, the last good routes keep showing.
+    const outdated = await db
+      .prepare(`UPDATE osm_route_cache SET fetched_at = ? WHERE cache_key = ?`)
+      .bind('2000-01-01T00:00:00.000Z', 'v1/all/10/52.15/1')
+      .run();
+    expect(outdated.meta.changes).toBe(1);
+    const callsBefore = overpassCalls.length;
+    const stale = await mapped('lat=52.16&lng=0.99&radius=10');
+    expect(stale).toMatchObject({ status: 'ok', stale: true, routes: [{ name: 'River loop' }] });
+    expect(overpassCalls.length).toBeGreaterThan(callsBefore);
+    // A failed refresh is not retried on every view.
+    const callsAfterFailure = overpassCalls.length;
+    expect((await mapped('lat=52.16&lng=0.99&radius=10')).stale).toBe(true);
+    expect(overpassCalls).toHaveLength(callsAfterFailure);
     failingOverpassHosts = [];
+
+    // The cron forgets areas nobody has looked up for months, and keeps ones still in use, even
+    // when their last good result is old.
+    const aged = await db
+      .prepare(`UPDATE osm_route_cache SET fetched_at = ?, failed_at = NULL WHERE cache_key = ?`)
+      .bind('2000-01-01T00:00:00.000Z', 'v1/all/25/40.4/-3.7')
+      .run();
+    expect(aged.meta.changes).toBe(1);
+    await (await runtime.getWorker()).scheduled();
+    const kept = await db
+      .prepare(`SELECT cache_key FROM osm_route_cache ORDER BY cache_key`)
+      .all<{ cache_key: string }>();
+    expect(kept.results.map((row) => row.cache_key)).not.toContain('v1/all/25/40.4/-3.7');
+    expect(kept.results.map((row) => row.cache_key)).toContain('v1/all/10/52.15/1');
 
     for (const invalid of ['lat=91&lng=0', 'lat=52&lng=0&radius=7', 'sport=Golf'])
       expect((await request(`/api/explore/mapped?${invalid}`)).status).toBe(400);

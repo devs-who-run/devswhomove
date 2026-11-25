@@ -1,7 +1,8 @@
 /**
  * Named walking, running and cycling routes mapped in OpenStreetMap, found with the Overpass API.
  * Only the Worker talks to Overpass, with a location rounded to a ~5 km grid, so OpenStreetMap
- * never sees a member's IP address or precise position. Results are cached for a week.
+ * never sees a member's IP address or precise position. Results are stored in D1, refreshed weekly,
+ * and the last good result keeps showing while Overpass is down.
  */
 import { distanceMeters, simplifyRoute, type RouteSegments } from '../src/app/route-geometry';
 import type { MappedRoutesResult, Sport } from '../src/app/models';
@@ -12,8 +13,13 @@ export const OVERPASS_URLS = [
   'https://overpass-api.de/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
-const CACHE_SECONDS = 7 * 24 * 60 * 60;
-const FAILURE_CACHE_SECONDS = 10 * 60;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Refresh stored routes after a week; OpenStreetMap routes change slowly. */
+const FRESH_MS = 7 * DAY_MS;
+/** After a failed refresh, wait before asking Overpass again. */
+const RETRY_AFTER_MS = 10 * 60 * 1000;
+/** Forget areas no one has looked at for this long. */
+const PRUNE_AFTER_MS = 90 * DAY_MS;
 const TIMEOUT_MS = 20_000;
 /** Long-distance trails (pilgrim ways, EuroVelo) are not useful as a local outing. */
 const MAX_SPAN_KM = 50;
@@ -88,6 +94,8 @@ export function joinWays(ways: [number, number][][]): RouteSegments {
   return joined;
 }
 
+type Found = Awaited<ReturnType<typeof lookup>>;
+
 /** Find routes for one grid cell: first small tag and bounds results, then geometry for the nearest. */
 async function lookup(
   cell: ExploreOrigin,
@@ -160,10 +168,12 @@ async function lookup(
 
 /** Routes mapped in OpenStreetMap within `radiusKm` of `origin`, nearest first. */
 export async function mappedRoutes(
+  db: D1Database,
   origin: ExploreOrigin,
   radiusKm: number,
   sport: Sport | null,
   appUrl: string,
+  now = Date.now(),
 ): Promise<MappedRoutesResult> {
   const group = routeGroup(sport);
   if (!group) return { status: 'ok', routes: [] };
@@ -172,39 +182,47 @@ export async function mappedRoutes(
     lat: Number(snap(origin.lat).toFixed(2)),
     lng: Number(snap(origin.lng).toFixed(2)),
   };
-  const base = new URL(appUrl).origin;
-  const cacheKey = new Request(
-    `${base}/__osm-routes/v1/${group}/${radiusKm}/${cell.lat}/${cell.lng}.json`,
-  );
-  const cache = typeof caches === 'undefined' ? undefined : caches.default;
+  const key = `v1/${group}/${radiusKm}/${cell.lat}/${cell.lng}`;
+  const row = await db
+    .prepare('SELECT routes_json, fetched_at, failed_at FROM osm_route_cache WHERE cache_key = ?')
+    .bind(key)
+    .first<{ routes_json: string | null; fetched_at: string | null; failed_at: string | null }>();
+  const age = (value: string | null) => (value ? now - Date.parse(value) : Infinity);
+  let found: Found | null = row?.routes_json ? JSON.parse(row.routes_json) : null;
+  let stale = age(row?.fetched_at ?? null) > FRESH_MS;
 
-  // A cached null records a recent failure; undefined means nothing is cached.
-  let found: Awaited<ReturnType<typeof lookup>> | null | undefined;
-  const cached = await cache?.match(cacheKey);
-  if (cached) found = await cached.json();
-  if (found === undefined) {
+  // Refresh when nothing fresh is stored, unless a refresh failed moments ago.
+  if (stale && age(row?.failed_at ?? null) > RETRY_AFTER_MS) {
+    const stamp = new Date(now).toISOString();
     try {
-      found = await lookup(cell, radiusKm, group, `DevsWhoMove/1.0 (+${base})`);
-      await cache?.put(
-        cacheKey,
-        Response.json(found, { headers: { 'Cache-Control': `public, max-age=${CACHE_SECONDS}` } }),
-      );
+      found = await lookup(cell, radiusKm, group, `DevsWhoMove/1.0 (+${new URL(appUrl).origin})`);
+      stale = false;
+      await db
+        .prepare(
+          `INSERT INTO osm_route_cache (cache_key, routes_json, fetched_at, failed_at)
+          VALUES (?, ?, ?, NULL)
+          ON CONFLICT (cache_key) DO UPDATE SET
+            routes_json = excluded.routes_json, fetched_at = excluded.fetched_at, failed_at = NULL`,
+        )
+        .bind(key, JSON.stringify(found), stamp)
+        .run();
     } catch (error) {
       console.warn('OpenStreetMap route lookup failed', error);
-      // Remember the failure briefly so a struggling Overpass server is not retried on every view.
-      await cache?.put(
-        cacheKey,
-        Response.json(null, {
-          headers: { 'Cache-Control': `public, max-age=${FAILURE_CACHE_SECONDS}` },
-        }),
-      );
-      return { status: 'unavailable', routes: [] };
+      // Keep the last good routes; only record when this refresh failed.
+      await db
+        .prepare(
+          `INSERT INTO osm_route_cache (cache_key, failed_at) VALUES (?, ?)
+          ON CONFLICT (cache_key) DO UPDATE SET failed_at = excluded.failed_at`,
+        )
+        .bind(key, stamp)
+        .run();
     }
   }
-  if (!Array.isArray(found)) return { status: 'unavailable', routes: [] };
+  if (!found) return { status: 'unavailable', routes: [] };
 
   return {
     status: 'ok',
+    ...(stale ? { stale: true } : {}),
     routes: found
       .map(({ center, ...route }) => ({
         id: `osm:relation/${route.id}`,
@@ -219,4 +237,16 @@ export async function mappedRoutes(
       .sort((a, b) => a.distanceKm - b.distanceKm)
       .slice(0, MAX_ROUTES),
   };
+}
+
+/** Drop areas whose last lookup, successful or not, was months ago. */
+export async function pruneMappedRoutes(db: D1Database, now = Date.now()): Promise<void> {
+  const cutoff = new Date(now - PRUNE_AFTER_MS).toISOString();
+  await db
+    .prepare(
+      `DELETE FROM osm_route_cache
+      WHERE max(COALESCE(fetched_at, ''), COALESCE(failed_at, '')) < ?`,
+    )
+    .bind(cutoff)
+    .run();
 }
